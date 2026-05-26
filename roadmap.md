@@ -1,6 +1,6 @@
 # Lattice — Roadmap
 
-What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.3.4.
+What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.4.1.
 
 ---
 
@@ -47,3 +47,7 @@ What's done, what's next, what's deferred. Sequenced for maximum utility as a st
 - [ ] **Progress Persistence** — Resume interrupted large-scale integrity scans (FLAC/MP3) from where they left off without restarting.
 - [ ] **Color Output in CLI** — Inject ANSI color codes for terminal output outside of the TUI environment.
 - [ ] **Multi-Root Scanning** — Accept multiple `--root` paths in a single invocation or configure an array of roots in the JSON config.
+
+## Found Bugs
+
+- [ ] **FOUND BUG (2026-05-25): `cleaner.py` apostrophe normalization gap.** A fragmented album survived the initial consolidation pass: JPEGMAFIA's *I LAY DOWN MY LIFE FOR YOU (Director's Cut)* is split across two sibling folders, `I LAY DOWN MY LIFE FOR YOU (DIRECTOR's CUT)/` (12 tracks, mp3+opus) and `I LAY DOWN MY LIFE FOR YOU (DIRECTORS CUT)/` (4 unique tracks, mp3). `cleaner.py` did not merge them because its normalization folds curly to straight quotes but does not equate apostrophe-present vs apostrophe-absent: `director's cut` and `directors cut` hash to different keys. Fix: in the folder-name normalization key, also strip or fold apostrophes (or, more broadly, drop all non-alphanumeric characters after the existing NFKC/dash/quote/case folding) so `X's` and `Xs` collapse to the same key. Surfaced by `lattice --duplicates` (exact-album-duplicates section) on the 2026-05-25 library pass.

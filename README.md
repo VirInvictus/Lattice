@@ -92,6 +92,14 @@ On Windows: `winget install flac ffmpeg`
 On Fedora/RHEL: `sudo dnf install flac ffmpeg-free`
 On Debian/Ubuntu: `sudo apt install flac ffmpeg`
 
+**Tests:**
+
+The test suite is stdlib `unittest` (no extra dependencies) and covers the pure helpers (rating and key normalization, duration clustering, image-header parsing, filename cleanup). Run it from the repo root:
+
+```bash
+python -m unittest discover
+```
+
 ## Usage
 
 Lattice now remembers your library location! On your first run, whether via the TUI or the CLI, Lattice will ask for the path to your music library and save it to `~/.config/lattice/config.json`. After that, you no longer need to provide the `--root` argument.
@@ -157,7 +165,7 @@ Converge | Jane Doe | Metalcore | 4.8 | 12
 The `--all-wings` mode scans genre tags across your entire library, groups albums by genre, and writes a separate library tree file for each genre into the output directory — one file per genre, analogous to virtual library wings in Calibre. Useful for breaking a large library into manageable, genre-scoped catalogs.
 
 ```bash
-python Lattice.py --all-wings --root ~/Music --output wings/
+lattice --all-wings --root ~/Music --output wings/
 ```
 
 Produces files like `Alternative_Rock_Library.txt`, `East_Coast_Rap_Library.txt`, `Neoclassical_Library.txt`, etc. Albums with no genre tag land in `Uncategorized_Library.txt`. Pass `--genres` to include the genre label in each album header.

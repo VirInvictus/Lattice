@@ -33,7 +33,7 @@ lattice --extractArt --dry-run
 lattice --stats
 ```
 
-There is **no test suite**. The README references `python3 -m unittest discover src/lattice/test`, but `src/lattice/test/` does not exist — treat the README claim as aspirational. Don't fabricate tests unless asked.
+Tests live in top-level `tests/` (stdlib `unittest`, no third-party deps). Run them from the repo root with `python -m unittest discover`. They cover the pure helpers — rating/key normalization, duration clustering, JPEG/PNG header parsing, filename cleanup, track-number parsing — and deliberately stop there: there are no end-to-end tests that require audio fixtures. When changing a covered helper, update its test in the same pass.
 
 System tools used by integrity modes: `flac` (preferred for `--testFLAC`) and `ffmpeg` (everything else, plus FLAC fallback). Both should already be on Fedora via `dnf`.
 

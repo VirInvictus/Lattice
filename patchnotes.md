@@ -1,5 +1,20 @@
 # Lattice — Patch Notes
 
+## v4.4.1 (2026-05-26)
+
+---
+
+### Bug Fixes
+- **Latent `Tuple` import in the art-quality audit:** `modes/artwork.py` annotated `_get_image_size` with `Tuple` without importing it. The code ran only because Python 3.14 defers annotation evaluation; `typing.get_type_hints`, a type checker, or any pre-3.14 interpreter would have raised `NameError`. The import is now present.
+
+### Internal
+- **Test suite added.** A stdlib `unittest` suite under `tests/` (no third-party dependencies) covers the pure helpers: rating and key normalization, duration clustering, JPEG/PNG header parsing, filename cleanup, and track-number parsing. Run it from the repo root with `python -m unittest discover`.
+- **Library and stats refactor.** The three duplicated walk-and-aggregate loops and two identical tree-writers in `modes/library.py` were unified behind `_scan_album_dirs`, `_song_display_name`, and `_write_tree`; the file shrank by roughly a third with byte-identical output. The repeated rating-bucketing block in `modes/stats.py` was replaced with a single label helper. Output across every mode was verified unchanged against a captured baseline.
+- **Formatting and lint.** The package was run through `ruff format`, unused imports were removed, and the misplaced mid-file imports in `tui.py` were moved to the top.
+
+### Documentation
+- `spec.md` now lists all shipped modes; `--testWAV`, `--testWMA`, `--auditArtQuality`, `--auditBitrate`, and `--playlist` were missing from its table. A stale `python Lattice.py` example in the README was corrected, and the test suite is now documented.
+
 ## v4.4.0 (2026-05-14)
 
 ---

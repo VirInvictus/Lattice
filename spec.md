@@ -1,6 +1,6 @@
 # Lattice — Application Specification
 
-**Version:** 4.4.0  
+**Version:** 4.4.1  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT
@@ -76,10 +76,15 @@ scripting and automation. All modes accept `--root`, `--output`, `--workers`,
 | FLAC integrity | `--testFLAC` | Verify via `flac -t` or FFmpeg with parallel workers |
 | MP3 integrity | `--testMP3` | Decode via FFmpeg, report errors/warnings |
 | Opus integrity | `--testOpus` | Decode via FFmpeg, report errors/warnings |
+| WAV integrity | `--testWAV` | Decode via FFmpeg, report errors/warnings |
+| WMA integrity | `--testWMA` | Decode via FFmpeg, report errors/warnings |
 | Cover extraction | `--extractArt` | Extract embedded art with format priority ranking |
 | Missing art | `--missingArt` | Report directories with no cover art |
+| Art quality audit | `--auditArtQuality` | Report folder/embedded covers below a resolution threshold |
 | Duplicates | `--duplicates` | Four-section report: exact album dupes (cross-directory), within-folder multi-format pairs, fuzzy similar-name candidates, and track-level cross-library duplicates filtered by duration |
 | Tag audit | `--auditTags` | Report files missing title, artist, track number, or genre |
+| Bitrate audit | `--auditBitrate` | Report files below a configurable bitrate floor |
+| Smart playlist | `--playlist` | Generate an `.m3u` from a dynamic rule (e.g. `rating >= 4 and genre == 'Jazz'`) |
 
 ---
 
