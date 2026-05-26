@@ -161,13 +161,13 @@ Converge | Jane Doe | Metalcore | 4.8 | 12
 
 ## Genre wings
 
-The `--all-wings` mode scans genre tags across your entire library, groups albums by genre, and writes a separate library tree file for each genre into the output directory, one file per genre, analogous to virtual library wings in Calibre. Useful for breaking a large library into manageable, genre-scoped catalogs.
+`--all-wings` groups albums by genre and writes one library tree file per genre into the output directory:
 
 ```bash
 lattice --all-wings --root ~/Music --output wings/
 ```
 
-Produces files like `Alternative_Rock_Library.txt`, `East_Coast_Rap_Library.txt`, `Neoclassical_Library.txt`, etc. Albums with no genre tag land in `Uncategorized_Library.txt`. Pass `--genres` to include the genre label in each album header.
+Produces `Alternative_Rock_Library.txt`, `East_Coast_Rap_Library.txt`, and so on; untagged albums land in `Uncategorized_Library.txt`. Add `--genres` to label each album header.
 
 ## Companion Script: `retag.py`
 
@@ -239,16 +239,11 @@ CORRUPT and SUSPECT are always listed in the report; METADATA and OK are summari
 
 ## Library statistics
 
-The `--stats` mode produces a full library report: file counts, total size and duration, format breakdown with per-format sizes, bitrate summary (with low-quality flagging), rating distribution with bar charts, top genres, and top artists by track count. Prints to screen by default, or `--output` to save.
+`--stats` reports file counts, total size and duration, a per-format breakdown, a bitrate summary, the rating distribution, top genres, and top artists. Prints to screen, or `--output` to save.
 
 ## Cover art extraction
 
-The `--extractArt` mode writes embedded cover art to `cover.jpg`, choosing the best available source:
-
-- **Format priority**: when a directory contains multiple audio formats, art is extracted from the highest-quality source: FLAC → Opus/OGG → M4A → MP3.
-- **Case-insensitive detection**: checks for existing cover files (`cover.jpg`, `folder.jpg`, `front.jpg`, `album.jpg`, and their `.jpeg`/`.png` variants) case-insensitively. No more `cover.jpg` / `Cover.jpg` collisions.
-- **Front cover preference**: within each format, prefers the "Front Cover" picture type over generic embedded images.
-- **Four format support**: handles FLAC pictures, Opus/OGG `METADATA_BLOCK_PICTURE`, M4A `covr` atoms, and MP3 `APIC` frames.
+`--extractArt` writes embedded art to `cover.jpg`, pulling from the highest-quality source in each directory (FLAC → Opus/OGG → M4A → MP3) and preferring the "Front Cover" picture type. It checks for existing covers case-insensitively (`cover`/`folder`/`front`/`album` in `.jpg`/`.jpeg`/`.png`), so it won't duplicate art. Reads FLAC pictures, Opus/OGG `METADATA_BLOCK_PICTURE`, M4A `covr` atoms, and MP3 `APIC` frames.
 
 ## Supported formats
 
