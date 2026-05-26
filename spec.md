@@ -1,4 +1,4 @@
-# Lattice — Application Specification
+# Lattice Application Specification
 
 **Version:** 4.4.2  
 **Language:** Python 3.14+  
@@ -10,7 +10,7 @@
 ## 1. Mission Statement
 
 Lattice is a CLI toolkit for music collectors who manage their own libraries
-outside of any player's database. It reads tags directly via mutagen —
+outside of any player's database. It reads tags directly via mutagen, and is
 player-agnostic by design. Every operation works from the filesystem and
 embedded metadata, not from a proprietary database or cloud service.
 
@@ -37,7 +37,7 @@ All tag extraction runs through `get_all_tags()`, which returns a `TagBundle`
 named tuple from a single `MutagenFile()` open. Format-specific tag field
 mapping (ID3 for MP3, VorbisComment for FLAC/Opus/OGG, MP4 atoms for M4A)
 is handled internally. Ratings are read from POPM, TXXX, or Vorbis comment
-fields — compatible with foobar2000's `foo_quicktag` and most other taggers.
+fields, compatible with foobar2000's `foo_quicktag` and most other taggers.
 
 ### 2.3 Supported Formats
 
@@ -46,7 +46,7 @@ fields — compatible with foobar2000's `foo_quicktag` and most other taggers.
 ### 2.4 Standalone Binary
 
 Lattice can be compiled into a standalone native executable using **PyInstaller**.
-This encapsulates the Python interpreter, dependencies (`mutagen`, `tqdm`), and the package code into a single high-performance binary, eliminating the need for end-users to install Python or configure `pip`.
+This encapsulates the Python interpreter, dependencies (`mutagen`, `tqdm`), and the package code into a single self-contained binary, eliminating the need for end-users to install Python or configure `pip`.
 
 ### 2.5 Interactive TUI
 
@@ -100,12 +100,12 @@ The integrity scanners classify every file rather than emitting a binary
 pass/fail, because a decoder complaint is not by itself evidence of damaged
 audio (ffmpeg reports decode errors on files that play start to finish):
 
-- **CORRUPT** — could not decode through (tool exited non-zero / could not open),
+- **CORRUPT**: could not decode through (tool exited non-zero / could not open),
   or a FLAC that lost sync *before* its declared sample count (true truncation).
-- **SUSPECT** — decoded to the end but the tool complained; usually plays. Also
+- **SUSPECT**: decoded to the end but the tool complained; usually plays. Also
   a FLAC that decoded every declared sample and then hit trailing data.
-- **METADATA** — only tag/container parse warnings; the audio is unaffected.
-- **OK** — clean decode.
+- **METADATA**: only tag/container parse warnings; the audio is unaffected.
+- **OK**: clean decode.
 
 CORRUPT and SUSPECT are always listed; METADATA and OK are summarized and listed
 only with `--verbose`. The process exit code is `1` only when at least one file
@@ -115,7 +115,7 @@ is CORRUPT.
 
 ## 5. What Lattice Is Not
 
-- **Not a player.** It reads tags — it does not play audio.
-- **Not a tagger.** It reads metadata — it does not write it.
-- **Not a database.** It walks the filesystem every time — there is no index.
+- **Not a player.** It reads tags; it does not play audio.
+- **Not a tagger.** It reads metadata; it does not write it.
+- **Not a database.** It walks the filesystem every time; there is no index.
 - **Not a sync tool.** It does not interact with cloud services or devices.

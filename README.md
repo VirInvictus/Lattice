@@ -11,7 +11,7 @@
 
 # Lattice
 
-A high-performance CLI/TUI toolkit for music collectors who manage their own libraries. Lattice provides a suite of tools for library visualization, integrity verification, cover art extraction, and metadata auditing — built on `mutagen` and `tqdm`, with `flac` and `ffmpeg` shelled out for integrity checks.
+A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice handles library visualization, integrity verification, cover art extraction, and metadata auditing, built on `mutagen` and `tqdm`, with `flac` and `ffmpeg` shelled out for integrity checks.
 
 ## Why this exists
 
@@ -40,7 +40,7 @@ Modern music players often hide your library behind proprietary databases. Latti
 | **Bitrate audit** | `--auditBitrate` | Reports files falling below a minimum bitrate floor |
 | **Version** | `--version` | Prints version and exits |
 
-Running with no arguments launches an interactive TUI — a full-screen curses interface with arrow-key navigation, color-coded section groups (Library, Integrity, Artwork, Metadata), and a highlighted selection cursor. Menus, parameter prompts, and pause screens all render inside styled Unicode boxes for a consistent experience. Library tree, AI export, and genre wings live in a dedicated submenu. Falls back to typed input if curses is unavailable.
+Running with no arguments launches an interactive TUI: a full-screen curses interface with arrow-key navigation, color-coded section groups (Library, Integrity, Artwork, Metadata), and a highlighted selection cursor. Menus, parameter prompts, and pause screens all render inside styled Unicode boxes for a consistent experience. Library tree, AI export, and genre wings live in a dedicated submenu. Falls back to typed input if curses is unavailable.
 
 ## Sample output
 
@@ -56,15 +56,15 @@ ARTIST: Ólafur Arnalds
       └── SONG: 07. Ólafur Arnalds — Ljósið (flac) [★★★★★ 5.0/5]
 ```
 
-Genre tags are optional (`--genres`). If your genre metadata is inconsistent, leave them off — the tree gets unwieldy fast.
+Genre tags are optional (`--genres`). If your genre metadata is inconsistent, leave them off; the tree gets unwieldy fast.
 
 ## Architecture
 
 Lattice is a modular Python package:
 
-- `tags.py` — unified abstraction layer for format-agnostic metadata extraction.
-- `modes/` — per-mode implementation of auditing and visualization logic.
-- `tui.py` — full-screen curses interface for interactive maintenance.
+- `tags.py`: unified abstraction layer for format-agnostic metadata extraction.
+- `modes/`: per-mode implementation of auditing and visualization logic.
+- `tui.py`: full-screen curses interface for interactive maintenance.
 
 ## Installation & Requirements
 
@@ -85,8 +85,8 @@ pip install .
 
 **System tools (integrity modes):**
 
-- [`flac`](https://xiph.org/flac/) — used by `--testFLAC` (preferred)
-- [`ffmpeg`](https://ffmpeg.org/) — used by `--testMP3`, `--testOpus`, and as a fallback for `--testFLAC`
+- [`flac`](https://xiph.org/flac/): used by `--testFLAC` (preferred)
+- [`ffmpeg`](https://ffmpeg.org/): used by `--testMP3`, `--testOpus`, and as a fallback for `--testFLAC`
 
 On Windows: `winget install flac ffmpeg`
 On Fedora/RHEL: `sudo dnf install flac ffmpeg-free`
@@ -158,11 +158,11 @@ Converge | Jane Doe | Metalcore | 4.8 | 12
 Ólafur Arnalds | Found Songs | Neo-Classical | 5.0 | 7
 ```
 
-**Rating** is the average across all rated tracks. **Tracks** is the number of audio files in the album directory — if you've culled 3-star-and-below tracks from disk, this is your survivor count. Paste the output into a prompt and ask for recommendations against your actual library.
+**Rating** is the average across all rated tracks. **Tracks** is the number of audio files in the album directory. If you've culled 3-star-and-below tracks from disk, this is your survivor count. Paste the output into a prompt and ask for recommendations against your actual library.
 
 ## Genre wings
 
-The `--all-wings` mode scans genre tags across your entire library, groups albums by genre, and writes a separate library tree file for each genre into the output directory — one file per genre, analogous to virtual library wings in Calibre. Useful for breaking a large library into manageable, genre-scoped catalogs.
+The `--all-wings` mode scans genre tags across your entire library, groups albums by genre, and writes a separate library tree file for each genre into the output directory, one file per genre, analogous to virtual library wings in Calibre. Useful for breaking a large library into manageable, genre-scoped catalogs.
 
 ```bash
 lattice --all-wings --root ~/Music --output wings/
@@ -172,7 +172,7 @@ Produces files like `Alternative_Rock_Library.txt`, `East_Coast_Rap_Library.txt`
 
 ## Companion Script: `retag.py`
 
-Included in the repository is `retag.py`, a universal genre tagger designed to work directly with the `--all-wings --paths` output. 
+Included in `scripts/` is `retag.py`, a universal genre tagger designed to work directly with the `--all-wings --paths` output. 
 
 Audio metadata formats handle multiple genres entirely differently (ID3 uses null bytes or slashes, Vorbis uses multiple `GENRE=` pairs, Apple uses specific custom atoms). `retag.py` abstracts this container chaos away, allowing you to safely hard-overwrite genres on an entire album directory simultaneously.
 
@@ -182,58 +182,58 @@ Audio metadata formats handle multiple genres entirely differently (ID3 uses nul
 2. Open a generated wing (e.g., `Uncategorized_Library.txt`) and copy the bracketed `[/path/to/album]` from an album header.
 3. Pass that path and your desired new genre(s) to `retag.py`:
    ```bash
-   ./retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial"
+   ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial"
 
 ## Companion Script: `cleaner.py`
 
-Also included is `cleaner.py`, a one-shot consolidator for **album folders that have fragmented across two paths because of inconsistent metadata**. The pattern looks like this:
+Also in `scripts/` is `cleaner.py`, a one-shot consolidator for **album folders that have fragmented across two paths because of inconsistent metadata**. The pattern looks like this:
 
 ```
 Music/Modern Baseball/You're Gonna Miss It All/   ← 3 mp3s (straight quote)
 Music/Modern Baseball/You’re Gonna Miss It All/   ← 3 opus (curly quote)
 ```
 
-Same album, no track overlap, scattered between two folders by filesystem accident. The same artifact shows up at the artist level (`Jay-Z & Kanye West/` vs `JAY‐Z & Kanye West/` — different hyphen codepoints) and across casing variants (`BONES/` vs `Bones/`).
+Same album, no track overlap, scattered between two folders by filesystem accident. The same artifact shows up at the artist level (`Jay-Z & Kanye West/` vs `JAY‐Z & Kanye West/`, different hyphen codepoints) and across casing variants (`BONES/` vs `Bones/`).
 
 `cleaner.py` walks the library, finds every sibling pair of folders whose names normalize to the same key (after folding curly→straight quotes, en/em-dashes→ASCII hyphen, NFKC, lowercase, strip), and merges the smaller into the larger.
 
 **Safety contract.**
-- **`mv` only** on the same filesystem — atomic rename, audio bytes are never read or rewritten.
+- **`mv` only** on the same filesystem: an atomic rename, so audio bytes are never read or rewritten.
 - **Audio collisions never auto-delete.** If a track of the same name exists in both folders with *different* file sizes, the source copy is kept under a `<stem>.from-fragment.<ext>` suffix instead of being overwritten. Identical-size copies (true duplicates) are dropped from the source.
-- **Non-audio collisions** (`cover.jpg`, `.nfo`, etc.) drop the source — the canonical folder's copy wins.
+- **Non-audio collisions** (`cover.jpg`, `.nfo`, etc.) drop the source; the canonical folder's copy wins.
 - **Conservative matching.** Only sibling folders whose normalized names match are merged. Cases like `Domestica` vs `Cursive's Domestica (Deluxe Edition)` (different prefix, not just quote variation) are left alone for manual review.
 - **`--dry-run` flag** previews every move without touching the filesystem; log lines are prefixed `[DRY]`.
-- **Per-file logging** to `<directory>/cleanup.log` (or `--log` override) — every move, drop, collision, and `rmdir` is timestamped and audit-trailed.
-- **Idempotent** — running on an already-clean library is a no-op.
+- **Per-file logging** to `<directory>/cleanup.log` (or `--log` override): every move, drop, collision, and `rmdir` is timestamped and audit-trailed.
+- **Idempotent**: running on an already-clean library is a no-op.
 
 **The Workflow:**
 1. Preview first:
    ```bash
-   ./cleaner.py /mnt/SharedData/Music --dry-run
+   ./scripts/cleaner.py /mnt/SharedData/Music --dry-run
    ```
-2. Inspect `/mnt/SharedData/Music/cleanup.log` — every action it would take is recorded with `[DRY]` prefixes.
+2. Inspect `/mnt/SharedData/Music/cleanup.log`; every action it would take is recorded with `[DRY]` prefixes.
 3. If the plan looks right, apply for real:
    ```bash
-   ./cleaner.py /mnt/SharedData/Music
+   ./scripts/cleaner.py /mnt/SharedData/Music
    ```
 4. Re-run `lattice --duplicates` afterward to confirm the consolidated state.
 
-**Two passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder. The order matters — collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory.
+**Two passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder. The order matters: collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory.
 
 **What it does not do.** `cleaner.py` is intentionally narrow. It does not:
 - Rewrite tags (use `retag.py` for that)
 - Re-encode or transcode audio (filesystem operations only)
-- Match albums by tag content (folder name only — by design, so the operation is auditable from the log alone)
+- Match albums by tag content (folder name only, by design, so the operation is auditable from the log alone)
 - Touch the source-of-truth import pipeline. If the same fragmentation pattern keeps reappearing, the upstream tagger or downloader needs a curly-quote normalization rule.
 
 ## Integrity checks
 
 The integrity modes (`--testFLAC`, `--testMP3`, `--testOpus`, `--testWAV`, `--testWMA`) decode every file and sort the results into four tiers rather than a flat pass/fail, because a decoder complaint is not by itself proof of damaged audio:
 
-- **CORRUPT** — could not decode through, or a FLAC truncated before its declared length.
-- **SUSPECT** — decoded to the end but the tool complained (these usually still play), or a FLAC with trailing data after a complete stream.
-- **METADATA** — only tag/container parse warnings; the audio is fine.
-- **OK** — clean decode.
+- **CORRUPT**: could not decode through, or a FLAC truncated before its declared length.
+- **SUSPECT**: decoded to the end but the tool complained (these usually still play), or a FLAC with trailing data after a complete stream.
+- **METADATA**: only tag/container parse warnings; the audio is fine.
+- **OK**: clean decode.
 
 CORRUPT and SUSPECT are always listed in the report; METADATA and OK are summarized and listed only with `--verbose`. The exit code is `1` only when something is CORRUPT, so a clean-but-chatty library still exits `0`. FFmpeg is invoked with the demuxer forced from the file extension (so a large ID3v2 tag is never mis-read as a corrupt container) and with embedded cover art skipped.
 
@@ -245,10 +245,10 @@ The `--stats` mode produces a full library report: file counts, total size and d
 
 The `--extractArt` mode replaces the old standalone `extract_opus_art.py` and `extract_mp3_art.py` scripts. Key improvements:
 
-- **Format priority** — when a directory contains multiple audio formats, art is extracted from the highest-quality source: FLAC → Opus/OGG → M4A → MP3.
-- **Case-insensitive detection** — checks for existing cover files (`cover.jpg`, `folder.jpg`, `front.jpg`, `album.jpg`, and their `.jpeg`/`.png` variants) case-insensitively. No more `cover.jpg` / `Cover.jpg` collisions.
-- **Front cover preference** — within each format, prefers the "Front Cover" picture type over generic embedded images.
-- **Four format support** — handles FLAC pictures, Opus/OGG `METADATA_BLOCK_PICTURE`, M4A `covr` atoms, and MP3 `APIC` frames.
+- **Format priority**: when a directory contains multiple audio formats, art is extracted from the highest-quality source: FLAC → Opus/OGG → M4A → MP3.
+- **Case-insensitive detection**: checks for existing cover files (`cover.jpg`, `folder.jpg`, `front.jpg`, `album.jpg`, and their `.jpeg`/`.png` variants) case-insensitively. No more `cover.jpg` / `Cover.jpg` collisions.
+- **Front cover preference**: within each format, prefers the "Front Cover" picture type over generic embedded images.
+- **Four format support**: handles FLAC pictures, Opus/OGG `METADATA_BLOCK_PICTURE`, M4A `covr` atoms, and MP3 `APIC` frames.
 
 ## Supported formats
 
@@ -314,10 +314,10 @@ options:
 
 Lattice is built upon several excellent open-source libraries and tools:
 
-- **[Mutagen](https://github.com/quodlibet/mutagen)** — Handles all audio metadata extraction and tagging logic.
-- **[tqdm](https://github.com/tqdm/tqdm)** — Powers the extensible progress bars for library scanning and integrity checks.
-- **[FFmpeg](https://ffmpeg.org/)** — The heavy lifter for multi-format audio decoding and integrity verification.
-- **[FLAC](https://xiph.org/flac/)** — Used for high-speed native FLAC verification.
+- **[Mutagen](https://github.com/quodlibet/mutagen)**: Handles all audio metadata extraction and tagging logic.
+- **[tqdm](https://github.com/tqdm/tqdm)**: Powers the extensible progress bars for library scanning and integrity checks.
+- **[FFmpeg](https://ffmpeg.org/)**: The heavy lifter for multi-format audio decoding and integrity verification.
+- **[FLAC](https://xiph.org/flac/)**: Used for high-speed native FLAC verification.
 
 ## Support
 

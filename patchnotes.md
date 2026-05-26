@@ -1,4 +1,10 @@
-# Lattice — Patch Notes
+# Lattice Patch Notes
+
+## Repo cleanup (2026-05-26)
+
+---
+
+Moved the companion scripts `cleaner.py` and `retag.py` into a `scripts/` directory; invoke them as `./scripts/cleaner.py` and `./scripts/retag.py` now. They remain outside the `lattice` package, preserving the read-only contract (spec §5). Also recast prose em-dashes and trimmed a few marketing adjectives across the docs. No package code or behavior changed.
 
 ## v4.4.2 (2026-05-26)
 
@@ -78,7 +84,7 @@ release reworks them.
 
 ---
 
-**Companion Script: `cleaner.py`.** Added a standalone consolidator for fragmented album folders to the repository. It detects sibling directories whose names differ only in quote rendering (`'` vs `'`), dash/hyphen variant, case, or whitespace — the typical artifact of inconsistent metadata across import sources — and merges them via filesystem `mv` only. Audio collisions where sizes differ keep both copies (source renamed with a `.from-fragment` suffix), never overwriting user audio. Includes a `--dry-run` preview mode and per-file logging to `<directory>/cleanup.log`. Intentionally narrow scope: it does not rewrite tags or re-encode audio. Lives outside the `lattice` package alongside `retag.py`, preserving the package's read-only contract.
+**Companion Script: `cleaner.py`.** Added a standalone consolidator for fragmented album folders to the repository. It detects sibling directories whose names differ only in quote rendering (`'` vs `'`), dash/hyphen variant, case, or whitespace (the typical artifact of inconsistent metadata across import sources), and merges them via filesystem `mv` only. Audio collisions where sizes differ keep both copies (source renamed with a `.from-fragment` suffix), never overwriting user audio. Includes a `--dry-run` preview mode and per-file logging to `<directory>/cleanup.log`. Intentionally narrow scope: it does not rewrite tags or re-encode audio. Lives outside the `lattice` package alongside `retag.py`, preserving the package's read-only contract.
 
 ---
 
@@ -218,7 +224,7 @@ Lattice now supports dynamic directory structures via the `--layout` flag, compl
   - A new "Change library root" option has been added under the `SETTINGS` section in the TUI main menu.
   - If no `--root` is provided, the CLI gracefully falls back to the configured location (or prompts if unconfigured).
 - **TUI Immersion Enhancements:**
-  - Progress bars now render seamlessly inside a stylized curses box when running from the TUI, preventing screen tearing and keeping the interface consistent.
+  - Progress bars now render inside a stylized curses box when running from the TUI, preventing screen tearing and keeping the interface consistent.
   - The library statistics page now displays its full report in an integrated, scrollable curses pager (`_tui_page`), rather than dropping you back into standard terminal output.
 
 ---
@@ -288,7 +294,7 @@ Unicode boxes as the menus.
 
 **Curses prompts.** `_tui_prompt_str` draws a centered box with a yellow header
 label and a cursor-visible input field. Typing, backspace, Enter to confirm,
-Esc to accept the default — all within the curses session. Since `_prompt_path`
+Esc to accept the default, all within the curses session. Since `_prompt_path`
 and `_prompt_int` call `_prompt_str` internally, every parameter prompt in the
 interactive menu gets the TUI treatment automatically.
 
@@ -296,7 +302,7 @@ interactive menu gets the TUI treatment automatically.
 styled box. Accepts Enter, q, or Esc to dismiss.
 
 **Fallback preserved.** If curses is unavailable or stdin is not a TTY,
-prompts and pause fall back to plain `input()` — same as before.
+prompts and pause fall back to plain `input()`, same as before.
 
 All CLI flags (`--library`, `--ai-library`, `--all-wings`, etc.) are unchanged.
 
@@ -310,7 +316,7 @@ All CLI flags (`--library`, `--ai-library`, `--all-wings`, etc.) are unchanged.
 
 The interactive menu is now a full-screen curses TUI with arrow-key navigation,
 color-coded sections, and a highlighted selection cursor (`►`). No more typing
-numbers — just `↑`/`↓` to move, `Enter` to select, `q` or `Esc` to quit.
+numbers; just `↑`/`↓` to move, `Enter` to select, `q` or `Esc` to quit.
 
 The menu is drawn as a centered Unicode box with labeled section groups:
 **Library** (yellow), **Integrity**, **Artwork**, and **Metadata**, separated
@@ -332,7 +338,7 @@ modes where they logically belong.
 
 **Fallback path.** If `curses` is unavailable (e.g. `windows-curses` not
 installed) or stdin is not a TTY, the menu falls back to a static boxed
-text display with numbered options and typed input — same layout, just without
+text display with numbered options and typed input, the same layout, just without
 arrow-key navigation.
 
 **Post-operation pause.** Every mode now waits for Enter before redrawing
@@ -353,7 +359,7 @@ All CLI flags (`--library`, `--ai-library`, `--all-wings`, etc.) are unchanged.
 
 **`--all-wings`** scans genre tags across the entire library, groups albums by
 genre, and writes a separate library tree file for each genre into an output
-directory — analogous to virtual library wings in Calibre's getBooks.
+directory, analogous to virtual library wings in Calibre's getBooks.
 
 ```bash
 lattice --all-wings --root ~/Music --output wings/
@@ -368,7 +374,7 @@ label in album headers. Available from both CLI and interactive menu (option 11)
 
 The `--ai-library` export no longer overrides the directory-based artist name
 with tag data. Previously, the artist field fell back through TPE1 → TPE2
-(ALBUMARTIST) from tags, which added noise without value — the AI export
+(ALBUMARTIST) from tags, which added noise without value; the AI export
 doesn't distinguish album artist from track artist, and the directory name is
 the canonical artist in a well-organized library. This keeps the output cleaner
 and more predictable.
@@ -393,7 +399,7 @@ Converge | Jane Doe | Metalcore | 4.8 | 12
 
 - **Rating** is the average of all rated tracks in the album, rounded to one
   decimal. Blank if no tracks are rated.
-- **Tracks** is the number of audio files surviving in the album directory —
+- **Tracks** is the number of audio files surviving in the album directory:
   the post-cull headcount. An AI reading `5.0 | 1` vs `4.6 | 12` gets the
   density signal without extra framing.
 - Genre is sampled from the first track with a genre tag.
@@ -403,19 +409,19 @@ Converge | Jane Doe | Metalcore | 4.8 | 12
 ### Performance
 
 **`get_all_tags` reduced to a single `MutagenFile` open per file.** The v2.1.0
-unified reader still opened each file twice — once via the EasyID3 abstraction
+unified reader still opened each file twice, once via the EasyID3 abstraction
 pass, once via the full format-specific path (because rating, duration, and
 bitrate aren't available through the easy interface). The easy pass is now
 eliminated entirely; all tag extraction runs against the single full object.
 The MP3 branch also had a separate `ID3(file_path)` call on top of the
-`MutagenFile` open — removed, tags are read from `audio.tags` directly.
+`MutagenFile` open; that call is now removed, and tags are read from `audio.tags` directly.
 
 On a 6,300-track library, this eliminates ~12,600 redundant file opens per
 full-library mode.
 
 **`TagBundle` extended with `duration_s` and `bitrate_kbps`.** These fields are
 extracted from `audio.info` during the same single open. `run_stats` previously
-opened every file a second time just to read duration and bitrate — that
+opened every file a second time just to read duration and bitrate; that
 redundant open is gone.
 
 **First-song double-read eliminated in `--library --genres`.** Genre was read
@@ -435,7 +441,7 @@ call `len()`. Replaced with a generator sum.
 ### Bug Fixes
 
 **`--root ~/Music` didn't work from the CLI.** `main()` was missing
-`os.path.expanduser()` — tilde expansion only worked in the interactive menu.
+`os.path.expanduser()`; tilde expansion only worked in the interactive menu.
 
 **`--library --output subdir/file.txt` crashed.** `write_music_library_tree`
 opened the output file directly without creating parent directories, unlike
@@ -480,15 +486,15 @@ preference) collapsed into a priority-ordered tool list with a single loop.
 ### Dead Code Removed
 
 **Four standalone tag functions removed (~190 lines).** `get_title_artist_track`,
-`get_album`, `get_genre`, `get_rating` — all superseded by `get_all_tags` in
+`get_album`, `get_genre`, `get_rating`, all superseded by `get_all_tags` in
 v2.1.0 but left in the codebase. No internal callers remained.
 
-**`_get_cover_file_path`** — defined but never called by any mode.
+**`_get_cover_file_path`**: defined but never called by any mode.
 
-**`_scan_one_mp3`, `_scan_one_opus`, `_format_mp3_meta`** — replaced by the
+**`_scan_one_mp3`, `_scan_one_opus`, `_format_mp3_meta`**: replaced by the
 unified scanner.
 
-**`ID3` and `ID3NoHeaderError` imports** — no longer needed after the MP3
+**`ID3` and `ID3NoHeaderError` imports**: no longer needed after the MP3
 branch was rewritten to use `audio.tags` from `MutagenFile`.
 
 **Stale `(NEW)` markers** removed from section headers.
@@ -514,7 +520,7 @@ Dead writes on every iteration after the first. Moved above the loop. Opus mode
 now has the same `verbose` behavior for consistency.
 
 **Terminal corruption after subprocess modes.** Running FLAC/MP3/Opus integrity
-checks from the interactive menu left the terminal with `icrnl` disabled — Enter
+checks from the interactive menu left the terminal with `icrnl` disabled; Enter
 sent `^M` instead of newline, and input froze. Caused by `run_proc` using raw
 bytes mode while `flac -t` wrote binary diagnostic data to stderr, colliding
 with tqdm's cursor manipulation. Fixed with `_reset_terminal()` (`stty sane`)
@@ -545,27 +551,27 @@ re-imported locally in `run_tag_audit`. One import, one location.
 ### Output Format: CSV → Formatted Text
 
 All output modes now write `.txt` reports instead of `.csv`. None of these
-outputs were destined for spreadsheets — they're checklists and diagnostics
+outputs were destined for spreadsheets; they're checklists and diagnostics
 read by one person, and the format now respects that.
 
-- **FLAC/MP3/Opus integrity** — Header with scan totals, results grouped by
+- **FLAC/MP3/Opus integrity**: Header with scan totals, results grouped by
   severity (ERRORS → WARNINGS → OK). Relative paths, tool/error details,
   compact metadata where relevant (bitrate, sample rate, duration).
-- **Missing art** — Two sections: no art at all, embedded only. Relative paths
+- **Missing art**: Two sections: no art at all, embedded only. Relative paths
   with file counts.
-- **Duplicates** — Grouped by artist/album pair with directories nested
+- **Duplicates**: Grouped by artist/album pair with directories nested
   underneath showing format sets.
-- **Tag audit** — Grouped by directory, each file showing format and missing
+- **Tag audit**: Grouped by directory, each file showing format and missing
   fields. Header includes field-level breakdown counts.
 
 ### Dead Code Removed
 
-**`_write_header` / `_close_writer` / `_rotated_path`** — Entire CSV writer
+**`_write_header` / `_close_writer` / `_rotated_path`**: Entire CSV writer
 infrastructure gone. These managed `csv.DictWriter` lifecycle via a
 monkey-patched `_file_handle` attribute. With text output, file writes are
 straightforward `open()` calls.
 
-**`import csv`** — No longer imported.
+**`import csv`**: No longer imported.
 
 ---
 
@@ -574,25 +580,25 @@ straightforward `open()` calls.
 ---
 
 Lattice.py is now a single unified toolkit. The standalone
-`extract_opus_art.py` and `extract_mp3_art.py` scripts are retired — their
+`extract_opus_art.py` and `extract_mp3_art.py` scripts are retired; their
 functionality lives in the main script as `--extractArt`, with improvements.
 
 ### New Modes
 
-- **`--testOpus`** — Opus file integrity checking via FFmpeg decode (same
+- **`--testOpus`**: Opus file integrity checking via FFmpeg decode (same
   pattern as `--testMP3`).
-- **`--extractArt`** — Extract embedded cover art to `cover.jpg` with format
+- **`--extractArt`**: Extract embedded cover art to `cover.jpg` with format
   priority ranking (FLAC > Opus > M4A > MP3) and `--dry-run` support.
-- **`--missingArt`** — Report directories with no cover art (distinguishes
+- **`--missingArt`**: Report directories with no cover art (distinguishes
   "no art at all" from "embedded only").
-- **`--duplicates`** — Detect same artist+album appearing across multiple
+- **`--duplicates`**: Detect same artist+album appearing across multiple
   directories or formats.
-- **`--auditTags`** — Report files missing title, artist, track number, or
+- **`--auditTags`**: Report files missing title, artist, track number, or
   genre with a summary breakdown.
 
 ### Bug Fixes
 
-- **Fixed cover.jpg collision** — Cover detection is now case-insensitive.
+- **Fixed cover.jpg collision**: Cover detection is now case-insensitive.
   Running art extraction in a folder with both Opus and MP3 files no longer
   produces both `cover.jpg` and `Cover.jpg`.
 
