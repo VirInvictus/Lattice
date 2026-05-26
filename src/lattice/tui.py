@@ -583,78 +583,75 @@ def _tui_page(title: str, content: str) -> None:
         _pause()
         return
 
+    lines = content.replace("\x00", "").expandtabs(4).split("\n")
+
     def _run(stdscr):
         _init_tui_colors()
         curses.curs_set(0)
-        lines = content.replace("\x00", "").split("\n")
-        offset = 0
+        top = 0
         while True:
             stdscr.erase()
             h, w = stdscr.getmaxyx()
+            fa = curses.color_pair(_CP_FRAME)
 
-            box_w = min(80, w - 2)
-            inner = box_w - 2
-            bx = max(0, (w - box_w) // 2)
+            # Width follows the longest line (up to the terminal width) so wide
+            # reports — long duplicate paths, say — are not chopped at 80 columns.
+            max_line_len = max((len(ln) for ln in lines), default=0)
+            content_w = min(w, max(_TUI_BOX_W, max_line_len + 4))
+            bx = max(0, (w - content_w) // 2)
+            max_lines = max(1, h - 3)
+            last_top = max(0, len(lines) - max_lines)
+            top = min(top, last_top)  # keep the view valid across resizes
 
-            max_lines = max(5, h - 6)
-            visible_lines = lines[offset : offset + max_lines]
-
-            y = max(0, (h - (len(visible_lines) + 5)) // 2)
-
-            _safe_addstr(
-                stdscr, y, bx, "╔" + "═" * inner + "╗", curses.color_pair(_CP_FRAME)
-            )
-            y += 1
-            _safe_addstr(stdscr, y, bx, "║", curses.color_pair(_CP_FRAME))
+            # Title on the top border, hints on the last row; content fills the
+            # full height between them.
+            _safe_addstr(stdscr, 0, bx, "╔" + "═" * (content_w - 2) + "╗", fa)
             _safe_addstr(
                 stdscr,
-                y,
-                bx + 1,
-                f" {title}".ljust(inner),
+                0,
+                bx + 2,
+                f" {title} ",
                 curses.color_pair(_CP_TITLE) | curses.A_BOLD,
             )
-            _safe_addstr(stdscr, y, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME))
-            y += 1
-            _safe_addstr(
-                stdscr, y, bx, "╠" + "═" * inner + "╣", curses.color_pair(_CP_FRAME)
-            )
-            y += 1
+            _safe_addstr(stdscr, h - 2, bx, "╚" + "═" * (content_w - 2) + "╝", fa)
 
-            for line in visible_lines:
-                _safe_addstr(stdscr, y, bx, "║", curses.color_pair(_CP_FRAME))
-                _safe_addstr(
-                    stdscr,
-                    y,
-                    bx + 1,
-                    (" " + line)[:inner].ljust(inner),
-                    curses.color_pair(_CP_ITEM),
-                )
-                _safe_addstr(
-                    stdscr, y, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME)
-                )
-                y += 1
-
+            hints = "↑↓ Scroll  PgUp/Dn  g/G Top/Bottom  q/Esc Close"
             _safe_addstr(
-                stdscr, y, bx, "╚" + "═" * inner + "╝", curses.color_pair(_CP_FRAME)
+                stdscr,
+                h - 1,
+                max(0, (w - len(hints)) // 2),
+                hints,
+                curses.color_pair(_CP_HINT) | curses.A_DIM,
             )
-            y += 2
 
-            hints = "↑↓ Scroll  q/Esc Close"
-            hx = max(0, (w - len(hints)) // 2)
-            _safe_addstr(
-                stdscr, y, hx, hints, curses.color_pair(_CP_HINT) | curses.A_DIM
-            )
+            for i in range(max_lines):
+                _safe_addstr(stdscr, i + 1, bx, "║", fa)
+                if top + i < len(lines):
+                    _safe_addstr(
+                        stdscr,
+                        i + 1,
+                        bx + 2,
+                        lines[top + i][: content_w - 4],
+                        curses.color_pair(_CP_ITEM),
+                    )
+                _safe_addstr(stdscr, i + 1, bx + content_w - 1, "║", fa)
 
             stdscr.refresh()
 
             key = stdscr.getch()
-            if key in (curses.KEY_UP, ord("k")) and offset > 0:
-                offset -= 1
-            elif key in (curses.KEY_DOWN, ord("j")) and offset < max(
-                0, len(lines) - max_lines
-            ):
-                offset += 1
-            elif key in (ord("q"), ord("Q"), 27):
+            if key in (curses.KEY_UP, ord("k")):
+                top = max(0, top - 1)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                top = min(last_top, top + 1)
+            elif key == curses.KEY_PPAGE:
+                top = max(0, top - max_lines)
+            elif key == curses.KEY_NPAGE:
+                top = min(last_top, top + max_lines)
+            elif key in (curses.KEY_HOME, ord("g")):
+                top = 0
+            elif key in (curses.KEY_END, ord("G")):
+                top = last_top
+            elif key in (ord("q"), ord("Q"), 27, curses.KEY_ENTER, 10, 13):
                 break
             elif key == curses.KEY_RESIZE:
                 pass
