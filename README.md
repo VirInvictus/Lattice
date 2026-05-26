@@ -102,7 +102,7 @@ python -m unittest discover
 
 ## Usage
 
-Lattice now remembers your library location! On your first run, whether via the TUI or the CLI, Lattice will ask for the path to your music library and save it to `~/.config/lattice/config.json`. After that, you no longer need to provide the `--root` argument.
+Lattice remembers your library location. On first run (TUI or CLI) it asks for your music library path and saves it to `~/.config/lattice/config.json`; after that, `--root` is optional.
 
 ```bash
 # Build a library tree with genre tags
@@ -111,9 +111,8 @@ lattice --library --output library.txt --genres
 # Export library for AI/LLM recommendation prompts
 lattice --ai-library --output library_ai.txt
 
-# Generate per-genre library files (one .txt per genre)
+# Generate per-genre library files (add --genres to label each album)
 lattice --all-wings --output wings/
-lattice --all-wings --output wings/ --genres
 
 # Generate per-genre AI-friendly library files
 lattice --ai-wings --output wings_ai/
@@ -244,7 +243,7 @@ The `--stats` mode produces a full library report: file counts, total size and d
 
 ## Cover art extraction
 
-The `--extractArt` mode replaces the old standalone `extract_opus_art.py` and `extract_mp3_art.py` scripts. Key improvements:
+The `--extractArt` mode writes embedded cover art to `cover.jpg`, choosing the best available source:
 
 - **Format priority**: when a directory contains multiple audio formats, art is extracted from the highest-quality source: FLAC → Opus/OGG → M4A → MP3.
 - **Case-insensitive detection**: checks for existing cover files (`cover.jpg`, `folder.jpg`, `front.jpg`, `album.jpg`, and their `.jpeg`/`.png` variants) case-insensitively. No more `cover.jpg` / `Cover.jpg` collisions.
