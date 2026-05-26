@@ -183,6 +183,7 @@ Audio metadata formats handle multiple genres entirely differently (ID3 uses nul
 3. Pass that path and your desired new genre(s) to `retag.py`:
    ```bash
    ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial"
+   ```
 
 ## Companion Script: `cleaner.py`
 
@@ -256,6 +257,9 @@ The `--extractArt` mode replaces the old standalone `extract_opus_art.py` and `e
 
 ## Full help output
 
+<details>
+<summary>Full <code>lattice --help</code></summary>
+
 ```
 usage: lattice [-h] [--version] [--library | --ai-library | --all-wings | --ai-wings | --testFLAC | --testMP3 | --testOpus | --testWAV |
                --testWMA | --extractArt | --missingArt | --auditArtQuality | --duplicates | --auditTags | --auditBitrate | --playlist | --stats]
@@ -309,6 +313,8 @@ options:
   --ffmpeg FFMPEG       Path to ffmpeg
   --verbose             Verbose output
 ```
+
+</details>
 
 ## Credits & Acknowledgements
 
