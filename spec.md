@@ -1,6 +1,6 @@
 # Lattice — Application Specification
 
-**Version:** 4.4.1  
+**Version:** 4.4.2  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT
@@ -73,11 +73,11 @@ scripting and automation. All modes accept `--root`, `--output`, `--workers`,
 | AI wings | `--ai-wings` | Separate flat library files per genre for AI processing |
 | Genre wings | `--all-wings` | Separate library tree file per genre |
 | Statistics | `--stats` | Format breakdown, bitrate, ratings, genres, top artists |
-| FLAC integrity | `--testFLAC` | Verify via `flac -t` or FFmpeg with parallel workers |
-| MP3 integrity | `--testMP3` | Decode via FFmpeg, report errors/warnings |
-| Opus integrity | `--testOpus` | Decode via FFmpeg, report errors/warnings |
-| WAV integrity | `--testWAV` | Decode via FFmpeg, report errors/warnings |
-| WMA integrity | `--testWMA` | Decode via FFmpeg, report errors/warnings |
+| FLAC integrity | `--testFLAC` | Verify via `flac -t` (authoritative) or FFmpeg; classify each file into a severity tier |
+| MP3 integrity | `--testMP3` | Decode via FFmpeg (demuxer forced from extension); classify into severity tiers |
+| Opus integrity | `--testOpus` | Decode via FFmpeg; classify into severity tiers |
+| WAV integrity | `--testWAV` | Decode via FFmpeg; classify into severity tiers |
+| WMA integrity | `--testWMA` | Decode via FFmpeg; classify into severity tiers |
 | Cover extraction | `--extractArt` | Extract embedded art with format priority ranking |
 | Missing art | `--missingArt` | Report directories with no cover art |
 | Art quality audit | `--auditArtQuality` | Report folder/embedded covers below a resolution threshold |
@@ -93,6 +93,23 @@ scripting and automation. All modes accept `--root`, `--output`, `--workers`,
 All output modes write `.txt` reports (not CSV). Results are grouped by
 severity or category with headers and relative paths. Designed for human
 reading, not spreadsheet import.
+
+### 4.1 Integrity Severity Tiers
+
+The integrity scanners classify every file rather than emitting a binary
+pass/fail, because a decoder complaint is not by itself evidence of damaged
+audio (ffmpeg reports decode errors on files that play start to finish):
+
+- **CORRUPT** — could not decode through (tool exited non-zero / could not open),
+  or a FLAC that lost sync *before* its declared sample count (true truncation).
+- **SUSPECT** — decoded to the end but the tool complained; usually plays. Also
+  a FLAC that decoded every declared sample and then hit trailing data.
+- **METADATA** — only tag/container parse warnings; the audio is unaffected.
+- **OK** — clean decode.
+
+CORRUPT and SUSPECT are always listed; METADATA and OK are summarized and listed
+only with `--verbose`. The process exit code is `1` only when at least one file
+is CORRUPT.
 
 ---
 

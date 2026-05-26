@@ -3,7 +3,7 @@ import os
 import json
 from typing import Optional
 
-VERSION = "4.4.1"
+VERSION = "4.4.2"
 
 DEFAULT_LIBRARY_OUTPUT = "music_library.txt"
 DEFAULT_FLAC_OUTPUT = "flac_errors.txt"

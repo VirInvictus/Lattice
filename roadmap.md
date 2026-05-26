@@ -1,6 +1,6 @@
 # Lattice — Roadmap
 
-What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.4.1.
+What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.4.2.
 
 ---
 

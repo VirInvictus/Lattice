@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import subprocess
 import time
@@ -17,15 +18,96 @@ from lattice.config import (
 )
 
 # =====================================
+# Decode-result classification
+# =====================================
+
+TIER_OK = "OK"
+TIER_METADATA = "METADATA"
+TIER_SUSPECT = "SUSPECT"
+TIER_CORRUPT = "CORRUPT"
+TIER_ORDER = (TIER_CORRUPT, TIER_SUSPECT, TIER_METADATA, TIER_OK)
+
+_RE_FLAC_LOSTSYNC = re.compile(r"LOST_SYNC after processing (\d+) samples")
+
+# Tag/container parse complaints — the audio stream is unaffected. (-vn already
+# suppresses most embedded-cover lines before they reach us.)
+_METADATA_MARKERS = (
+    "Incorrect BOM value",
+    "Error reading frame",
+    "Error reading comment",
+    "[png",
+    "chunk too big",
+)
+# Decoder hiccups that also appear on files which play start to finish (a
+# truncated MP3 and a healthy one can produce these identically), so on their
+# own they are not evidence of damage.
+_BENIGN_MARKERS = (
+    "Header missing",
+    "invalid new backstep",
+)
+
+
+def _matches(line: str, markers: Tuple[str, ...]) -> bool:
+    return any(m in line for m in markers)
+
+
+def classify_decode(
+    rc: int, stderr: str, declared_samples: Optional[int] = None
+) -> Tuple[str, str]:
+    """Map a decode tool's (exit code, stderr) into a severity tier and reason.
+
+    Conservative by design. A decode that ran to completion (rc == 0) is never
+    CORRUPT, however many decoder complaints it emitted. CORRUPT is reserved for
+    a tool that could not decode through (rc != 0) or a FLAC that lost sync
+    before its declared sample count (true truncation, which `flac -t` reports
+    but ffmpeg cannot reliably detect for MP3)."""
+    text = stderr or ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    # FLAC sync loss carries the decoded sample count; compare it to the
+    # header's declared total to separate truncation from a trailing-junk tail.
+    m = _RE_FLAC_LOSTSYNC.search(text)
+    if m:
+        decoded = int(m.group(1))
+        if declared_samples and decoded < declared_samples:
+            return (
+                TIER_CORRUPT,
+                f"truncated: decoded {decoded} of {declared_samples} samples",
+            )
+        return (
+            TIER_SUSPECT,
+            f"trailing data after {decoded} samples (audio intact, not byte-clean)",
+        )
+
+    if rc != 0:
+        return TIER_CORRUPT, (lines[0] if lines else f"decoder exit code {rc}")
+
+    if not lines:
+        return TIER_OK, "decode ok"
+
+    # Completed decode with complaints. METADATA only if every line is a known
+    # tag-parse or benign-decoder marker; an unknown line is treated as SUSPECT
+    # rather than hidden.
+    if all(_matches(ln, _METADATA_MARKERS + _BENIGN_MARKERS) for ln in lines):
+        return TIER_METADATA, "tag/benign decoder warnings only; audio decodes"
+    n = len(lines)
+    return TIER_SUSPECT, f"{n} decoder warning{'s' if n != 1 else ''}; decoded to end"
+
+
+# =====================================
 # Mode: FLAC integrity
 # =====================================
 
 
-def test_with_flac(filepath: str) -> Tuple[bool, str]:
-    code, out, err = run_proc(["flac", "-t", "-s", str(filepath)])
-    if code == 0:
-        return True, ""
-    return False, err or out or f"flac exited with code {code}"
+def _flac_declared_samples(filepath: str) -> Optional[int]:
+    """Total sample count from the FLAC STREAMINFO, used to tell a truncated
+    file (decoded < declared) from a trailing-junk tail (decoded >= declared)."""
+    try:
+        from mutagen.flac import FLAC
+
+        return FLAC(filepath).info.total_samples or None
+    except Exception:
+        return None
 
 
 # ffmpeg's format autodetection can mis-probe a valid file (e.g. an MP3 with a
@@ -43,62 +125,20 @@ _FFMPEG_DEMUXER = {
 }
 
 
-def test_with_ffmpeg(filepath: str) -> Tuple[bool, str]:
-    # -f flac forces the demuxer; -vn skips the embedded cover so a malformed
-    # picture is never mistaken for an audio fault.
-    code, out, err = run_proc(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-nostats",
-            "-f",
-            "flac",
-            "-i",
-            str(filepath),
-            "-vn",
-            "-f",
-            "null",
-            "-",
-        ]
-    )
-    if code == 0 and not err:
-        return True, ""
-    if code == 0 and err:
-        return False, err
-    return False, err or out or f"ffmpeg exited with code {code}"
-
-
-def test_flac(filepath: str, prefer: str) -> Tuple[bool, str, str]:
-    have_flac = has_tool("flac")
-    have_ffmpeg = has_tool("ffmpeg")
-
-    # Build tool order based on preference
-    tools: List[Tuple[str, Any]] = []
-    if prefer == "ffmpeg":
-        if have_ffmpeg:
-            tools.append(("ffmpeg", test_with_ffmpeg))
-        if have_flac:
-            tools.append(("flac", test_with_flac))
-    else:
-        if have_flac:
-            tools.append(("flac", test_with_flac))
-        if have_ffmpeg:
-            tools.append(("ffmpeg", test_with_ffmpeg))
-
-    if not tools:
-        return False, "none", "Neither 'ffmpeg' nor 'flac' found in PATH."
-
-    failures: List[Tuple[str, str]] = []
-    for name, func in tools:
-        ok, msg = func(filepath)
-        if ok:
-            return True, name, ""
-        failures.append((name, msg))
-    # All tools failed — report the preferred (first) tool's result, which
-    # carries the more informative message (e.g. libFLAC's "LOST_SYNC after
-    # N samples" vs ffmpeg's terse "invalid sync code").
-    return False, failures[0][0], failures[0][1]
+def _flac_verdict(
+    filepath: str, *, use_flac: bool, ffmpeg_path: Optional[str]
+) -> Tuple[str, str, str]:
+    """Return (tool, tier, reason) for one FLAC. libFLAC is authoritative when
+    available (its message carries the decoded sample count); ffmpeg is the
+    fallback when flac is absent."""
+    declared = _flac_declared_samples(filepath)
+    if use_flac:
+        rc, out, err = run_proc(["flac", "-t", "-s", str(filepath)])
+        tier, reason = classify_decode(rc, err or out, declared)
+        return "flac", tier, reason
+    rc, stderr = _ffmpeg_decode_check(ffmpeg_path or "ffmpeg", Path(filepath))
+    tier, reason = classify_decode(rc, stderr, declared)
+    return "ffmpeg", tier, reason
 
 
 def run_flac_mode(
@@ -119,7 +159,11 @@ def run_flac_mode(
         if not quiet:
             print("ERROR: Neither 'flac' nor 'ffmpeg' found in PATH.", file=sys.stderr)
         return 2
-    if not have_flac and prefer != "ffmpeg" and not quiet:
+
+    # libFLAC is preferred and authoritative; ffmpeg is the fallback.
+    use_flac = (not have_ffmpeg) if prefer == "ffmpeg" else have_flac
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not use_flac and prefer != "ffmpeg" and not quiet:
         print(
             "[warn] 'flac' not found; using ffmpeg for FLAC verification. "
             "ffmpeg's decoder is stricter and may flag valid files.",
@@ -129,16 +173,19 @@ def run_flac_mode(
     if not quiet:
         print(f"Found {total} FLAC files under: {root}")
 
-    errors: List[Tuple[str, str, str]] = []
+    counts = {tier: 0 for tier in TIER_ORDER}
+    flagged: List[Tuple[str, str, str, str]] = []  # (path, tool, tier, reason)
 
-    def worker(path: Path) -> Tuple[str, bool, str, str]:
+    def worker(path: Path) -> Tuple[str, str, str, str]:
         try:
-            ok, method, msg = test_flac(str(path), prefer)
-            return str(path), ok, method, msg
+            tool, tier, reason = _flac_verdict(
+                str(path), use_flac=use_flac, ffmpeg_path=ffmpeg_path
+            )
+            return str(path), tool, tier, reason
         except KeyboardInterrupt:
             raise
         except Exception as e:
-            return str(path), False, "exception", repr(e)
+            return str(path), "exception", TIER_CORRUPT, repr(e)
 
     pbar = _make_pbar(total, "Testing FLACs", quiet)
     ex: Optional[ThreadPoolExecutor] = None
@@ -147,9 +194,10 @@ def run_flac_mode(
         ex = ThreadPoolExecutor(max_workers=max(1, workers))
         futures = {ex.submit(worker, p): p for p in flacs}
         for fut in as_completed(futures):
-            path, ok, method, msg = fut.result()
-            if not ok:
-                errors.append((path, method, msg))
+            path, tool, tier, reason = fut.result()
+            counts[tier] = counts.get(tier, 0) + 1
+            if tier in (TIER_CORRUPT, TIER_SUSPECT):
+                flagged.append((path, tool, tier, reason))
             pbar.update(1)
     except KeyboardInterrupt:
         if not quiet:
@@ -164,26 +212,37 @@ def run_flac_mode(
             ex.shutdown(wait=True)
         pbar.close()
 
-    if errors:
-        out_path = os.path.abspath(output)
-        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write("FLAC INTEGRITY REPORT\n")
-            f.write(f"Root: {root}\n")
-            f.write(f"Scanned: {total}  Errors: {len(errors)}\n")
-            f.write("=" * 60 + "\n\n")
-            for i, (path, method, msg) in enumerate(errors, 1):
+    out_path = os.path.abspath(output)
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("FLAC INTEGRITY REPORT\n")
+        f.write(f"Root: {root}\n")
+        f.write(
+            f"Scanned: {total}  OK: {counts[TIER_OK]}  "
+            f"Suspect: {counts[TIER_SUSPECT]}  Corrupt: {counts[TIER_CORRUPT]}\n"
+        )
+        f.write("=" * 60 + "\n\n")
+        for tier in (TIER_CORRUPT, TIER_SUSPECT):
+            rows = sorted((r for r in flagged if r[2] == tier), key=lambda r: r[0])
+            if not rows:
+                continue
+            f.write(f"{tier} ({len(rows)})\n")
+            f.write("-" * 40 + "\n")
+            for i, (path, tool, _tier, reason) in enumerate(rows, 1):
                 rel = os.path.relpath(path, root)
                 f.write(f"  {i:>3}. {rel}\n")
-                f.write(f"       Tool: {method}\n")
-                f.write(f"       Error: {msg}\n\n")
-        if not quiet:
+                f.write(f"       Tool: {tool}\n")
+                f.write(f"       {reason}\n\n")
+
+    if not quiet:
+        if counts[TIER_CORRUPT] or counts[TIER_SUSPECT]:
             print(
-                f"❗ Found {len(errors)} problematic FLAC file(s). Wrote details to: {out_path}"
+                f"Scanned {total}. Corrupt: {counts[TIER_CORRUPT]}  "
+                f"Suspect: {counts[TIER_SUSPECT]}. Details: {out_path}"
             )
-    elif not quiet:
-        print("✅ All FLAC files passed integrity checks.")
-    return 1 if errors else 0
+        else:
+            print("✅ All FLAC files passed integrity checks.")
+    return 1 if counts[TIER_CORRUPT] > 0 else 0
 
 
 # =====================================
@@ -232,9 +291,9 @@ def _mutagen_header_info(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _ffmpeg_decode_check(ffmpeg_path: Optional[str], path: Path) -> Tuple[bool, str]:
-    if not ffmpeg_path:
-        return True, "FFmpeg not available; skipped decode check (status=warn)"
+def _ffmpeg_decode_check(ffmpeg_path: str, path: Path) -> Tuple[int, str]:
+    """Run a full decode and return (returncode, stderr). Judgment is left to
+    classify_decode; this only produces the raw signal."""
     cmd = [ffmpeg_path, "-v", "error", "-nostats", "-hide_banner"]
     # Force the demuxer from the extension so format autodetection can't
     # mis-probe a valid file and report a false failure.
@@ -254,11 +313,8 @@ def _ffmpeg_decode_check(ffmpeg_path: Optional[str], path: Path) -> Tuple[bool, 
             errors="replace",
         )
     except Exception as e:
-        return False, f"FFmpeg invocation failed: {e!r}"
-    stderr = (proc.stderr or "").strip()
-    if stderr:
-        return False, stderr
-    return True, "decode ok"
+        return -1, f"FFmpeg invocation failed: {e!r}"
+    return proc.returncode, (proc.stderr or "").strip()
 
 
 def _scan_one_file(
@@ -269,8 +325,8 @@ def _scan_one_file(
     row: Dict[str, Any] = {
         "path": str(path),
         "size_bytes": None,
-        "status": "ok",
-        "details": "",
+        "tier": TIER_OK,
+        "reason": "decode ok",
     }
     if enrich:
         row.update(
@@ -286,22 +342,20 @@ def _scan_one_file(
     try:
         row["size_bytes"] = path.stat().st_size
     except Exception as e:
-        row["status"] = "error"
-        row["details"] = f"stat failed: {e!r}"
+        row["tier"] = TIER_CORRUPT
+        row["reason"] = f"stat failed: {e!r}"
         return row
 
     if enrich:
         row.update({k: v for k, v in _mutagen_header_info(path).items() if k in row})
 
-    ok, msg = _ffmpeg_decode_check(ffmpeg_path, path)
-    if "FFmpeg not available" in msg:
-        row["status"] = "warn"
-        row["details"] = msg
-    elif not ok:
-        row["status"] = "error"
-        row["details"] = msg
-    else:
-        row["details"] = msg
+    if not ffmpeg_path:
+        # Cannot assess the audio without a decoder; do not flag it.
+        row["reason"] = "decode check skipped (ffmpeg unavailable)"
+        return row
+
+    rc, stderr = _ffmpeg_decode_check(ffmpeg_path, path)
+    row["tier"], row["reason"] = classify_decode(rc, stderr)
     return row
 
 
@@ -361,7 +415,7 @@ def _run_decode_scan(
 
     label = ext.strip(".").upper()
     started = time.time()
-    oks = warns = errs = 0
+    counts = {tier: 0 for tier in TIER_ORDER}
     results: List[Dict[str, Any]] = []
 
     pbar = _make_pbar(len(targets), f"Scanning {label}", quiet)
@@ -369,8 +423,10 @@ def _run_decode_scan(
     futures: Dict = {}
 
     if verbose:
-        only_errors = False
         quiet = False
+    # CORRUPT and SUSPECT are always listed; METADATA and OK only when the user
+    # asks (keeps a clean library's report short and bounds memory on big runs).
+    list_benign = verbose or not only_errors
 
     try:
         ex = ThreadPoolExecutor(max_workers=max(1, workers))
@@ -380,17 +436,10 @@ def _run_decode_scan(
 
         for fut in as_completed(futures):
             row = fut.result()
-            status = row.get("status")
-            if status == "ok":
-                oks += 1
-            elif status == "warn":
-                warns += 1
-            else:
-                errs += 1
-
-            if not (only_errors and status == "ok"):
+            tier = row.get("tier", TIER_OK)
+            counts[tier] = counts.get(tier, 0) + 1
+            if tier in (TIER_CORRUPT, TIER_SUSPECT) or list_benign:
                 results.append(row)
-
             pbar.update(1)
 
     except KeyboardInterrupt:
@@ -410,58 +459,54 @@ def _run_decode_scan(
     out_path = Path(output or default_output).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _section(
+        handle, tier: str, rows: List[Dict[str, Any]], *, compact: bool = False
+    ):
+        if not rows:
+            return
+        handle.write(f"{tier} ({len(rows)})\n")
+        handle.write("-" * 40 + "\n")
+        for r in rows:
+            rel = os.path.relpath(r["path"], str(root_path))
+            meta = _format_row_meta(r) if enrich else ""
+            if compact:
+                handle.write(f"  {rel}{('  [' + meta + ']') if meta else ''}\n")
+                continue
+            handle.write(f"  {rel}\n")
+            if r.get("reason"):
+                handle.write(f"    {r['reason']}\n")
+            if meta:
+                handle.write(f"    {meta}\n")
+            handle.write("\n")
+
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(f"{report_title}\n")
         f.write(f"Root: {root_path}\n")
-        f.write(f"Scanned: {len(targets)}  OK: {oks}  Warn: {warns}  Error: {errs}\n")
+        f.write(
+            f"Scanned: {len(targets)}  OK: {counts[TIER_OK]}  "
+            f"Metadata: {counts[TIER_METADATA]}  Suspect: {counts[TIER_SUSPECT]}  "
+            f"Corrupt: {counts[TIER_CORRUPT]}\n"
+        )
         f.write(f"Elapsed: {elapsed:.1f}s\n")
+        if not list_benign and (counts[TIER_METADATA] or counts[TIER_OK]):
+            f.write("(METADATA and OK omitted; re-run with --verbose to list them)\n")
         f.write("=" * 60 + "\n\n")
 
-        error_rows = [r for r in results if r["status"] == "error"]
-        warn_rows = [r for r in results if r["status"] == "warn"]
-        ok_rows = [r for r in results if r["status"] == "ok"]
-
-        if error_rows:
-            f.write(f"ERRORS ({len(error_rows)})\n")
-            f.write("-" * 40 + "\n")
-            for r in error_rows:
-                rel = os.path.relpath(r["path"], str(root_path))
-                f.write(f"  {rel}\n")
-                if r.get("details"):
-                    f.write(f"    {r['details']}\n")
-                if enrich:
-                    meta = _format_row_meta(r)
-                    if meta:
-                        f.write(f"    {meta}\n")
-                f.write("\n")
-
-        if warn_rows:
-            f.write(f"WARNINGS ({len(warn_rows)})\n")
-            f.write("-" * 40 + "\n")
-            for r in warn_rows:
-                rel = os.path.relpath(r["path"], str(root_path))
-                f.write(f"  {rel}\n")
-                if r.get("details"):
-                    f.write(f"    {r['details']}\n")
-                f.write("\n")
-
-        if ok_rows:
-            f.write(f"OK ({len(ok_rows)})\n")
-            f.write("-" * 40 + "\n")
-            for r in ok_rows:
-                rel = os.path.relpath(r["path"], str(root_path))
-                if enrich:
-                    meta = _format_row_meta(r)
-                    if meta:
-                        f.write(f"  {rel}  [{meta}]\n")
-                        continue
-                f.write(f"  {rel}\n")
+        by_tier = {t: [r for r in results if r["tier"] == t] for t in TIER_ORDER}
+        _section(f, TIER_CORRUPT, by_tier[TIER_CORRUPT])
+        _section(f, TIER_SUSPECT, by_tier[TIER_SUSPECT])
+        if list_benign:
+            _section(f, TIER_METADATA, by_tier[TIER_METADATA])
+            _section(f, TIER_OK, by_tier[TIER_OK], compact=True)
 
     if not quiet:
         print(f"\nScanned: {len(targets)} files in {elapsed:.1f}s")
-        print(f"ok: {oks}  warn: {warns}  error: {errs}")
+        print(
+            f"ok: {counts[TIER_OK]}  metadata: {counts[TIER_METADATA]}  "
+            f"suspect: {counts[TIER_SUSPECT]}  corrupt: {counts[TIER_CORRUPT]}"
+        )
         print(f"Report written to: {out_path}")
-    return 1 if errs > 0 else 0
+    return 1 if counts[TIER_CORRUPT] > 0 else 0
 
 
 def run_mp3_mode(

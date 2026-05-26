@@ -27,11 +27,11 @@ Modern music players often hide your library behind proprietary databases. Latti
 | **AI wings** | `--ai-wings` | Generates separate AI-friendly flat library files per genre |
 | **Smart Playlist** | `--playlist` | Generates an .m3u playlist based on a dynamic rule (e.g. `rating >= 4`) |
 | **Library statistics** | `--stats` | Library-wide statistics: format breakdown, bitrate, ratings, genres, top artists |
-| **FLAC integrity** | `--testFLAC` | Verifies FLAC files using `flac -t` or FFmpeg, reports failures to text |
-| **MP3 integrity** | `--testMP3` | Decodes MP3 files through FFmpeg, reports errors and warnings to text |
-| **Opus integrity** | `--testOpus` | Decodes Opus files through FFmpeg, reports errors and warnings to text |
-| **WAV integrity** | `--testWAV` | Verifies WAV files through FFmpeg, reports errors |
-| **WMA integrity** | `--testWMA` | Verifies WMA files through FFmpeg, reports errors |
+| **FLAC integrity** | `--testFLAC` | Verifies FLAC via `flac -t` (authoritative) or FFmpeg; sorts files into severity tiers |
+| **MP3 integrity** | `--testMP3` | Decodes MP3 through FFmpeg (demuxer forced); sorts files into severity tiers |
+| **Opus integrity** | `--testOpus` | Decodes Opus through FFmpeg; sorts files into severity tiers |
+| **WAV integrity** | `--testWAV` | Decodes WAV through FFmpeg; sorts files into severity tiers |
+| **WMA integrity** | `--testWMA` | Decodes WMA through FFmpeg; sorts files into severity tiers |
 | **Cover art extraction** | `--extractArt` | Extracts embedded art to `cover.jpg` with format priority ranking |
 | **Missing art report** | `--missingArt` | Lists directories with no cover art (folder or embedded) to text |
 | **Art quality audit** | `--auditArtQuality` | Reports extracted/folder covers below a resolution threshold |
@@ -225,6 +225,17 @@ Same album, no track overlap, scattered between two folders by filesystem accide
 - Re-encode or transcode audio (filesystem operations only)
 - Match albums by tag content (folder name only — by design, so the operation is auditable from the log alone)
 - Touch the source-of-truth import pipeline. If the same fragmentation pattern keeps reappearing, the upstream tagger or downloader needs a curly-quote normalization rule.
+
+## Integrity checks
+
+The integrity modes (`--testFLAC`, `--testMP3`, `--testOpus`, `--testWAV`, `--testWMA`) decode every file and sort the results into four tiers rather than a flat pass/fail, because a decoder complaint is not by itself proof of damaged audio:
+
+- **CORRUPT** — could not decode through, or a FLAC truncated before its declared length.
+- **SUSPECT** — decoded to the end but the tool complained (these usually still play), or a FLAC with trailing data after a complete stream.
+- **METADATA** — only tag/container parse warnings; the audio is fine.
+- **OK** — clean decode.
+
+CORRUPT and SUSPECT are always listed in the report; METADATA and OK are summarized and listed only with `--verbose`. The exit code is `1` only when something is CORRUPT, so a clean-but-chatty library still exits `0`. FFmpeg is invoked with the demuxer forced from the file extension (so a large ID3v2 tag is never mis-read as a corrupt container) and with embedded cover art skipped.
 
 ## Library statistics
 

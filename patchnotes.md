@@ -1,5 +1,44 @@
 # Lattice — Patch Notes
 
+## v4.4.2 (2026-05-26)
+
+---
+
+### Integrity scanning: fewer false alarms, severity tiers
+
+Running every mode against a real 8,400-file library exposed the integrity
+scanners crying wolf: they treated any line ffmpeg wrote to stderr as a failure,
+producing roughly 187 flags where essentially no file had damaged audio. This
+release reworks them.
+
+- **Forced demuxer.** `--testMP3`, `--testOpus`, `--testWAV`, `--testWMA`, and the
+  FLAC ffmpeg fallback now force the demuxer from the file extension. ffmpeg's
+  format autodetection had been mis-probing valid MP3s with large ID3v2 tags as
+  RIFF and reporting bogus failures; forcing `-f mp3` (and so on) eliminates the
+  whole class. On the test library this turned dozens of false positives into
+  zero.
+- **Cover art ignored.** `-vn` drops non-audio streams, so a malformed embedded
+  image is no longer decoded and counted as an audio fault.
+- **Severity tiers.** Each file is classified CORRUPT / SUSPECT / METADATA / OK
+  instead of pass/fail. CORRUPT means the decoder could not get through the file,
+  or a FLAC lost sync before its declared sample count (true truncation). SUSPECT
+  means it decoded to the end but the tool complained (these usually play).
+  METADATA means only tag-parse warnings; the audio is fine. CORRUPT and SUSPECT
+  are always listed; METADATA and OK are summarized and listed only with
+  `--verbose`.
+- **Exit code change.** Integrity modes now exit `1` only when a file is CORRUPT,
+  not whenever the decoder printed anything. Scripts relying on the old "exit 1
+  means any complaint" behavior should read the tier counts in the report
+  instead.
+- **FLAC reporting.** A failed verification now shows the preferred tool's
+  message (libFLAC's "decoded N of M samples" rather than ffmpeg's terse "invalid
+  sync code"), and the mode warns when `flac` is absent and the stricter ffmpeg
+  fallback is used. The FLAC report is now always written, not only on failure.
+
+### Tests
+- Added `tests/test_integrity.py` covering the decode classifier across all four
+  tiers using real ffmpeg and libFLAC stderr signatures.
+
 ## v4.4.1 (2026-05-26)
 
 ---
