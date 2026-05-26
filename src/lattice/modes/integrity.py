@@ -28,9 +28,39 @@ def test_with_flac(filepath: str) -> Tuple[bool, str]:
     return False, err or out or f"flac exited with code {code}"
 
 
+# ffmpeg's format autodetection can mis-probe a valid file (e.g. an MP3 with a
+# large ID3v2 tag scored as RIFF), reporting a bogus decode failure. Forcing the
+# demuxer from the extension sidesteps that. Files outside this map fall back to
+# autodetection.
+_FFMPEG_DEMUXER = {
+    ".mp3": "mp3",
+    ".opus": "ogg",
+    ".ogg": "ogg",
+    ".flac": "flac",
+    ".wav": "wav",
+    ".wma": "asf",
+    ".m4a": "mov",
+}
+
+
 def test_with_ffmpeg(filepath: str) -> Tuple[bool, str]:
+    # -f flac forces the demuxer; -vn skips the embedded cover so a malformed
+    # picture is never mistaken for an audio fault.
     code, out, err = run_proc(
-        ["ffmpeg", "-v", "error", "-nostats", "-i", str(filepath), "-f", "null", "-"]
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-nostats",
+            "-f",
+            "flac",
+            "-i",
+            str(filepath),
+            "-vn",
+            "-f",
+            "null",
+            "-",
+        ]
     )
     if code == 0 and not err:
         return True, ""
@@ -59,12 +89,16 @@ def test_flac(filepath: str, prefer: str) -> Tuple[bool, str, str]:
     if not tools:
         return False, "none", "Neither 'ffmpeg' nor 'flac' found in PATH."
 
+    failures: List[Tuple[str, str]] = []
     for name, func in tools:
         ok, msg = func(filepath)
         if ok:
             return True, name, ""
-    # All tools failed — return the last result
-    return False, name, msg
+        failures.append((name, msg))
+    # All tools failed — report the preferred (first) tool's result, which
+    # carries the more informative message (e.g. libFLAC's "LOST_SYNC after
+    # N samples" vs ffmpeg's terse "invalid sync code").
+    return False, failures[0][0], failures[0][1]
 
 
 def run_flac_mode(
@@ -79,10 +113,18 @@ def run_flac_mode(
             print(f"No FLAC files found under: {root}")
         return 0
 
-    if not (has_tool("flac") or has_tool("ffmpeg")):
+    have_flac = has_tool("flac")
+    have_ffmpeg = has_tool("ffmpeg")
+    if not (have_flac or have_ffmpeg):
         if not quiet:
             print("ERROR: Neither 'flac' nor 'ffmpeg' found in PATH.", file=sys.stderr)
         return 2
+    if not have_flac and prefer != "ffmpeg" and not quiet:
+        print(
+            "[warn] 'flac' not found; using ffmpeg for FLAC verification. "
+            "ffmpeg's decoder is stricter and may flag valid files.",
+            file=sys.stderr,
+        )
 
     if not quiet:
         print(f"Found {total} FLAC files under: {root}")
@@ -193,18 +235,15 @@ def _mutagen_header_info(path: Path) -> Dict[str, Any]:
 def _ffmpeg_decode_check(ffmpeg_path: Optional[str], path: Path) -> Tuple[bool, str]:
     if not ffmpeg_path:
         return True, "FFmpeg not available; skipped decode check (status=warn)"
-    cmd = [
-        ffmpeg_path,
-        "-v",
-        "error",
-        "-nostats",
-        "-hide_banner",
-        "-i",
-        str(path),
-        "-f",
-        "null",
-        "-",
-    ]
+    cmd = [ffmpeg_path, "-v", "error", "-nostats", "-hide_banner"]
+    # Force the demuxer from the extension so format autodetection can't
+    # mis-probe a valid file and report a false failure.
+    demuxer = _FFMPEG_DEMUXER.get(path.suffix.lower())
+    if demuxer:
+        cmd += ["-f", demuxer]
+    # -vn drops non-audio streams (e.g. an embedded cover) so a malformed
+    # picture is never mistaken for an audio fault.
+    cmd += ["-i", str(path), "-vn", "-f", "null", "-"]
     try:
         proc = subprocess.run(
             cmd,
