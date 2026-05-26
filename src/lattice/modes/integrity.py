@@ -9,11 +9,17 @@ from typing import Tuple, List, Optional, Dict, Any
 
 from lattice.utils import run_proc, has_tool, _make_pbar
 from lattice.tags import HAVE_MUTAGEN_MP3, MUTAGEN_MP3
-from lattice.config import DEFAULT_FLAC_OUTPUT, DEFAULT_MP3_OUTPUT, DEFAULT_OPUS_OUTPUT, DEFAULT_WAV_OUTPUT, DEFAULT_WMA_OUTPUT
+from lattice.config import (
+    DEFAULT_MP3_OUTPUT,
+    DEFAULT_OPUS_OUTPUT,
+    DEFAULT_WAV_OUTPUT,
+    DEFAULT_WMA_OUTPUT,
+)
 
 # =====================================
 # Mode: FLAC integrity
 # =====================================
+
 
 def test_with_flac(filepath: str) -> Tuple[bool, str]:
     code, out, err = run_proc(["flac", "-t", "-s", str(filepath)])
@@ -21,13 +27,17 @@ def test_with_flac(filepath: str) -> Tuple[bool, str]:
         return True, ""
     return False, err or out or f"flac exited with code {code}"
 
+
 def test_with_ffmpeg(filepath: str) -> Tuple[bool, str]:
-    code, out, err = run_proc(["ffmpeg", "-v", "error", "-nostats", "-i", str(filepath), "-f", "null", "-"])
+    code, out, err = run_proc(
+        ["ffmpeg", "-v", "error", "-nostats", "-i", str(filepath), "-f", "null", "-"]
+    )
     if code == 0 and not err:
         return True, ""
     if code == 0 and err:
         return False, err
     return False, err or out or f"ffmpeg exited with code {code}"
+
 
 def test_flac(filepath: str, prefer: str) -> Tuple[bool, str, str]:
     have_flac = has_tool("flac")
@@ -56,7 +66,10 @@ def test_flac(filepath: str, prefer: str) -> Tuple[bool, str, str]:
     # All tools failed — return the last result
     return False, name, msg
 
-def run_flac_mode(root: str, output: str, workers: int, prefer: str, *, quiet: bool = False) -> int:
+
+def run_flac_mode(
+    root: str, output: str, workers: int, prefer: str, *, quiet: bool = False
+) -> int:
     root = os.path.abspath(root)
     flacs = _find_files_by_ext_path(Path(root), ".flac")
     total = len(flacs)
@@ -123,20 +136,25 @@ def run_flac_mode(root: str, output: str, workers: int, prefer: str, *, quiet: b
                 f.write(f"       Tool: {method}\n")
                 f.write(f"       Error: {msg}\n\n")
         if not quiet:
-            print(f"❗ Found {len(errors)} problematic FLAC file(s). Wrote details to: {out_path}")
+            print(
+                f"❗ Found {len(errors)} problematic FLAC file(s). Wrote details to: {out_path}"
+            )
     elif not quiet:
         print("✅ All FLAC files passed integrity checks.")
     return 1 if errors else 0
 
+
 # =====================================
 # Mode: MP3 decode check
 # =====================================
+
 
 def _find_ffmpeg(explicit_path: Optional[str]) -> Optional[str]:
     if explicit_path:
         p = Path(explicit_path)
         return str(p) if p.exists() else None
     return shutil.which("ffmpeg")
+
 
 def _find_files_by_ext_path(root: Path, ext: str) -> List[Path]:
     """Walk tree and return all files matching extension as Path objects."""
@@ -150,12 +168,13 @@ def _find_files_by_ext_path(root: Path, ext: str) -> List[Path]:
                 out.append(Path(dirpath) / fn)
     return out
 
+
 def _mutagen_header_info(path: Path) -> Dict[str, Any]:
     if not HAVE_MUTAGEN_MP3:
         return {}
     try:
         audio = MUTAGEN_MP3(path)
-        info = getattr(audio, 'info', None)
+        info = getattr(audio, "info", None)
         if not info:
             return {}
         return {
@@ -170,14 +189,30 @@ def _mutagen_header_info(path: Path) -> Dict[str, Any]:
     except Exception:
         return {}
 
+
 def _ffmpeg_decode_check(ffmpeg_path: Optional[str], path: Path) -> Tuple[bool, str]:
     if not ffmpeg_path:
         return True, "FFmpeg not available; skipped decode check (status=warn)"
-    cmd = [ffmpeg_path, "-v", "error", "-nostats", "-hide_banner", "-i", str(path), "-f", "null", "-"]
+    cmd = [
+        ffmpeg_path,
+        "-v",
+        "error",
+        "-nostats",
+        "-hide_banner",
+        "-i",
+        str(path),
+        "-f",
+        "null",
+        "-",
+    ]
     try:
         proc = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace",
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except Exception as e:
         return False, f"FFmpeg invocation failed: {e!r}"
@@ -186,15 +221,28 @@ def _ffmpeg_decode_check(ffmpeg_path: Optional[str], path: Path) -> Tuple[bool, 
         return False, stderr
     return True, "decode ok"
 
-def _scan_one_file(path: Path, ffmpeg_path: Optional[str], *, enrich: bool = False) -> Dict[str, Any]:
+
+def _scan_one_file(
+    path: Path, ffmpeg_path: Optional[str], *, enrich: bool = False
+) -> Dict[str, Any]:
     """Scan a single audio file for decode errors. If enrich=True, also pull
     mutagen header info (bitrate, duration, sample rate, VBR mode)."""
     row: Dict[str, Any] = {
-        "path": str(path), "size_bytes": None, "status": "ok", "details": "",
+        "path": str(path),
+        "size_bytes": None,
+        "status": "ok",
+        "details": "",
     }
     if enrich:
-        row.update({"duration_s": None, "bitrate_kbps": None,
-                     "sample_rate_hz": None, "mode": None, "vbr_mode": None})
+        row.update(
+            {
+                "duration_s": None,
+                "bitrate_kbps": None,
+                "sample_rate_hz": None,
+                "mode": None,
+                "vbr_mode": None,
+            }
+        )
 
     try:
         row["size_bytes"] = path.stat().st_size
@@ -217,6 +265,7 @@ def _scan_one_file(path: Path, ffmpeg_path: Optional[str], *, enrich: bool = Fal
         row["details"] = msg
     return row
 
+
 def _format_row_meta(row: Dict[str, Any]) -> str:
     """Format metadata fields into a compact summary string."""
     parts: List[str] = []
@@ -230,11 +279,21 @@ def _format_row_meta(row: Dict[str, Any]) -> str:
         parts.append(row["vbr_mode"])
     return "  ".join(parts)
 
+
 def _run_decode_scan(
-        root: str, output: str, workers: int, ffmpeg: Optional[str],
-        *, ext: str, report_title: str, default_output: str,
-        ffmpeg_required: bool, enrich: bool,
-        only_errors: bool, verbose: bool, quiet: bool,
+    root: str,
+    output: str,
+    workers: int,
+    ffmpeg: Optional[str],
+    *,
+    ext: str,
+    report_title: str,
+    default_output: str,
+    ffmpeg_required: bool,
+    enrich: bool,
+    only_errors: bool,
+    verbose: bool,
+    quiet: bool,
 ) -> int:
     """Unified decode-check scanner for MP3, Opus, and future formats."""
     root_path = Path(os.path.abspath(root))
@@ -243,12 +302,16 @@ def _run_decode_scan(
     if not ffmpeg_path:
         if ffmpeg_required:
             if not quiet:
-                print(f"[warn] FFmpeg not found. Required for {ext.strip('.')} decode testing.",
-                      file=sys.stderr)
+                print(
+                    f"[warn] FFmpeg not found. Required for {ext.strip('.')} decode testing.",
+                    file=sys.stderr,
+                )
             return 2
         elif not quiet:
-            print("[warn] FFmpeg not found. Install it or pass --ffmpeg /path/to/ffmpeg",
-                  file=sys.stderr)
+            print(
+                "[warn] FFmpeg not found. Install it or pass --ffmpeg /path/to/ffmpeg",
+                file=sys.stderr,
+            )
 
     targets = _find_files_by_ext_path(root_path, ext)
 
@@ -257,7 +320,7 @@ def _run_decode_scan(
             print(f"No {ext} files found.", file=sys.stderr)
         return 0
 
-    label = ext.strip('.').upper()
+    label = ext.strip(".").upper()
     started = time.time()
     oks = warns = errs = 0
     results: List[Dict[str, Any]] = []
@@ -273,8 +336,7 @@ def _run_decode_scan(
     try:
         ex = ThreadPoolExecutor(max_workers=max(1, workers))
         futures = {
-            ex.submit(_scan_one_file, p, ffmpeg_path, enrich=enrich): p
-            for p in targets
+            ex.submit(_scan_one_file, p, ffmpeg_path, enrich=enrich): p for p in targets
         }
 
         for fut in as_completed(futures):
@@ -362,46 +424,106 @@ def _run_decode_scan(
         print(f"Report written to: {out_path}")
     return 1 if errs > 0 else 0
 
+
 def run_mp3_mode(
-        root: str, output: str, workers: int, ffmpeg: Optional[str],
-        *, only_errors: bool, verbose: bool, quiet: bool,
+    root: str,
+    output: str,
+    workers: int,
+    ffmpeg: Optional[str],
+    *,
+    only_errors: bool,
+    verbose: bool,
+    quiet: bool,
 ) -> int:
     return _run_decode_scan(
-        root, output, workers, ffmpeg,
-        ext=".mp3", report_title="MP3 INTEGRITY REPORT",
-        default_output=DEFAULT_MP3_OUTPUT, ffmpeg_required=False,
-        enrich=True, only_errors=only_errors, verbose=verbose, quiet=quiet,
+        root,
+        output,
+        workers,
+        ffmpeg,
+        ext=".mp3",
+        report_title="MP3 INTEGRITY REPORT",
+        default_output=DEFAULT_MP3_OUTPUT,
+        ffmpeg_required=False,
+        enrich=True,
+        only_errors=only_errors,
+        verbose=verbose,
+        quiet=quiet,
     )
+
 
 def run_opus_mode(
-        root: str, output: str, workers: int, ffmpeg: Optional[str],
-        *, only_errors: bool, verbose: bool, quiet: bool,
+    root: str,
+    output: str,
+    workers: int,
+    ffmpeg: Optional[str],
+    *,
+    only_errors: bool,
+    verbose: bool,
+    quiet: bool,
 ) -> int:
     return _run_decode_scan(
-        root, output, workers, ffmpeg,
-        ext=".opus", report_title="OPUS INTEGRITY REPORT",
-        default_output=DEFAULT_OPUS_OUTPUT, ffmpeg_required=True,
-        enrich=False, only_errors=only_errors, verbose=verbose, quiet=quiet,
+        root,
+        output,
+        workers,
+        ffmpeg,
+        ext=".opus",
+        report_title="OPUS INTEGRITY REPORT",
+        default_output=DEFAULT_OPUS_OUTPUT,
+        ffmpeg_required=True,
+        enrich=False,
+        only_errors=only_errors,
+        verbose=verbose,
+        quiet=quiet,
     )
+
 
 def run_wav_mode(
-        root: str, output: str, workers: int, ffmpeg: Optional[str],
-        *, only_errors: bool, verbose: bool, quiet: bool,
+    root: str,
+    output: str,
+    workers: int,
+    ffmpeg: Optional[str],
+    *,
+    only_errors: bool,
+    verbose: bool,
+    quiet: bool,
 ) -> int:
     return _run_decode_scan(
-        root, output, workers, ffmpeg,
-        ext=".wav", report_title="WAV INTEGRITY REPORT",
-        default_output=DEFAULT_WAV_OUTPUT, ffmpeg_required=True,
-        enrich=False, only_errors=only_errors, verbose=verbose, quiet=quiet,
+        root,
+        output,
+        workers,
+        ffmpeg,
+        ext=".wav",
+        report_title="WAV INTEGRITY REPORT",
+        default_output=DEFAULT_WAV_OUTPUT,
+        ffmpeg_required=True,
+        enrich=False,
+        only_errors=only_errors,
+        verbose=verbose,
+        quiet=quiet,
     )
 
+
 def run_wma_mode(
-        root: str, output: str, workers: int, ffmpeg: Optional[str],
-        *, only_errors: bool, verbose: bool, quiet: bool,
+    root: str,
+    output: str,
+    workers: int,
+    ffmpeg: Optional[str],
+    *,
+    only_errors: bool,
+    verbose: bool,
+    quiet: bool,
 ) -> int:
     return _run_decode_scan(
-        root, output, workers, ffmpeg,
-        ext=".wma", report_title="WMA INTEGRITY REPORT",
-        default_output=DEFAULT_WMA_OUTPUT, ffmpeg_required=True,
-        enrich=False, only_errors=only_errors, verbose=verbose, quiet=quiet,
+        root,
+        output,
+        workers,
+        ffmpeg,
+        ext=".wma",
+        report_title="WMA INTEGRITY REPORT",
+        default_output=DEFAULT_WMA_OUTPUT,
+        ffmpeg_required=True,
+        enrich=False,
+        only_errors=only_errors,
+        verbose=verbose,
+        quiet=quiet,
     )

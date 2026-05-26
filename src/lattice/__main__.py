@@ -1,5 +1,4 @@
 import sys
-import os
 
 # PyInstaller + Python 3.14 multiprocessing.resource_tracker fix
 # The resource tracker launches sys.executable with '-B', '-S', '-I', '-c', '...'

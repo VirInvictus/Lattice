@@ -1,26 +1,50 @@
 import os
-import sys
 from collections import Counter, defaultdict
 from typing import List, Optional, Dict
 
-from lattice.utils import count_audio_files, _make_pbar, is_audio
+from lattice.utils import count_audio_files, _make_pbar
 from lattice.tags import get_all_tags
-from lattice.config import AUDIO_EXTENSIONS, DEFAULT_STATS_OUTPUT
+from lattice.config import AUDIO_EXTENSIONS
 
 # =====================================
 # Mode: Library statistics
 # =====================================
 
+
+_RATING_LABELS = (
+    "★★★★★ (5)",
+    "★★★★☆ (4)",
+    "★★★☆☆ (3)",
+    "★★☆☆☆ (2)",
+    "★☆☆☆☆ (1)",
+)
+_UNRATED = "unrated"
+
+
+def _rating_label(rating: Optional[float]) -> str:
+    """Bucket a 0–5 rating into its star label; None is "unrated". A 0 rating
+    falls into the 1-star bucket, matching the original tally."""
+    if rating is None:
+        return _UNRATED
+    stars = max(1, min(5, int(rating)))
+    return _RATING_LABELS[5 - stars]
+
+
+def _empty_rating_tally() -> Dict[str, int]:
+    return {label: 0 for label in (*_RATING_LABELS, _UNRATED)}
+
+
 def _format_size(size_bytes: int) -> str:
     """Format byte count into human-readable string."""
     if size_bytes < 1024:
         return f"{size_bytes} B"
-    elif size_bytes < 1024 ** 2:
+    elif size_bytes < 1024**2:
         return f"{size_bytes / 1024:.1f} KB"
-    elif size_bytes < 1024 ** 3:
-        return f"{size_bytes / (1024 ** 2):.1f} MB"
+    elif size_bytes < 1024**3:
+        return f"{size_bytes / (1024**2):.1f} MB"
     else:
-        return f"{size_bytes / (1024 ** 3):.2f} GB"
+        return f"{size_bytes / (1024**3):.2f} GB"
+
 
 def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
     """Generate a library-wide statistics report."""
@@ -29,11 +53,13 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
     total_files = count_audio_files(root)
     if total_files == 0:
         import lattice.utils as utils
+
         if not quiet and not utils.IN_TUI:
             print(f"No audio files found under: {root}")
         return ""
 
     import lattice.utils as utils
+
     if not quiet and not utils.IN_TUI:
         print(f"Scanning {total_files} files under: {root}")
 
@@ -44,14 +70,8 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
     format_sizes: Counter = Counter()
     genre_counts: Counter = Counter()
     artist_counts: Counter = Counter()
-    rating_counts: Dict[str, int] = {
-        "★★★★★ (5)": 0, "★★★★☆ (4)": 0, "★★★☆☆ (3)": 0,
-        "★★☆☆☆ (2)": 0, "★☆☆☆☆ (1)": 0, "unrated": 0,
-    }
-    genre_ratings: Dict[str, Dict[str, int]] = defaultdict(lambda: {
-        "★★★★★ (5)": 0, "★★★★☆ (4)": 0, "★★★☆☆ (3)": 0,
-        "★★☆☆☆ (2)": 0, "★☆☆☆☆ (1)": 0, "unrated": 0,
-    })
+    rating_counts: Dict[str, int] = _empty_rating_tally()
+    genre_ratings: Dict[str, Dict[str, int]] = defaultdict(_empty_rating_tally)
     total_size = 0
     total_duration = 0.0
     album_dirs: set = set()
@@ -60,7 +80,7 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
     fully_tagged = 0  # has title + artist + track + genre
 
     for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
 
         for f in sorted(files):
             ext = os.path.splitext(f)[1].lower()
@@ -95,26 +115,10 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
             if t.genre:
                 genre_counts[t.genre] += 1
 
-            if t.rating is not None:
-                r = int(t.rating)
-                if r >= 5:
-                    rating_counts["★★★★★ (5)"] += 1
-                    if t.genre: genre_ratings[t.genre]["★★★★★ (5)"] += 1
-                elif r >= 4:
-                    rating_counts["★★★★☆ (4)"] += 1
-                    if t.genre: genre_ratings[t.genre]["★★★★☆ (4)"] += 1
-                elif r >= 3:
-                    rating_counts["★★★☆☆ (3)"] += 1
-                    if t.genre: genre_ratings[t.genre]["★★★☆☆ (3)"] += 1
-                elif r >= 2:
-                    rating_counts["★★☆☆☆ (2)"] += 1
-                    if t.genre: genre_ratings[t.genre]["★★☆☆☆ (2)"] += 1
-                else:
-                    rating_counts["★☆☆☆☆ (1)"] += 1
-                    if t.genre: genre_ratings[t.genre]["★☆☆☆☆ (1)"] += 1
-            else:
-                rating_counts["unrated"] += 1
-                if t.genre: genre_ratings[t.genre]["unrated"] += 1
+            label = _rating_label(t.rating)
+            rating_counts[label] += 1
+            if t.genre:
+                genre_ratings[t.genre][label] += 1
 
             # Duration and bitrate — now carried by TagBundle
             if t.duration_s:
@@ -181,7 +185,7 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
     rated = total_files - rating_counts["unrated"]
     lines.append(f"RATINGS ({rated} rated, {rating_counts['unrated']} unrated)")
     lines.append("-" * 40)
-    for label in ["★★★★★ (5)", "★★★★☆ (4)", "★★★☆☆ (3)", "★★☆☆☆ (2)", "★☆☆☆☆ (1)"]:
+    for label in _RATING_LABELS:
         count = rating_counts[label]
         if count > 0:
             bar_len = min(30, int(count / max(1, total_files) * 150))
@@ -204,7 +208,7 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
         lines.append("-" * 40)
         for genre, _ in genre_counts.most_common(15):
             lines.append(f"  {genre}:")
-            for label in ["★★★★★ (5)", "★★★★☆ (4)", "★★★☆☆ (3)", "★★☆☆☆ (2)", "★☆☆☆☆ (1)", "unrated"]:
+            for label in (*_RATING_LABELS, _UNRATED):
                 count = genre_ratings[genre][label]
                 if count > 0:
                     lines.append(f"    {label}  {count:>5}")
@@ -227,10 +231,12 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
         with open(out_path, "w", encoding="utf-8") as out_file:
             out_file.write(report)
         import lattice.utils as utils
+
         if not quiet and not utils.IN_TUI:
             print(f"\nStatistics written to: {out_path}")
     else:
         import lattice.utils as utils
+
         if not quiet and not utils.IN_TUI:
             print()
             print(report)

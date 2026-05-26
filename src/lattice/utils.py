@@ -4,19 +4,27 @@ import shutil
 import subprocess
 from typing import Tuple, List, Optional
 
-from lattice.config import AUDIO_EXTENSIONS, COVER_NAMES, RE_CLEAN_PREFIX, RE_CLEAN_PATTERNS
+from lattice.config import (
+    AUDIO_EXTENSIONS,
+    COVER_NAMES,
+    RE_CLEAN_PREFIX,
+    RE_CLEAN_PATTERNS,
+)
 
 try:
     from tqdm import tqdm
+
     HAVE_TQDM = True
 except ImportError:
     HAVE_TQDM = False
 
 IN_TUI = False
 
+
 def is_audio(filename: str) -> bool:
     """Check if a filename has a recognized audio extension."""
     return os.path.splitext(filename)[1].lower() in AUDIO_EXTENSIONS
+
 
 def _reset_terminal() -> None:
     """Restore sane terminal state after subprocess runs.
@@ -35,7 +43,7 @@ def _reset_terminal() -> None:
 
 def clean_song_name(filename: str) -> str:
     name_without_ext = os.path.splitext(filename)[0]
-    name_without_ext = RE_CLEAN_PREFIX.sub('', name_without_ext)
+    name_without_ext = RE_CLEAN_PREFIX.sub("", name_without_ext)
     for pattern in RE_CLEAN_PATTERNS:
         match = pattern.match(name_without_ext.strip())
         if match:
@@ -57,14 +65,14 @@ def normalize_rating(val) -> Optional[float]:
             return val / 20.0
         elif val <= 255:
             return (val / 255.0) * 5.0
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         pass
     return None
 
 
 def _looks_numeric(val) -> bool:
     """Check if a value looks like a number (int or float)."""
-    return bool(val) and str(val).replace('.', '').isdigit()
+    return bool(val) and str(val).replace(".", "").isdigit()
 
 
 def format_rating(rating: Optional[float]) -> str:
@@ -86,8 +94,8 @@ def update_progress(current: int, total: int, prefix: str = "Progress") -> None:
     percent = (current / total) * 100
     bar_length = 40
     filled_length = int(bar_length * current // total)
-    bar = '█' * filled_length + '░' * (bar_length - filled_length)
-    sys.stdout.write(f'\r{prefix}: |{bar}| {current}/{total} ({percent:.1f}%)')
+    bar = "█" * filled_length + "░" * (bar_length - filled_length)
+    sys.stdout.write(f"\r{prefix}: |{bar}| {current}/{total} ({percent:.1f}%)")
     sys.stdout.flush()
     if current == total:
         print()
@@ -104,7 +112,7 @@ def _decode_bytes(b: bytes) -> str:
     for enc in ("utf-8", "mbcs", "latin-1"):
         try:
             return b.decode(enc, errors="strict")
-        except (UnicodeDecodeError, LookupError):
+        except UnicodeDecodeError, LookupError:
             continue
     return b.decode("latin-1", errors="replace")
 
@@ -114,7 +122,11 @@ def run_proc(args: List[str]) -> Tuple[int, str, str]:
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("LANG", "C.UTF-8")
     proc = subprocess.Popen(
-        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False, env=env,
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=False,
+        env=env,
     )
     try:
         out_b, err_b = proc.communicate()
@@ -139,10 +151,11 @@ def _has_cover_file(directory: str) -> bool:
         return False
     return bool(existing & COVER_NAMES)
 
+
 def parse_layout(rel_path: str, layout: str) -> dict:
     """Extract metadata from a relative path based on a layout pattern like {artist}/{album}"""
     parts = os.path.dirname(rel_path).split(os.sep)
-    layout_parts = [p for p in layout.replace('\\', '/').split('/') if p]
+    layout_parts = [p for p in layout.replace("\\", "/").split("/") if p]
     result = {}
     for i, l_part in enumerate(layout_parts):
         if i < len(parts):
@@ -153,6 +166,7 @@ def parse_layout(rel_path: str, layout: str) -> dict:
 
 class _TUIPbar:
     """A progress bar that renders in a curses box to match the TUI style."""
+
     def __init__(self, total: int, desc: str):
         self.total = total
         self.desc = desc
@@ -165,14 +179,10 @@ class _TUIPbar:
 
     def draw(self) -> None:
         import curses
-        # Get the global stdscr without calling initscr
-        stdscr = curses.newwin(0,0) # dummy
+
         try:
-            # We can't easily get the main stdscr here without passing it,
-            # but we can use curses.wrapper's provided screen if we are careful.
-            # However, in this architecture, we'll just try to use the current screen.
-            # A better way is to use curses.initscr() but NOT call endwin().
-            # Actually, the TUI already has a screen active.
+            # The TUI already has a screen active; initscr() returns that same
+            # window without re-initializing, and we never call endwin() here.
             s = curses.initscr()
             s.erase()
             h, w = s.getmaxyx()
@@ -180,23 +190,28 @@ class _TUIPbar:
             inner = box_w - 2
             bx = max(0, (w - box_w) // 2)
             y = max(0, (h - 5) // 2)
-            
+
             s.addstr(y, bx, "╔" + "═" * inner + "╗", curses.color_pair(1))
-            s.addstr(y+1, bx, "║", curses.color_pair(1))
-            s.addstr(y+1, bx+1, f" {self.desc}".ljust(inner), curses.color_pair(3) | curses.A_BOLD)
-            s.addstr(y+1, bx+box_w-1, "║", curses.color_pair(1))
-            s.addstr(y+2, bx, "╠" + "═" * inner + "╣", curses.color_pair(1))
-            
+            s.addstr(y + 1, bx, "║", curses.color_pair(1))
+            s.addstr(
+                y + 1,
+                bx + 1,
+                f" {self.desc}".ljust(inner),
+                curses.color_pair(3) | curses.A_BOLD,
+            )
+            s.addstr(y + 1, bx + box_w - 1, "║", curses.color_pair(1))
+            s.addstr(y + 2, bx, "╠" + "═" * inner + "╣", curses.color_pair(1))
+
             percent = self.current / max(1, self.total)
             bar_len = inner - 10
             filled = int(bar_len * percent)
             bar = "█" * filled + "░" * (bar_len - filled)
-            pct_str = f"{int(percent*100):3d}%"
-            
-            s.addstr(y+3, bx, "║", curses.color_pair(1))
-            s.addstr(y+3, bx+1, f" {bar} {pct_str} ".ljust(inner))
-            s.addstr(y+3, bx+box_w-1, "║", curses.color_pair(1))
-            s.addstr(y+4, bx, "╚" + "═" * inner + "╝", curses.color_pair(1))
+            pct_str = f"{int(percent * 100):3d}%"
+
+            s.addstr(y + 3, bx, "║", curses.color_pair(1))
+            s.addstr(y + 3, bx + 1, f" {bar} {pct_str} ".ljust(inner))
+            s.addstr(y + 3, bx + box_w - 1, "║", curses.color_pair(1))
+            s.addstr(y + 4, bx, "╚" + "═" * inner + "╝", curses.color_pair(1))
             s.refresh()
         except curses.error:
             pass
@@ -204,9 +219,11 @@ class _TUIPbar:
     def close(self) -> None:
         pass
 
+
 class _FallbackProgress:
     """Simple progress bar for when tqdm is not installed."""
-    __slots__ = ('_current', '_total', '_desc', '_quiet')
+
+    __slots__ = ("_current", "_total", "_desc", "_quiet")
 
     def __init__(self, total: int, desc: str, quiet: bool):
         self._current = 0

@@ -20,65 +20,168 @@ from lattice.config import (
     DEFAULT_PLAYLIST_OUTPUT,
 )
 
-from lattice.modes.library import write_music_library_tree, write_ai_library, write_all_wings, write_ai_wings
+from lattice.modes.library import (
+    write_music_library_tree,
+    write_ai_library,
+    write_all_wings,
+    write_ai_wings,
+)
 from lattice.modes.playlists import generate_playlist
-from lattice.modes.integrity import run_flac_mode, run_mp3_mode, run_opus_mode, run_wav_mode, run_wma_mode
-from lattice.modes.artwork import run_extract_art, run_missing_art, run_art_quality_audit
+from lattice.modes.integrity import (
+    run_flac_mode,
+    run_mp3_mode,
+    run_opus_mode,
+    run_wav_mode,
+    run_wma_mode,
+)
+from lattice.modes.artwork import (
+    run_extract_art,
+    run_missing_art,
+    run_art_quality_audit,
+)
 from lattice.modes.audit import run_duplicates, run_tag_audit, run_bitrate_audit
 from lattice.modes.stats import run_stats
 from lattice.tui import interactive_menu
-from lattice.utils import _reset_terminal
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="lattice",
-        description="Music library toolkit: tree, integrity, art, duplicates, tag audit"
+        description="Music library toolkit: tree, integrity, art, duplicates, tag audit",
     )
     p.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     group = p.add_mutually_exclusive_group()
     group.add_argument("--library", action="store_true", help="Generate library tree")
-    group.add_argument("--ai-library", dest="ai_library", action="store_true",
-                        help="Generate token-efficient library for AI recommendations")
-    group.add_argument("--all-wings", dest="all_wings", action="store_true",
-                        help="Generate separate library files for each genre")
-    group.add_argument("--ai-wings", dest="ai_wings", action="store_true",
-                        help="Generate separate AI-friendly library files for each genre")
+    group.add_argument(
+        "--ai-library",
+        dest="ai_library",
+        action="store_true",
+        help="Generate token-efficient library for AI recommendations",
+    )
+    group.add_argument(
+        "--all-wings",
+        dest="all_wings",
+        action="store_true",
+        help="Generate separate library files for each genre",
+    )
+    group.add_argument(
+        "--ai-wings",
+        dest="ai_wings",
+        action="store_true",
+        help="Generate separate AI-friendly library files for each genre",
+    )
     group.add_argument("--testFLAC", action="store_true", help="Verify FLAC files")
     group.add_argument("--testMP3", action="store_true", help="Verify MP3 files")
-    group.add_argument("--testOpus", action="store_true", help="Verify Opus files via FFmpeg decode")
-    group.add_argument("--testWAV", action="store_true", help="Verify WAV files via FFmpeg decode")
-    group.add_argument("--testWMA", action="store_true", help="Verify WMA files via FFmpeg decode")
-    group.add_argument("--extractArt", action="store_true", help="Extract embedded cover art to folder")
-    group.add_argument("--missingArt", action="store_true", help="Report directories missing cover art")
-    group.add_argument("--auditArtQuality", action="store_true", help="Report extracted/folder covers below a resolution threshold")
-    group.add_argument("--duplicates", action="store_true", help="Four-section dupe report: exact albums, within-folder multi-format, similar names, track-level")
-    group.add_argument("--auditTags", action="store_true", help="Report files with incomplete tags")
-    group.add_argument("--auditBitrate", action="store_true", help="Report files below a certain bitrate floor")
-    group.add_argument("--playlist", action="store_true", help="Generate a smart .m3u playlist based on a rule")
-    group.add_argument("--stats", action="store_true", help="Library-wide statistics summary")
+    group.add_argument(
+        "--testOpus", action="store_true", help="Verify Opus files via FFmpeg decode"
+    )
+    group.add_argument(
+        "--testWAV", action="store_true", help="Verify WAV files via FFmpeg decode"
+    )
+    group.add_argument(
+        "--testWMA", action="store_true", help="Verify WMA files via FFmpeg decode"
+    )
+    group.add_argument(
+        "--extractArt", action="store_true", help="Extract embedded cover art to folder"
+    )
+    group.add_argument(
+        "--missingArt", action="store_true", help="Report directories missing cover art"
+    )
+    group.add_argument(
+        "--auditArtQuality",
+        action="store_true",
+        help="Report extracted/folder covers below a resolution threshold",
+    )
+    group.add_argument(
+        "--duplicates",
+        action="store_true",
+        help="Four-section dupe report: exact albums, within-folder multi-format, similar names, track-level",
+    )
+    group.add_argument(
+        "--auditTags", action="store_true", help="Report files with incomplete tags"
+    )
+    group.add_argument(
+        "--auditBitrate",
+        action="store_true",
+        help="Report files below a certain bitrate floor",
+    )
+    group.add_argument(
+        "--playlist",
+        action="store_true",
+        help="Generate a smart .m3u playlist based on a rule",
+    )
+    group.add_argument(
+        "--stats", action="store_true", help="Library-wide statistics summary"
+    )
 
-    p.add_argument("--root", default=None, help="Root directory (default: read from config or current dir)")
-    p.add_argument("pos_root", nargs="?", default=None, help="Root directory (positional fallback)")
+    p.add_argument(
+        "--root",
+        default=None,
+        help="Root directory (default: read from config or current dir)",
+    )
+    p.add_argument(
+        "pos_root", nargs="?", default=None, help="Root directory (positional fallback)"
+    )
     p.add_argument("--output", default=None, help="Output path")
-    p.add_argument("--rule", default="", help="Smart playlist rule (e.g. \"rating >= 4 and genre == 'Jazz'\")")
-    p.add_argument("--layout", default="{artist}/{album}", help="Directory structure pattern for extracting tags from path (default: {artist}/{album})")
-    p.add_argument("--min-art-res", type=int, default=500, help="Minimum resolution in pixels for --auditArtQuality (default: 500)")
-    p.add_argument("--min-bitrate", type=int, default=192, help="Minimum bitrate in kbps for --auditBitrate (default: 192)")
-    p.add_argument("--workers", type=int, default=4, help="Parallel workers (integrity modes)")
-    p.add_argument("--prefer", choices=["flac", "ffmpeg"], default="flac", help="Preferred tool (FLAC mode)")
+    p.add_argument(
+        "--rule",
+        default="",
+        help="Smart playlist rule (e.g. \"rating >= 4 and genre == 'Jazz'\")",
+    )
+    p.add_argument(
+        "--layout",
+        default="{artist}/{album}",
+        help="Directory structure pattern for extracting tags from path (default: {artist}/{album})",
+    )
+    p.add_argument(
+        "--min-art-res",
+        type=int,
+        default=500,
+        help="Minimum resolution in pixels for --auditArtQuality (default: 500)",
+    )
+    p.add_argument(
+        "--min-bitrate",
+        type=int,
+        default=192,
+        help="Minimum bitrate in kbps for --auditBitrate (default: 192)",
+    )
+    p.add_argument(
+        "--workers", type=int, default=4, help="Parallel workers (integrity modes)"
+    )
+    p.add_argument(
+        "--prefer",
+        choices=["flac", "ffmpeg"],
+        default="flac",
+        help="Preferred tool (FLAC mode)",
+    )
     p.add_argument("--quiet", action="store_true", help="Minimize output")
-    p.add_argument("--genres", action="store_true", help="Include album genres in library tree")
-    p.add_argument("--paths", action="store_true", help="Include absolute directory paths at the album level")
-    p.add_argument("--dry-run", dest="dry_run", action="store_true",
-                    help="Preview changes without writing (extractArt)")
+    p.add_argument(
+        "--genres", action="store_true", help="Include album genres in library tree"
+    )
+    p.add_argument(
+        "--paths",
+        action="store_true",
+        help="Include absolute directory paths at the album level",
+    )
+    p.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="Preview changes without writing (extractArt)",
+    )
 
-    p.add_argument("--only-errors", dest="only_errors",
-                   action=argparse.BooleanOptionalAction, default=True,
-                   help="Write only errors/warns (MP3/Opus modes)")
+    p.add_argument(
+        "--only-errors",
+        dest="only_errors",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Write only errors/warns (MP3/Opus modes)",
+    )
 
     p.add_argument("--ffmpeg", default=None, help="Path to ffmpeg")
     p.add_argument("--verbose", action="store_true", help="Verbose output")
     return p
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     if argv is None:
@@ -88,18 +191,21 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         args = build_parser().parse_args(argv)
-        
+
         raw_root = args.pos_root if args.pos_root is not None else args.root
 
         if raw_root is None:
             from lattice.config import get_library_root, set_library_root
+
             config_root = get_library_root()
             if config_root and os.path.exists(config_root):
                 root = config_root
             else:
                 if sys.stdin.isatty():
                     print("First run: No library root configured.")
-                    raw_input_root = input("Enter path to your music library (or press Enter for current directory): ").strip()
+                    raw_input_root = input(
+                        "Enter path to your music library (or press Enter for current directory): "
+                    ).strip()
                     if raw_input_root:
                         root = os.path.abspath(os.path.expanduser(raw_input_root))
                         set_library_root(root)
@@ -113,7 +219,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.library:
             output = args.output or DEFAULT_LIBRARY_OUTPUT
-            write_music_library_tree(root, output, layout=args.layout, quiet=args.quiet, show_genre=args.genres)
+            write_music_library_tree(
+                root,
+                output,
+                layout=args.layout,
+                quiet=args.quiet,
+                show_genre=args.genres,
+            )
             return 0
 
         if args.ai_library:
@@ -123,7 +235,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.all_wings:
             outdir = args.output or "wings"
-            return write_all_wings(root, outdir, layout=args.layout, quiet=args.quiet, show_genre=args.genres, show_paths=args.paths)
+            return write_all_wings(
+                root,
+                outdir,
+                layout=args.layout,
+                quiet=args.quiet,
+                show_genre=args.genres,
+                show_paths=args.paths,
+            )
 
         if args.ai_wings:
             outdir = args.output or "wings_ai"
@@ -131,34 +250,56 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.testFLAC:
             output = args.output or DEFAULT_FLAC_OUTPUT
-            return run_flac_mode(root, output, args.workers, args.prefer, quiet=args.quiet)
+            return run_flac_mode(
+                root, output, args.workers, args.prefer, quiet=args.quiet
+            )
 
         if args.testMP3:
             output = args.output or DEFAULT_MP3_OUTPUT
             return run_mp3_mode(
-                root, output, args.workers, args.ffmpeg,
-                only_errors=args.only_errors, verbose=args.verbose, quiet=args.quiet,
+                root,
+                output,
+                args.workers,
+                args.ffmpeg,
+                only_errors=args.only_errors,
+                verbose=args.verbose,
+                quiet=args.quiet,
             )
 
         if args.testOpus:
             output = args.output or DEFAULT_OPUS_OUTPUT
             return run_opus_mode(
-                root, output, args.workers, args.ffmpeg,
-                only_errors=args.only_errors, verbose=args.verbose, quiet=args.quiet,
+                root,
+                output,
+                args.workers,
+                args.ffmpeg,
+                only_errors=args.only_errors,
+                verbose=args.verbose,
+                quiet=args.quiet,
             )
 
         if args.testWAV:
             output = args.output or DEFAULT_WAV_OUTPUT
             return run_wav_mode(
-                root, output, args.workers, args.ffmpeg,
-                only_errors=args.only_errors, verbose=args.verbose, quiet=args.quiet,
+                root,
+                output,
+                args.workers,
+                args.ffmpeg,
+                only_errors=args.only_errors,
+                verbose=args.verbose,
+                quiet=args.quiet,
             )
 
         if args.testWMA:
             output = args.output or DEFAULT_WMA_OUTPUT
             return run_wma_mode(
-                root, output, args.workers, args.ffmpeg,
-                only_errors=args.only_errors, verbose=args.verbose, quiet=args.quiet,
+                root,
+                output,
+                args.workers,
+                args.ffmpeg,
+                only_errors=args.only_errors,
+                verbose=args.verbose,
+                quiet=args.quiet,
             )
 
         if args.extractArt:
@@ -170,7 +311,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.auditArtQuality:
             output = args.output or DEFAULT_ART_QUALITY_OUTPUT
-            return run_art_quality_audit(root, output, args.min_art_res, quiet=args.quiet)
+            return run_art_quality_audit(
+                root, output, args.min_art_res, quiet=args.quiet
+            )
 
         if args.duplicates:
             output = args.output or DEFAULT_DUPLICATES_OUTPUT
@@ -186,7 +329,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.playlist:
             output = args.output or DEFAULT_PLAYLIST_OUTPUT
-            return generate_playlist(root, output, args.rule, layout=args.layout, quiet=args.quiet)
+            return generate_playlist(
+                root, output, args.rule, layout=args.layout, quiet=args.quiet
+            )
 
         if args.stats:
             run_stats(root, args.output, quiet=args.quiet)
@@ -197,4 +342,3 @@ def main(argv: Optional[List[str]] = None) -> int:
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
         return 130
-
