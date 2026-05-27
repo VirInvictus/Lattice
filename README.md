@@ -304,6 +304,30 @@ Matching is by the **artist tag** (normalized for quote, dash, and case variants
 
 A real, `build`-generated map from a roughly 877-artist library ships at [`artist_genre_defaults.tsv`](artist_genre_defaults.tsv) in the repo root. It doubles as a worked example of the format (single- and multi-genre lines, the `#`-flagged counts, the blank-to-skip pattern) and as a maintained authority: point the tool at it with `--map artist_genre_defaults.tsv`. Keep it current by re-running `build`, which appends artists new to the library under a dated marker while preserving every line you have edited; hand-edit a line to accept a new genre for an existing artist.
 
+## Companion Script: `rerate.py`
+
+Also in `scripts/` is `rerate.py`, which reconciles MP3 star ratings between DeaDBeeF and foobar2000. Both store ratings in an ID3 POPM frame (a 0–255 byte), but on different scales, so a rating set in one reads shifted in the other. Measured on a real library:
+
+- DeaDBeeF 2★ writes byte `127`, which foobar reads as **3★**.
+- DeaDBeeF 4★ writes byte `254`, which foobar reads as **5★**.
+
+foobar's own values are read the same by both players (byte `196` shows 4★ in DeaDBeeF and foobar alike). So `rerate.py` rewrites DeaDBeeF's odd bytes to the equivalent foobar value, making the two agree without changing what DeaDBeeF shows: `127 → 64` (both 2★) and `254 → 196` (both 4★).
+
+It touches only those exact bytes. foobar's canonical values, MusicBee's bytes (`186`/`242`, which already read correctly), unrated files, and every non-MP3 file are left alone; Vorbis/Opus ratings are clean 0–5 integers and are unaffected. Like the other companions it lives outside the read-only `lattice` package, has a `--dry-run` flag, and writes an append-only timestamped log (default `<directory>/rerate.log`) recording every `old -> new` change, so a run is fully auditable and reversible. Idempotent.
+
+**The Workflow:**
+1. Preview:
+   ```bash
+   ./scripts/rerate.py /mnt/SharedData/Music --dry-run
+   ```
+2. Inspect `rerate.log` (each change is logged as `<file>: 254 -> 196`).
+3. Apply:
+   ```bash
+   ./scripts/rerate.py /mnt/SharedData/Music
+   ```
+
+**Scope.** `rerate.py` is MP3/POPM-only and remaps a fixed set of byte values (`REMAP` in the script). The diagnosis behind it is simply "which byte does each player read as which star"; if your players use a different scale, edit that map.
+
 ## Integrity checks
 
 The integrity modes (`--testFLAC`, `--testMP3`, `--testOpus`, `--testWAV`, `--testWMA`) decode every file and sort the results into four tiers rather than a flat pass/fail, because a decoder complaint is not by itself proof of damaged audio:

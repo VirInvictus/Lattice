@@ -1,5 +1,13 @@
 # Lattice Patch Notes
 
+## Companion script: `rerate.py` (2026-05-27)
+
+*(Companion-script addition; no package version bump.)*
+
+---
+
+- **New `scripts/rerate.py`: reconcile DeaDBeeF and foobar2000 MP3 ratings.** The two players store MP3 ratings in an ID3 POPM byte on different scales, so a rating set in DeaDBeeF reads one star too high in foobar: 2★ (byte 127) shows as 3★, 4★ (byte 254) shows as 5★. `rerate.py` rewrites those bytes to the foobar values that *both* players read identically (`127→64`, `254→196`), so DeaDBeeF ratings sift correctly in foobar without changing DeaDBeeF's own display (byte 196 reads 4★ in both, verified on real files). MP3/POPM-only; foobar's own bytes, MusicBee's `186/242`, unrated, and non-MP3 files are left alone, and Vorbis/Opus ratings already agree. `--dry-run`, append-only `rerate.log` recording every change (so a run is auditable and reversible), idempotent. Covered by `tests/test_rerate.py`.
+
 ## Companion script: `cleaner.py` v1.1.1 (2026-05-27)
 
 *(Companion-script change; no package version bump. Refinements learned from a real-library run.)*
