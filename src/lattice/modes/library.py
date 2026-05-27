@@ -11,6 +11,8 @@ from lattice.utils import (
     clean_song_name,
     format_rating,
     parse_layout,
+    iter_audio_dirs,
+    as_roots,
 )
 from lattice.tags import get_all_tags, TagBundle
 
@@ -39,11 +41,12 @@ def _most_common(counts: dict[str, int], default: str) -> str:
     return max(counts, key=lambda k: counts[k]) if counts else default
 
 
-def _scan_album_dirs(root_dir: str, layout: str, pbar) -> list[_AlbumDir]:
-    """Walk `root_dir` and collapse each audio directory to an `_AlbumDir`."""
+def _scan_album_dirs(roots, layout: str, pbar) -> list[_AlbumDir]:
+    """Walk one or more roots, collapsing each audio directory to an `_AlbumDir`.
+    The layout is parsed against whichever root the directory lives under, so
+    multi-root scans key artist/album off the correct relative path."""
     results: list[_AlbumDir] = []
-    for dirpath, dirs, files in os.walk(root_dir):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
+    for root, dirpath, _dirs, files in iter_audio_dirs(roots):
         audio_in_dir = [f for f in files if is_audio(f)]
         if not audio_in_dir:
             continue
@@ -55,7 +58,7 @@ def _scan_album_dirs(root_dir: str, layout: str, pbar) -> list[_AlbumDir]:
 
         for f in audio_in_dir:
             filepath = os.path.join(dirpath, f)
-            parsed = parse_layout(os.path.relpath(filepath, root_dir), layout)
+            parsed = parse_layout(os.path.relpath(filepath, root), layout)
             t = get_all_tags(filepath)
             artist = t.artist or parsed.get("artist", "Unknown Artist")
             album = t.album or parsed.get("album", "Unknown Album")
@@ -146,20 +149,20 @@ def _write_tree(
 
 
 def write_music_library_tree(
-    root_dir: str,
+    root_dir: str | list[str],
     output_file: str,
     *,
     layout: str = "{artist}/{album}",
     quiet: bool = False,
     show_genre: bool = False,
 ) -> None:
-    root_dir = os.path.abspath(root_dir)
-    total_files = count_audio_files(root_dir)
+    roots = as_roots(root_dir)
+    total_files = count_audio_files(roots)
     if not quiet:
-        print(f"Found {total_files} audio files to process under: {root_dir}\n")
+        print(f"Found {total_files} audio files to process under: {', '.join(roots)}\n")
 
     pbar = _make_pbar(total_files, "Scanning library", quiet)
-    album_dirs = _scan_album_dirs(root_dir, layout, pbar)
+    album_dirs = _scan_album_dirs(roots, layout, pbar)
     pbar.close()
 
     # Group same-artist albums together for display.
@@ -185,21 +188,21 @@ def write_music_library_tree(
 
 
 def write_ai_library(
-    root_dir: str,
+    root_dir: str | list[str],
     output_file: str,
     *,
     layout: str = "{artist}/{album}",
     quiet: bool = False,
 ) -> None:
     """Write a flat, token-efficient library summary for LLM consumption."""
-    root_dir = os.path.abspath(root_dir)
-    total = count_audio_files(root_dir)
+    roots = as_roots(root_dir)
+    total = count_audio_files(roots)
 
     if not quiet:
-        print(f"Scanning {total} files under: {root_dir}")
+        print(f"Scanning {total} files under: {', '.join(roots)}")
 
     pbar = _make_pbar(total, "Building AI library", quiet)
-    album_dirs = _scan_album_dirs(root_dir, layout, pbar)
+    album_dirs = _scan_album_dirs(roots, layout, pbar)
     pbar.close()
 
     albums: list[tuple[str, str, str, str, int]] = []
@@ -234,7 +237,7 @@ def _safe_wing_name(genre: str) -> str:
 
 
 def write_all_wings(
-    root_dir: str,
+    root_dir: str | list[str],
     outdir: str,
     *,
     layout: str = "{artist}/{album}",
@@ -243,13 +246,13 @@ def write_all_wings(
     show_paths: bool = False,
 ) -> int:
     """Generate a separate library tree file for each genre."""
-    root_dir = os.path.abspath(root_dir)
-    total = count_audio_files(root_dir)
+    roots = as_roots(root_dir)
+    total = count_audio_files(roots)
     if not quiet:
         print(f"Scanning {total} files for genre tags...")
 
     pbar = _make_pbar(total, "Scanning genres", quiet)
-    album_dirs = _scan_album_dirs(root_dir, layout, pbar)
+    album_dirs = _scan_album_dirs(roots, layout, pbar)
     pbar.close()
 
     if not album_dirs:
@@ -306,16 +309,20 @@ def write_all_wings(
 
 
 def write_ai_wings(
-    root_dir: str, outdir: str, *, layout: str = "{artist}/{album}", quiet: bool = False
+    root_dir: str | list[str],
+    outdir: str,
+    *,
+    layout: str = "{artist}/{album}",
+    quiet: bool = False,
 ) -> int:
     """Generate separate, token-efficient AI library files for each genre."""
-    root_dir = os.path.abspath(root_dir)
-    total = count_audio_files(root_dir)
+    roots = as_roots(root_dir)
+    total = count_audio_files(roots)
     if not quiet:
         print(f"Scanning {total} files for AI wings...")
 
     pbar = _make_pbar(total, "Scanning genres", quiet)
-    album_dirs = _scan_album_dirs(root_dir, layout, pbar)
+    album_dirs = _scan_album_dirs(roots, layout, pbar)
     pbar.close()
 
     if not album_dirs:

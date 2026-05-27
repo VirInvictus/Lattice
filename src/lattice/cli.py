@@ -115,8 +115,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument(
         "--root",
+        action="append",
         default=None,
-        help="Root directory (default: read from config or current dir)",
+        metavar="DIR",
+        help="Root directory; repeat --root to scan several libraries together "
+        "(default: read from config or current dir)",
     )
     p.add_argument(
         "pos_root", nargs="?", default=None, help="Root directory (positional fallback)"
@@ -191,30 +194,40 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
 
-        raw_root = args.pos_root if args.pos_root is not None else args.root
+        # Every named root (positional + each --root) is scanned together;
+        # de-dupe so the same path passed twice isn't walked twice.
+        raw_roots = list(args.root or [])
+        if args.pos_root is not None:
+            raw_roots.append(args.pos_root)
 
-        if raw_root is None:
-            from lattice.config import get_library_root, set_library_root
-
-            config_root = get_library_root()
-            if config_root and os.path.exists(config_root):
-                root = config_root
-            else:
-                if sys.stdin.isatty():
-                    print("First run: No library root configured.")
-                    raw_input_root = input(
-                        "Enter path to your music library (or press Enter for current directory): "
-                    ).strip()
-                    if raw_input_root:
-                        root = os.path.abspath(os.path.expanduser(raw_input_root))
-                        set_library_root(root)
-                        print(f"Library root saved to {root}")
-                    else:
-                        root = os.path.abspath(".")
-                else:
-                    root = os.path.abspath(".")
+        if raw_roots:
+            seen: set[str] = set()
+            root: list[str] = []
+            for r in raw_roots:
+                ar = os.path.abspath(os.path.expanduser(r))
+                if ar not in seen:
+                    seen.add(ar)
+                    root.append(ar)
         else:
-            root = os.path.abspath(os.path.expanduser(raw_root))
+            from lattice.config import get_library_roots, set_library_root
+
+            config_roots = [r for r in get_library_roots() if r and os.path.exists(r)]
+            if config_roots:
+                root = config_roots
+            elif sys.stdin.isatty():
+                print("First run: No library root configured.")
+                raw_input_root = input(
+                    "Enter path to your music library (or press Enter for current directory): "
+                ).strip()
+                if raw_input_root:
+                    single = os.path.abspath(os.path.expanduser(raw_input_root))
+                    set_library_root(single)
+                    print(f"Library root saved to {single}")
+                    root = [single]
+                else:
+                    root = [os.path.abspath(".")]
+            else:
+                root = [os.path.abspath(".")]
 
         if args.library:
             output = args.output or DEFAULT_LIBRARY_OUTPUT

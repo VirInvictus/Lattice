@@ -1,7 +1,14 @@
 import os
 import sys
 
-from lattice.utils import count_audio_files, _make_pbar, is_audio, parse_layout
+from lattice.utils import (
+    count_audio_files,
+    _make_pbar,
+    is_audio,
+    parse_layout,
+    iter_audio_dirs,
+    as_roots,
+)
 from lattice.tags import get_all_tags
 
 # =====================================
@@ -36,19 +43,19 @@ def _evaluate_rule(rule: str, t, parsed_layout: dict) -> bool:
 
 
 def generate_playlist(
-    root_dir: str,
+    root_dir: str | list[str],
     output_file: str,
     rule: str,
     layout: str = "{artist}/{album}",
     quiet: bool = False,
 ) -> int:
     """Generate an .m3u playlist based on a smart rule filter."""
-    root_dir = os.path.abspath(root_dir)
-    total_files = count_audio_files(root_dir)
+    roots = as_roots(root_dir)
+    total_files = count_audio_files(roots)
 
     if total_files == 0:
         if not quiet:
-            print(f"No audio files found under: {root_dir}")
+            print(f"No audio files found under: {', '.join(roots)}")
         return 0
 
     if not quiet:
@@ -58,14 +65,12 @@ def generate_playlist(
 
     playlist_entries: list[str] = []
 
-    for dirpath, dirs, files in os.walk(root_dir):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-
+    for src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         # Sort files to keep album tracks in order
         for f in sorted(files):
             if is_audio(f):
                 filepath = os.path.join(dirpath, f)
-                rel_path = os.path.relpath(filepath, root_dir)
+                rel_path = os.path.relpath(filepath, src_root)
                 parsed = parse_layout(rel_path, layout)
                 t = get_all_tags(filepath)
 

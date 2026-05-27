@@ -8,7 +8,16 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from lattice.utils import run_proc, has_tool, _make_pbar, green, red, yellow
+from lattice.utils import (
+    run_proc,
+    has_tool,
+    _make_pbar,
+    green,
+    red,
+    yellow,
+    as_roots,
+    relpath_under,
+)
 from lattice.tags import HAVE_MUTAGEN_MP3, MUTAGEN_MP3
 from lattice.config import (
     DEFAULT_MP3_OUTPUT,
@@ -142,15 +151,20 @@ def _flac_verdict(
 
 
 def run_flac_mode(
-    root: str, output: str, workers: int, prefer: str, *, quiet: bool = False
+    root: str | list[str],
+    output: str,
+    workers: int,
+    prefer: str,
+    *,
+    quiet: bool = False,
 ) -> int:
-    root = os.path.abspath(root)
-    flacs = _find_files_by_ext_path(Path(root), ".flac")
+    roots = as_roots(root)
+    flacs = _find_files_by_ext_path(roots, ".flac")
     total = len(flacs)
 
     if total == 0:
         if not quiet:
-            print(f"No FLAC files found under: {root}")
+            print(f"No FLAC files found under: {', '.join(roots)}")
         return 0
 
     have_flac = has_tool("flac")
@@ -171,7 +185,7 @@ def run_flac_mode(
         )
 
     if not quiet:
-        print(f"Found {total} FLAC files under: {root}")
+        print(f"Found {total} FLAC files under: {', '.join(roots)}")
 
     counts = {tier: 0 for tier in TIER_ORDER}
     flagged: list[tuple[str, str, str, str]] = []  # (path, tool, tier, reason)
@@ -216,7 +230,7 @@ def run_flac_mode(
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("FLAC INTEGRITY REPORT\n")
-        f.write(f"Root: {root}\n")
+        f.write(f"Root: {', '.join(roots)}\n")
         f.write(
             f"Scanned: {total}  OK: {counts[TIER_OK]}  "
             f"Suspect: {counts[TIER_SUSPECT]}  Corrupt: {counts[TIER_CORRUPT]}\n"
@@ -229,7 +243,7 @@ def run_flac_mode(
             f.write(f"{tier} ({len(rows)})\n")
             f.write("-" * 40 + "\n")
             for i, (path, tool, _tier, reason) in enumerate(rows, 1):
-                rel = os.path.relpath(path, root)
+                rel = relpath_under(path, roots)
                 f.write(f"  {i:>3}. {rel}\n")
                 f.write(f"       Tool: {tool}\n")
                 f.write(f"       {reason}\n\n")
@@ -260,16 +274,21 @@ def _find_ffmpeg(explicit_path: str | None) -> str | None:
     return shutil.which("ffmpeg")
 
 
-def _find_files_by_ext_path(root: Path, ext: str) -> list[Path]:
-    """Walk tree and return all files matching extension as Path objects."""
+def _find_files_by_ext_path(roots, ext: str) -> list[Path]:
+    """Collect files matching `ext` across one or more roots (each a directory or
+    a single file), as Path objects. Roots are normalized to absolute paths so a
+    later relpath against the same roots lines up."""
     out: list[Path] = []
-    root = root.expanduser().resolve()
-    if root.is_file() and root.suffix.lower() == ext:
-        return [root]
-    for dirpath, _, files in os.walk(root):
-        for fn in files:
-            if os.path.splitext(fn)[1].lower() == ext:
-                out.append(Path(dirpath) / fn)
+    for r in as_roots(roots):
+        p = Path(r)
+        if p.is_file():
+            if p.suffix.lower() == ext:
+                out.append(p)
+            continue
+        for dirpath, _, files in os.walk(r):
+            for fn in files:
+                if os.path.splitext(fn)[1].lower() == ext:
+                    out.append(Path(dirpath) / fn)
     return out
 
 
@@ -376,7 +395,7 @@ def _format_row_meta(row: dict[str, Any]) -> str:
 
 
 def _run_decode_scan(
-    root: str,
+    root: str | list[str],
     output: str,
     workers: int,
     ffmpeg: str | None,
@@ -391,7 +410,7 @@ def _run_decode_scan(
     quiet: bool,
 ) -> int:
     """Unified decode-check scanner for MP3, Opus, and future formats."""
-    root_path = Path(os.path.abspath(root))
+    roots = as_roots(root)
     ffmpeg_path = _find_ffmpeg(ffmpeg)
 
     if not ffmpeg_path:
@@ -408,7 +427,7 @@ def _run_decode_scan(
                 file=sys.stderr,
             )
 
-    targets = _find_files_by_ext_path(root_path, ext)
+    targets = _find_files_by_ext_path(roots, ext)
 
     if not targets:
         if not quiet:
@@ -469,7 +488,7 @@ def _run_decode_scan(
         handle.write(f"{tier} ({len(rows)})\n")
         handle.write("-" * 40 + "\n")
         for r in rows:
-            rel = os.path.relpath(r["path"], str(root_path))
+            rel = relpath_under(r["path"], roots)
             meta = _format_row_meta(r) if enrich else ""
             if compact:
                 handle.write(f"  {rel}{('  [' + meta + ']') if meta else ''}\n")
@@ -483,7 +502,7 @@ def _run_decode_scan(
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(f"{report_title}\n")
-        f.write(f"Root: {root_path}\n")
+        f.write(f"Root: {', '.join(roots)}\n")
         f.write(
             f"Scanned: {len(targets)}  OK: {counts[TIER_OK]}  "
             f"Metadata: {counts[TIER_METADATA]}  Suspect: {counts[TIER_SUSPECT]}  "
@@ -518,7 +537,7 @@ def _run_decode_scan(
 
 
 def run_mp3_mode(
-    root: str,
+    root: str | list[str],
     output: str,
     workers: int,
     ffmpeg: str | None,
@@ -544,7 +563,7 @@ def run_mp3_mode(
 
 
 def run_opus_mode(
-    root: str,
+    root: str | list[str],
     output: str,
     workers: int,
     ffmpeg: str | None,
@@ -570,7 +589,7 @@ def run_opus_mode(
 
 
 def run_wav_mode(
-    root: str,
+    root: str | list[str],
     output: str,
     workers: int,
     ffmpeg: str | None,
@@ -596,7 +615,7 @@ def run_wav_mode(
 
 
 def run_wma_mode(
-    root: str,
+    root: str | list[str],
     output: str,
     workers: int,
     ffmpeg: str | None,

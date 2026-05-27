@@ -9,6 +9,7 @@ exercised here; classify_decode is unit-tested in test_integrity.py.
 
 import os
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -120,6 +121,50 @@ class WingsTests(unittest.TestCase):
         self.assertIn("Electronic_Library.txt", names)
         self.assertIn("Rock_Library.txt", names)
         self.assertIn("Indie_Library.txt", names)
+
+
+class MultiRootTests(unittest.TestCase):
+    """A single invocation can scan several roots at once; results aggregate
+    across them. The second root is a temp copy of one fixture album, so the
+    same content lives under two roots."""
+
+    def _second_root(self, td: str) -> str:
+        """Build a second library under `td` holding a copy of Cursive/Domestica
+        (present exactly once in the fixture, so any duplicate it produces is
+        unambiguously cross-root)."""
+        dst = Path(td) / "Cursive" / "Domestica"
+        shutil.copytree(Path(FIXTURE) / "Cursive" / "Domestica", dst)
+        return td
+
+    def test_combined_stats_sum_both_roots(self):
+        with tempfile.TemporaryDirectory() as td:
+            second = self._second_root(td)
+            report = run_stats([FIXTURE, second], None, quiet=True)
+        # 9 in the fixture + the 2 copied Domestica tracks.
+        self.assertRegex(report, r"Total files:\s+11")
+        # The header lists both roots.
+        self.assertIn(",", report.split("Root:", 1)[1].splitlines()[0])
+
+    def test_duplicates_detected_across_roots(self):
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as od:
+            second = self._second_root(td)
+            out = os.path.join(od, "dupes.txt")
+            run_duplicates([FIXTURE, second], out, quiet=True)
+            text = Path(out).read_text(encoding="utf-8")
+        # Domestica is unique within the fixture, so its appearance as an exact
+        # album duplicate proves cross-root grouping.
+        exact = text[text.find("[EXACT") : text.find("[WITHIN")]
+        self.assertIn("Domestica", exact)
+        # With two roots, entries are prefixed by their root's basename so the
+        # two copies are distinguishable rather than identical relative paths.
+        self.assertIn("library/Cursive/Domestica", exact)
+
+    def test_single_root_as_list_matches_bare_string(self):
+        # Back-compat: a one-element list and a bare string are equivalent.
+        self.assertEqual(
+            run_stats(FIXTURE, None, quiet=True),
+            run_stats([FIXTURE], None, quiet=True),
+        )
 
 
 if __name__ == "__main__":

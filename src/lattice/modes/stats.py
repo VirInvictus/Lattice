@@ -1,7 +1,7 @@
 import os
 from collections import Counter, defaultdict
 
-from lattice.utils import count_audio_files, _make_pbar
+from lattice.utils import count_audio_files, _make_pbar, iter_audio_dirs, as_roots
 from lattice.tags import get_all_tags
 from lattice.config import AUDIO_EXTENSIONS
 
@@ -45,22 +45,22 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024**3):.2f} GB"
 
 
-def run_stats(root: str, output: str | None, *, quiet: bool = False) -> str:
-    """Generate a library-wide statistics report."""
-    root = os.path.abspath(root)
+def run_stats(root: str | list[str], output: str | None, *, quiet: bool = False) -> str:
+    """Generate a library-wide statistics report (combined across all roots)."""
+    roots = as_roots(root)
 
-    total_files = count_audio_files(root)
+    total_files = count_audio_files(roots)
     if total_files == 0:
         import lattice.utils as utils
 
         if not quiet and not utils.IN_TUI:
-            print(f"No audio files found under: {root}")
+            print(f"No audio files found under: {', '.join(roots)}")
         return ""
 
     import lattice.utils as utils
 
     if not quiet and not utils.IN_TUI:
-        print(f"Scanning {total_files} files under: {root}")
+        print(f"Scanning {total_files} files under: {', '.join(roots)}")
 
     pbar = _make_pbar(total_files, "Gathering stats", quiet)
 
@@ -78,9 +78,7 @@ def run_stats(root: str, output: str | None, *, quiet: bool = False) -> str:
     bitrates: list[int] = []
     fully_tagged = 0  # has title + artist + track + genre
 
-    for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-
+    for src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         for f in sorted(files):
             ext = os.path.splitext(f)[1].lower()
             if ext not in AUDIO_EXTENSIONS:
@@ -98,8 +96,9 @@ def run_stats(root: str, output: str | None, *, quiet: bool = False) -> str:
 
             t = get_all_tags(filepath)
 
-            # Artist/album tracking from directory structure
-            rel = os.path.relpath(dirpath, root)
+            # Artist/album tracking from directory structure, relative to the
+            # root this file lives under (so multi-root counts stay correct).
+            rel = os.path.relpath(dirpath, src_root)
             parts = rel.split(os.sep)
             if len(parts) >= 1:
                 artist_dirs.add(parts[0])
@@ -137,7 +136,7 @@ def run_stats(root: str, output: str | None, *, quiet: bool = False) -> str:
     # Build report
     lines: list[str] = []
     lines.append("LIBRARY STATISTICS")
-    lines.append(f"Root: {root}")
+    lines.append(f"Root: {', '.join(roots)}")
     lines.append("=" * 60)
     lines.append("")
 

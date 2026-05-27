@@ -123,9 +123,41 @@ def update_progress(current: int, total: int, prefix: str = "Progress") -> None:
         print()
 
 
-def count_audio_files(root_dir: str) -> int:
+def as_roots(root) -> list[str]:
+    """Normalize a single root (str) or a list of roots into a list of absolute
+    paths. Lets every mode accept one root or several without changing callers."""
+    roots = [root] if isinstance(root, (str, os.PathLike)) else list(root)
+    return [os.path.abspath(os.path.expanduser(r)) for r in roots]
+
+
+def iter_audio_dirs(root):
+    """Walk one or more roots top-down, pruning hidden directories, yielding
+    (root, dirpath, dirnames, filenames). The yielded root lets callers compute
+    a display path relative to whichever root a file actually lives under."""
+    for r in as_roots(root):
+        for dirpath, dirs, files in os.walk(r):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            yield r, dirpath, dirs, files
+
+
+def relpath_under(path: str, root) -> str:
+    """Display path relative to whichever root contains it. With a single root
+    this is a plain relpath. With several roots the owning root's basename is
+    prefixed, so an album living in two libraries renders distinguishably
+    instead of as two identical relative paths."""
+    roots = as_roots(root)
+    for r in roots:
+        if path == r or path.startswith(r + os.sep):
+            rel = os.path.relpath(path, r)
+            if len(roots) > 1:
+                return os.path.join(os.path.basename(r.rstrip(os.sep)), rel)
+            return rel
+    return path
+
+
+def count_audio_files(root) -> int:
     total = 0
-    for _, _, files in os.walk(root_dir):
+    for _r, _dp, _dirs, files in iter_audio_dirs(root):
         total += sum(1 for f in files if is_audio(f))
     return total
 

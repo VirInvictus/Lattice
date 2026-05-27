@@ -4,7 +4,13 @@ import base64
 import struct
 from collections import defaultdict
 
-from lattice.utils import is_audio, _has_cover_file
+from lattice.utils import (
+    is_audio,
+    _has_cover_file,
+    iter_audio_dirs,
+    as_roots,
+    relpath_under,
+)
 from lattice.config import ART_FORMAT_PRIORITY, DEFAULT_MISSING_ART_OUTPUT
 from lattice.tags import (
     HAVE_MUTAGEN_BASE,
@@ -143,23 +149,23 @@ def _has_embedded_art(directory: str) -> bool:
     return _extract_best_art(directory) is not None
 
 
-def run_extract_art(root: str, *, quiet: bool = False, dry_run: bool = False) -> int:
+def run_extract_art(
+    root: str | list[str], *, quiet: bool = False, dry_run: bool = False
+) -> int:
     """Walk tree, extract cover art to cover.jpg for directories that lack it."""
     if not HAVE_MUTAGEN_BASE:
         print("ERROR: mutagen is required for art extraction.", file=sys.stderr)
         return 2
 
-    root = os.path.abspath(root)
+    roots = as_roots(root)
     extracted = 0
     skipped = 0
     failed = 0
 
     if not quiet:
-        print(f"Scanning for missing cover art under: {root}")
+        print(f"Scanning for missing cover art under: {', '.join(roots)}")
 
-    for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-
+    for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         # Only process directories that contain audio files
         has_audio = any(is_audio(f) for f in files)
         if not has_audio:
@@ -206,21 +212,19 @@ def run_extract_art(root: str, *, quiet: bool = False, dry_run: bool = False) ->
 # =====================================
 
 
-def run_missing_art(root: str, output: str, *, quiet: bool = False) -> int:
+def run_missing_art(root: str | list[str], output: str, *, quiet: bool = False) -> int:
     """Report directories that have audio files but no cover art (folder or embedded)."""
     if not HAVE_MUTAGEN_BASE:
         print("ERROR: mutagen is required for art detection.", file=sys.stderr)
         return 2
 
-    root = os.path.abspath(root)
+    roots = as_roots(root)
     missing: list[dict[str, str]] = []
 
     if not quiet:
-        print(f"Scanning for missing art under: {root}")
+        print(f"Scanning for missing art under: {', '.join(roots)}")
 
-    for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-
+    for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         audio_files = [f for f in files if is_audio(f)]
         if not audio_files:
             continue
@@ -256,7 +260,7 @@ def run_missing_art(root: str, output: str, *, quiet: bool = False) -> int:
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("MISSING ART REPORT\n")
-        f.write(f"Root: {root}\n")
+        f.write(f"Root: {', '.join(roots)}\n")
         f.write(
             f"No art at all: {len(no_art_at_all)}  Embedded only: {len(embedded_only)}\n"
         )
@@ -266,7 +270,7 @@ def run_missing_art(root: str, output: str, *, quiet: bool = False) -> int:
             f.write("NO ART (no folder image, no embedded art)\n")
             f.write("-" * 40 + "\n")
             for m in no_art_at_all:
-                rel = os.path.relpath(m["directory"], root)
+                rel = relpath_under(m["directory"], roots)
                 f.write(f"  {rel}  ({m['audio_count']} files)\n")
             f.write("\n")
 
@@ -274,7 +278,7 @@ def run_missing_art(root: str, output: str, *, quiet: bool = False) -> int:
             f.write("EMBEDDED ONLY (no folder image)\n")
             f.write("-" * 40 + "\n")
             for m in embedded_only:
-                rel = os.path.relpath(m["directory"], root)
+                rel = relpath_under(m["directory"], roots)
                 f.write(f"  {rel}  ({m['audio_count']} files)\n")
             f.write("\n")
 
@@ -326,7 +330,7 @@ def _get_image_size(data: bytes) -> tuple[int, int] | None:
 
 
 def run_art_quality_audit(
-    root: str, output: str, min_res: int, *, quiet: bool = False
+    root: str | list[str], output: str, min_res: int, *, quiet: bool = False
 ) -> int:
     """Report extracted/folder covers below a resolution threshold."""
     if not HAVE_MUTAGEN_BASE:
@@ -336,16 +340,15 @@ def run_art_quality_audit(
     from lattice.config import COVER_NAMES
     from lattice.utils import _make_pbar
 
-    root = os.path.abspath(root)
+    roots = as_roots(root)
     issues: list[dict[str, str]] = []
 
     if not quiet:
-        print(f"Auditing art quality (< {min_res}x{min_res}) under: {root}")
+        print(f"Auditing art quality (< {min_res}x{min_res}) under: {', '.join(roots)}")
 
     # Count directories for progress
     dirs_with_audio = []
-    for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
+    for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         if any(is_audio(f) for f in files):
             dirs_with_audio.append(dirpath)
 
@@ -400,13 +403,13 @@ def run_art_quality_audit(
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("ART QUALITY AUDIT REPORT\n")
-        f.write(f"Root: {root}\n")
+        f.write(f"Root: {', '.join(roots)}\n")
         f.write(f"Floor: < {min_res}x{min_res}\n")
         f.write(f"Scanned: {len(dirs_with_audio)} dirs  Below floor: {len(issues)}\n")
         f.write("=" * 60 + "\n\n")
 
         for issue in issues:
-            rel_dir = os.path.relpath(issue["directory"], root)
+            rel_dir = relpath_under(issue["directory"], roots)
             f.write(f"  {rel_dir}/\n")
             f.write(
                 f"    Source: {issue['source']}  Resolution: {issue['resolution']}\n\n"

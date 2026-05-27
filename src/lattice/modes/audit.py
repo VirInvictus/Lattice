@@ -7,7 +7,14 @@ from difflib import SequenceMatcher
 from typing import NamedTuple
 from collections.abc import Sequence
 
-from lattice.utils import is_audio, count_audio_files, _make_pbar
+from lattice.utils import (
+    is_audio,
+    count_audio_files,
+    _make_pbar,
+    iter_audio_dirs,
+    as_roots,
+    relpath_under,
+)
 from lattice.tags import get_all_tags, HAVE_MUTAGEN_BASE, TagBundle
 from lattice.config import (
     AUDIO_EXTENSIONS,
@@ -144,8 +151,8 @@ def _fmt_duration(secs: float | None) -> str:
     return f"{m}:{s:02d}"
 
 
-def _fmt_dir_summary(d: _DirInfo, root: str) -> str:
-    rel = os.path.relpath(d.path, root)
+def _fmt_dir_summary(d: _DirInfo, roots: list[str]) -> str:
+    rel = relpath_under(d.path, roots)
     parts = []
     for ext in sorted(d.formats):
         count = d.formats[ext]
@@ -156,7 +163,7 @@ def _fmt_dir_summary(d: _DirInfo, root: str) -> str:
     return f"       {rel}/  [{fmt_str}]  {_fmt_size(d.total_bytes)}"
 
 
-def _section_exact(dirs: list[_DirInfo], root: str, out) -> tuple[int, set]:
+def _section_exact(dirs: list[_DirInfo], roots: list[str], out) -> tuple[int, set]:
     groups: dict[tuple[str, str], list[_DirInfo]] = defaultdict(list)
     for d in dirs:
         # Require both keys non-empty: grouping folders by ("metallica", "")
@@ -178,12 +185,12 @@ def _section_exact(dirs: list[_DirInfo], root: str, out) -> tuple[int, set]:
         first = locs[0]
         out.write(f"  {i}. {first.artist} — {first.album}\n")
         for d in sorted(locs, key=lambda x: x.path):
-            out.write(_fmt_dir_summary(d, root) + "\n")
+            out.write(_fmt_dir_summary(d, roots) + "\n")
         out.write("\n")
     return len(dupes), set(dupes.keys())
 
 
-def _section_multiformat(dirs: list[_DirInfo], root: str, out) -> int:
+def _section_multiformat(dirs: list[_DirInfo], roots: list[str], out) -> int:
     # Each value: ext -> (filename, size, tag_title, original_stem)
     hits: list[
         tuple[
@@ -216,7 +223,7 @@ def _section_multiformat(dirs: list[_DirInfo], root: str, out) -> int:
 
     out.write(f"[WITHIN-DIRECTORY MULTI-FORMAT]    ({len(hits)} directories)\n\n")
     for i, (d, matched) in enumerate(sorted(hits, key=lambda x: x[0].path), 1):
-        rel = os.path.relpath(d.path, root)
+        rel = relpath_under(d.path, roots)
         out.write(f"  {i}. {rel}/\n")
         for (trackno, _title_key), fmts in sorted(
             matched.items(),
@@ -240,7 +247,11 @@ def _section_multiformat(dirs: list[_DirInfo], root: str, out) -> int:
 
 
 def _section_similar(
-    dirs: list[_DirInfo], exact_keys: set, root: str, out, threshold: float = 0.85
+    dirs: list[_DirInfo],
+    exact_keys: set,
+    roots: list[str],
+    out,
+    threshold: float = 0.85,
 ) -> int:
     by_artist: dict[str, list[_DirInfo]] = defaultdict(list)
     for d in dirs:
@@ -279,8 +290,8 @@ def _section_similar(
     )
     for i, (ratio, a, b) in enumerate(pairs, 1):
         out.write(f"  {i}. [{ratio:.2f}]  {a.artist}\n")
-        out.write(f'       "{a.album}"  ({os.path.relpath(a.path, root)})\n')
-        out.write(f'       "{b.album}"  ({os.path.relpath(b.path, root)})\n')
+        out.write(f'       "{a.album}"  ({relpath_under(a.path, roots)})\n')
+        out.write(f'       "{b.album}"  ({relpath_under(b.path, roots)})\n')
         out.write("\n")
     return len(pairs)
 
@@ -317,7 +328,7 @@ def _cluster_by_duration(
 
 
 def _section_track_dupes(
-    dirs: list[_DirInfo], root: str, out, duration_delta: float = 2.0
+    dirs: list[_DirInfo], roots: list[str], out, duration_delta: float = 2.0
 ) -> int:
     track_map: dict[tuple[str, str], list[tuple[_DirInfo, str, TagBundle]]] = (
         defaultdict(list)
@@ -360,7 +371,7 @@ def _section_track_dupes(
             f"  {i}. {artist_display} — {title_display}  ({len(entries)} copies)\n"
         )
         for d, fname, t in sorted(entries, key=lambda e: e[0].path):
-            rel = os.path.relpath(os.path.join(d.path, fname), root)
+            rel = relpath_under(os.path.join(d.path, fname), roots)
             dur = _fmt_duration(t.duration_s)
             br = f"{t.bitrate_kbps}kbps" if t.bitrate_kbps else "--"
             out.write(f"       {rel}    {dur}  {br}\n")
@@ -368,26 +379,26 @@ def _section_track_dupes(
     return len(hits)
 
 
-def run_duplicates(root: str, output: str, *, quiet: bool = False) -> int:
+def run_duplicates(root: str | list[str], output: str, *, quiet: bool = False) -> int:
     """Detect duplicate albums, within-folder multi-format duplicates, similar
     album names, and track-level cross-library duplicates. Emits a single
-    sectioned text report."""
+    sectioned text report. With several roots, duplicates are detected across
+    them (e.g. the same album living in two separate libraries)."""
     if not HAVE_MUTAGEN_BASE:
         print("ERROR: mutagen is required for duplicate detection.", file=sys.stderr)
         return 2
 
-    root = os.path.abspath(root)
+    roots = as_roots(root)
     if not quiet:
-        print(f"Scanning for duplicates under: {root}")
+        print(f"Scanning for duplicates under: {', '.join(roots)}")
 
-    total = count_audio_files(root)
+    total = count_audio_files(roots)
     pbar = _make_pbar(total, "Reading tags", quiet)
 
     tag_cache: dict[str, TagBundle] = {}
     dirs: list[_DirInfo] = []
 
-    for dirpath, subdirs, files in os.walk(root):
-        subdirs[:] = [d for d in subdirs if not d.startswith(".")]
+    for _src_root, dirpath, _subdirs, files in iter_audio_dirs(roots):
         audio_files = sorted(f for f in files if is_audio(f))
         if not audio_files:
             continue
@@ -404,14 +415,14 @@ def run_duplicates(root: str, output: str, *, quiet: bool = False) -> int:
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("DUPLICATE REPORT\n")
-        f.write(f"Root: {root}\n")
+        f.write(f"Root: {', '.join(roots)}\n")
         f.write(f"Directories: {len(dirs)}    Audio files: {total}\n")
         f.write("=" * 70 + "\n\n")
 
-        exact_count, exact_keys = _section_exact(dirs, root, f)
-        mf_count = _section_multiformat(dirs, root, f)
-        sim_count = _section_similar(dirs, exact_keys, root, f)
-        trk_count = _section_track_dupes(dirs, root, f)
+        exact_count, exact_keys = _section_exact(dirs, roots, f)
+        mf_count = _section_multiformat(dirs, roots, f)
+        sim_count = _section_similar(dirs, exact_keys, roots, f)
+        trk_count = _section_track_dupes(dirs, roots, f)
 
     if not quiet:
         print(f"\nReport written to: {out_path}")
@@ -427,24 +438,22 @@ def run_duplicates(root: str, output: str, *, quiet: bool = False) -> int:
 # =====================================
 
 
-def run_tag_audit(root: str, output: str, *, quiet: bool = False) -> int:
+def run_tag_audit(root: str | list[str], output: str, *, quiet: bool = False) -> int:
     """Report audio files missing title, artist, track number, or genre."""
     if not HAVE_MUTAGEN_BASE:
         print("ERROR: mutagen is required for tag auditing.", file=sys.stderr)
         return 2
 
-    root = os.path.abspath(root)
+    roots = as_roots(root)
     issues: list[dict[str, str]] = []
 
     if not quiet:
-        print(f"Auditing tags under: {root}")
+        print(f"Auditing tags under: {', '.join(roots)}")
 
-    total = count_audio_files(root)
+    total = count_audio_files(roots)
     pbar = _make_pbar(total, "Auditing tags", quiet)
 
-    for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-
+    for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         for f in sorted(files):
             ext = os.path.splitext(f)[1].lower()
             if ext not in AUDIO_EXTENSIONS:
@@ -493,7 +502,7 @@ def run_tag_audit(root: str, output: str, *, quiet: bool = False) -> int:
 
     with open(out_path, "w", encoding="utf-8") as out_file:
         out_file.write("TAG AUDIT REPORT\n")
-        out_file.write(f"Root: {root}\n")
+        out_file.write(f"Root: {', '.join(roots)}\n")
         out_file.write(f"Scanned: {total}  Incomplete: {len(issues)}\n")
         if field_counts:
             breakdown = "  ".join(
@@ -503,7 +512,7 @@ def run_tag_audit(root: str, output: str, *, quiet: bool = False) -> int:
         out_file.write("=" * 60 + "\n\n")
 
         for directory in sorted(by_dir.keys()):
-            rel_dir = os.path.relpath(directory, root)
+            rel_dir = relpath_under(directory, roots)
             out_file.write(f"  {rel_dir}/\n")
             for issue in by_dir[directory]:
                 filename = os.path.basename(issue["path"])
@@ -529,25 +538,23 @@ def run_tag_audit(root: str, output: str, *, quiet: bool = False) -> int:
 
 
 def run_bitrate_audit(
-    root: str, output: str, min_kbps: int, *, quiet: bool = False
+    root: str | list[str], output: str, min_kbps: int, *, quiet: bool = False
 ) -> int:
     """Report audio files falling below a specified bitrate floor."""
     if not HAVE_MUTAGEN_BASE:
         print("ERROR: mutagen is required for bitrate auditing.", file=sys.stderr)
         return 2
 
-    root = os.path.abspath(root)
+    roots = as_roots(root)
     issues: list[dict[str, str]] = []
 
     if not quiet:
-        print(f"Auditing bitrates (< {min_kbps} kbps) under: {root}")
+        print(f"Auditing bitrates (< {min_kbps} kbps) under: {', '.join(roots)}")
 
-    total = count_audio_files(root)
+    total = count_audio_files(roots)
     pbar = _make_pbar(total, "Auditing bitrates", quiet)
 
-    for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-
+    for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         for f in sorted(files):
             ext = os.path.splitext(f)[1].lower()
             if ext not in AUDIO_EXTENSIONS:
@@ -585,13 +592,13 @@ def run_bitrate_audit(
 
     with open(out_path, "w", encoding="utf-8") as out_file:
         out_file.write("BITRATE AUDIT REPORT\n")
-        out_file.write(f"Root: {root}\n")
+        out_file.write(f"Root: {', '.join(roots)}\n")
         out_file.write(f"Floor: < {min_kbps} kbps\n")
         out_file.write(f"Scanned: {total}  Below floor: {len(issues)}\n")
         out_file.write("=" * 60 + "\n\n")
 
         for directory in sorted(by_dir.keys()):
-            rel_dir = os.path.relpath(directory, root)
+            rel_dir = relpath_under(directory, roots)
             out_file.write(f"  {rel_dir}/\n")
             for issue in by_dir[directory]:
                 filename = os.path.basename(issue["path"])

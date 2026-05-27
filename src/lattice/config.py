@@ -68,6 +68,19 @@ def get_library_root() -> str | None:
     return load_config().get("library_root")
 
 
+def get_library_roots() -> list[str]:
+    """Configured root(s) used as the default when no --root is passed: the
+    optional `library_roots` array if present, else the single `library_root`,
+    else empty. Lets a user pin several permanent libraries by hand-editing the
+    config; the first-run prompt still saves only the one `library_root`."""
+    config = load_config()
+    roots = config.get("library_roots")
+    if isinstance(roots, list) and roots:
+        return [os.path.abspath(os.path.expanduser(r)) for r in roots if r]
+    single = config.get("library_root")
+    return [single] if single else []
+
+
 def set_library_root(root: str) -> None:
     config = load_config()
     config["library_root"] = os.path.abspath(os.path.expanduser(root))
