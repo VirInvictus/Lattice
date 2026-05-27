@@ -351,8 +351,9 @@ Artist<TAB>Genre<TAB>Second Genre<TAB>...
 - `build` seeds the line with all the genres the artist currently uses (most-common first), so the map starts as a faithful snapshot and `apply` is a no-op. **To tidy, remove a stray genre from a line**; its albums then collapse to the first genre. Reorder the line to change which genre is the target.
 - Leave only the artist (nothing after it) to skip that artist entirely.
 - Multi-genre artists get a `#` comment above their line with the per-genre counts, so low-count strays worth trimming stand out (e.g. `# Eminem: 3 genres: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1`).
+- **Compilations are excluded.** An album whose album-artist is `Various Artists` (or `VA`/`Various`) gets a flagged `EXCLUDED` comment, never an enforceable row, and `apply` always skips it: a compilation collects unrelated tracks with no single canonical genre, so there is nothing to enforce.
 
-Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name, so a compilation folder is keyed under its `Various Artists` tag.
+Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name. Lattice's tag layer prefers the album-artist, so a compilation is keyed under its `Various Artists` album-artist and caught by the exclusion above.
 
 **Safety.** Seeding the map from the library's current state means `apply` changes nothing you have not asked for: a retag happens only where you removed a genre from a line. `apply` is otherwise guarded like the other companions: `--dry-run` previews every `retag.py` call and writes nothing (log lines prefixed `[DRY]`), an append-only timestamped log records every decision (default `<library>/genre_tidy.log`), and the operation is idempotent (a second `apply` is all no-ops). Re-running `build` over an existing map preserves your edits and only appends artists new to the library.
 

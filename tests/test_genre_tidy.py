@@ -155,5 +155,27 @@ class BuildRowsTests(unittest.TestCase):
         )
 
 
+class ExcludedArtistsTests(unittest.TestCase):
+    def test_common_va_forms_are_excluded(self):
+        for name in ("Various Artists", "various", "VA"):
+            self.assertIn(gt.norm(name), gt.EXCLUDED_ARTISTS)
+
+    def test_build_flags_va_as_comment_without_data_row(self):
+        reduced = gt.reduce_artists(
+            [FakeAD("Various Artists", "Pop"), FakeAD("Various Artists", "Rock")]
+        )
+        rows = gt.build_rows(reduced)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].startswith("# Various Artists: EXCLUDED"))
+        # No enforceable data row, so parse_map yields no entry to apply.
+        self.assertNotIn(gt.norm("Various Artists"), gt.parse_map(rows))
+
+    def test_va_data_row_still_not_parsed_as_enforceable(self):
+        # Even a hand-written VA row parses (apply hard-skips it separately), but
+        # build never emits one; this guards the build side.
+        reduced = gt.reduce_artists([FakeAD("Various Artists", "Soundtrack")])
+        self.assertFalse(any("\t" in r for r in gt.build_rows(reduced)))
+
+
 if __name__ == "__main__":
     unittest.main()

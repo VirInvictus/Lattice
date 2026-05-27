@@ -40,7 +40,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # Folds curly quotes, dash variants, and case so artist/genre strings compare
 # the way a human reads them. Mirrors audit._norm_key / cleaner.normalize_name;
@@ -70,6 +70,8 @@ TSV_HEADER = [
     "#     changes nothing until you edit. To tidy, REMOVE a stray genre from a",
     "#     line and its albums collapse to the first genre; reorder to retarget.",
     "#   - Leave only the artist (no genres) to skip that artist entirely.",
+    "#   - Compilation album-artists (Various Artists) are flagged EXCLUDED and",
+    "#     never enforced: a comp has no single canonical genre.",
     "#   - Lines starting with # are comments.",
     "",
 ]
@@ -82,6 +84,14 @@ def norm(s: str | None) -> str:
     for k, v in _QUOTE_DASH_FOLD.items():
         s = s.replace(k, v)
     return " ".join(s.split()).lower()
+
+
+# Compilation album-artists: a "Various Artists" disc collects unrelated tracks
+# with no single canonical genre, so there is nothing to enforce. build flags
+# these for manual review (a commented line, no data row) and apply never
+# retags them. (TagBundle.artist already prefers the album-artist tag, so this
+# keys off album-artist, not the per-track performer.)
+EXCLUDED_ARTISTS = {"various artists", "various", "va"}
 
 
 # ============================ pure map helpers ============================
@@ -163,6 +173,13 @@ def build_rows(reduced: dict[str, tuple[str, Counter]]) -> list[str]:
     for key in sorted(reduced, key=lambda k: reduced[k][0].lower()):
         display, genres = reduced[key]
         ordered = [g for g, _ in genres.most_common()]
+        if key in EXCLUDED_ARTISTS:
+            spread = ", ".join(f"{g}×{n}" for g, n in genres.most_common())
+            rows.append(
+                f"# {display}: EXCLUDED (compilation): {spread or 'no genre tags'}. "
+                f"Not enforced; investigate manually."
+            )
+            continue
         if len(ordered) > 1:
             breakdown = ", ".join(f"{g}×{n}" for g, n in genres.most_common())
             rows.append(f"# {display}: {len(ordered)} genres: {breakdown}")
@@ -295,6 +312,10 @@ def cmd_apply(args) -> int:
 
         for ad in sorted(album_dirs, key=lambda a: a.path):
             rel = os.path.relpath(ad.path, directory)
+            if norm(ad.artist) in EXCLUDED_ARTISTS:
+                stats["excluded"] += 1
+                log.write(f"  SKIP (compilation/various-artists): {rel}  [{ad.artist}]")
+                continue
             entry = entries.get(norm(ad.artist))
             if entry is None:
                 stats["unmapped"] += 1
@@ -336,6 +357,10 @@ def cmd_apply(args) -> int:
         print(f"  {stats['unmapped']} album(s) skipped (artist not in map).")
     if stats["skipped_blank"]:
         print(f"  {stats['skipped_blank']} album(s) skipped (artist genre blanked).")
+    if stats["excluded"]:
+        print(
+            f"  {stats['excluded']} album(s) skipped (compilation / various-artists)."
+        )
     if stats["errors"]:
         print(f"  {stats['errors']} retag error(s) — see log.")
     print(f"Log: {log_path}")

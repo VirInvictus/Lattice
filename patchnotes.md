@@ -1,5 +1,13 @@
 # Lattice Patch Notes
 
+## Companion script: `genre_tidy.py` v1.2.0 (2026-05-27)
+
+*(Companion-script change; no package version bump.)*
+
+---
+
+- **Compilations are excluded from the genre authority.** An album whose album-artist is `Various Artists` (or `VA`/`Various`) has no single canonical genre, so enforcing one would wrongly flatten the disc. `build` now writes such artists as a flagged `# ... EXCLUDED (compilation)` comment instead of an enforceable row, and `apply` hard-skips them even if a stale row exists. The shipped `artist_genre_defaults.tsv` had its `Various Artists` row converted to the exclusion comment. (Lattice's tag layer already prefers the album-artist, so this keys off album-artist.)
+
 ## Companion script: `rerate.py` (2026-05-27)
 
 *(Companion-script addition; no package version bump.)*
