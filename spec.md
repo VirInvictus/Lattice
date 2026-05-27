@@ -1,6 +1,6 @@
 # Lattice Application Specification
 
-**Version:** 4.5.0  
+**Version:** 4.6.0  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT
@@ -60,7 +60,11 @@ When run with no arguments, the tool launches a full-screen curses TUI with:
 
 Every mode is accessible via flags (`--library`, `--testFLAC`, etc.) for
 scripting and automation. All modes accept `--root`, `--output`, `--workers`,
-`--quiet`, and `--verbose` where applicable.
+`--quiet`, and `--verbose` where applicable. `--root` is repeatable: several
+libraries scan together in one pass and results aggregate across them (a
+repeated path is de-duped). An optional `library_roots` array in the config
+supplies default roots; the first-run prompt persists only the single
+`library_root`.
 
 ---
 

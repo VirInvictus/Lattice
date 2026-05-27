@@ -1,5 +1,24 @@
 # Lattice Patch Notes
 
+## v4.6.0 (2026-05-27)
+
+---
+
+### Multi-root scanning
+
+- **`--root` is now repeatable.** `lattice --duplicates --root /mnt/A --root /mnt/B` walks both libraries in one pass; a path passed twice is de-duped. Every mode (trees, wings, stats, audits, art, playlists) aggregates across the roots.
+- **Cross-library duplicate detection.** With more than one root, an album that lives in two libraries is grouped as a single exact duplicate. Each entry is prefixed by its root's basename (`Music/...` vs `Rin's Music/...`) so the two copies are distinguishable; single-root reports are unchanged.
+- **Optional config array.** A `library_roots` array in `~/.config/lattice/config.json` supplies default roots when no `--root` is given. The first-run prompt still saves only the single `library_root`, so a throwaway `--root` is never persisted.
+
+### Color output
+
+- **Colorized status summaries.** Integrity summaries print a green all-clear, yellow suspect counts, and red corrupt counts. Color is gated on an interactive terminal: off inside the TUI, off when piped or redirected, off under `NO_COLOR`, so report files and pipes stay byte-clean.
+
+### Companion scripts
+
+- **`retag.py`: stale genres fully cleared (the deadbeef trap).** A genre can hide in more than the standard ID3 `TCON` frame: an APEv2 tag, the ID3v1 genre byte, and a bare custom `TXXX:GENRE` frame. The old `EasyID3` path left those overrides in place, so players like deadbeef kept showing the old value. The MP3 path now clears all of them and writes one clean `TCON` (v2.3, refreshed ID3v1), while deliberately preserving qualified `TXXX` frames (AcousticBrainz `AB:*`, `ALBUMGENRE`, MusicBrainz).
+- **`cleaner.py`: apostrophe-fold fix.** `normalize_name` now strips apostrophes and collapses whitespace after the existing NFKC/dash/quote/case folding, so `Director's Cut` and `Directors Cut` consolidate. (Closes the 2026-05-25 found bug.)
+
 ## v4.5.0 (2026-05-26)
 
 ---

@@ -102,7 +102,7 @@ python -m unittest discover
 
 ## Usage
 
-Lattice remembers your library location. On first run (TUI or CLI) it asks for your music library path and saves it to `~/.config/lattice/config.json`; after that, `--root` is optional.
+Lattice remembers your library location. On first run (TUI or CLI) it asks for your music library path and saves it to `~/.config/lattice/config.json`; after that, `--root` is optional. Repeat `--root` to scan several libraries together in one pass (see [Multi-root scanning](#multi-root-scanning)).
 
 ```bash
 # Build a library tree with genre tags
@@ -142,6 +142,9 @@ lattice --missingArt --output missing_art.txt
 # Find duplicates: exact, multi-format, similar-name, track-level
 lattice --duplicates --output duplicates.txt
 
+# Scan two libraries together (repeat --root); surfaces cross-library duplicates
+lattice --duplicates --root ~/Music --root /mnt/usb/Albums --output duplicates.txt
+
 # Audit tags for missing metadata
 lattice --auditTags --output tag_audit.txt
 ```
@@ -169,17 +172,45 @@ lattice --all-wings --root ~/Music --output wings/
 
 Produces `Alternative_Rock_Library.txt`, `East_Coast_Rap_Library.txt`, and so on; untagged albums land in `Uncategorized_Library.txt`. Add `--genres` to label each album header.
 
+## Multi-root scanning
+
+`--root` is repeatable, so a single invocation can span more than one library:
+
+```bash
+lattice --duplicates --root ~/Music --root /mnt/usb/Albums --output duplicates.txt
+```
+
+Every mode aggregates across the roots: combined statistics, one merged library tree, genre wings that span both, and so on. A path passed twice is de-duped. The payoff for `--duplicates` is cross-library detection: an album that lives in both libraries is grouped as a single exact duplicate, and each entry is prefixed by its root's basename (`Music/…` vs `Albums/…`) so you can tell the copies apart.
+
+To make several roots permanent, add a `library_roots` array to `~/.config/lattice/config.json`:
+
+```json
+{ "library_roots": ["/home/you/Music", "/mnt/usb/Albums"] }
+```
+
+The first-run prompt still saves only the single `library_root`, so a throwaway `--root` is never written to config.
+
+## Color output
+
+The status summary that each integrity mode prints is colorized: green for an all-clear, yellow for suspect counts, red for corrupt counts. Color appears only on an interactive terminal. It is suppressed inside the TUI, when output is piped or redirected, and when `NO_COLOR` is set, so report files and pipes stay clean.
+
 ## Companion Script: `retag.py`
 
 Included in `scripts/` is `retag.py`, a universal genre tagger designed to work directly with the `--all-wings --paths` output. 
 
 Audio metadata formats handle multiple genres entirely differently (ID3 uses null bytes or slashes, Vorbis uses multiple `GENRE=` pairs, Apple uses specific custom atoms). `retag.py` abstracts this container chaos away, allowing you to safely hard-overwrite genres on an entire album directory simultaneously.
 
+It writes tags in place, so it is destructive. Preview every change with `--dry-run` before committing, and pass `--log` to keep an append-only record.
+
 **The Workflow:**
 1. Generate your wings with paths: `lattice --all-wings --root ~/Music --output wings/ --paths`
    *(If you are using the compiled binary, replace `lattice` with `./dist/lattice`)*
 2. Open a generated wing (e.g., `Uncategorized_Library.txt`) and copy the bracketed `[/path/to/album]` from an album header.
-3. Pass that path and your desired new genre(s) to `retag.py`:
+3. Preview the change first with `--dry-run` (prints `old -> new` per file, writes nothing):
+   ```bash
+   ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial" --dry-run
+   ```
+4. When it looks right, drop `--dry-run` to apply it:
    ```bash
    ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial"
    ```
@@ -257,7 +288,7 @@ CORRUPT and SUSPECT are always listed in the report; METADATA and OK are summari
 ```
 usage: lattice [-h] [--version] [--library | --ai-library | --all-wings | --ai-wings | --testFLAC | --testMP3 | --testOpus | --testWAV |
                --testWMA | --extractArt | --missingArt | --auditArtQuality | --duplicates | --auditTags | --auditBitrate | --playlist | --stats]
-               [--root ROOT] [--output OUTPUT] [--rule RULE] [--layout LAYOUT] [--min-art-res MIN_ART_RES] [--min-bitrate MIN_BITRATE]
+               [--root DIR] [--output OUTPUT] [--rule RULE] [--layout LAYOUT] [--min-art-res MIN_ART_RES] [--min-bitrate MIN_BITRATE]
                [--workers WORKERS] [--prefer {flac,ffmpeg}] [--quiet] [--genres] [--paths] [--dry-run] [--only-errors | --no-only-errors]
                [--ffmpeg FFMPEG] [--verbose]
                [pos_root]
@@ -287,7 +318,8 @@ options:
   --auditBitrate        Report files below a certain bitrate floor
   --playlist            Generate a smart .m3u playlist based on a rule
   --stats               Library-wide statistics summary
-  --root ROOT           Root directory (default: read from config or current dir)
+  --root DIR            Root directory; repeat --root to scan several libraries
+                        together (default: read from config or current dir)
   --output OUTPUT       Output path
   --rule RULE           Smart playlist rule (e.g. "rating >= 4 and genre == 'Jazz'")
   --layout LAYOUT       Directory structure pattern for extracting tags from path (default: {artist}/{album})
