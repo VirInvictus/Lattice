@@ -20,8 +20,8 @@ import sys
 from datetime import datetime
 
 import mutagen
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3NoHeaderError
+from mutagen.apev2 import APEv2
+from mutagen.id3 import ID3, TCON, ID3NoHeaderError
 from mutagen.mp4 import MP4
 
 __version__ = "1.0.0"
@@ -48,24 +48,27 @@ def apply_genres(filepath: str, new_genres: list[str]) -> bool:
     ext = os.path.splitext(filepath)[1].lower()
     try:
         if ext == ".mp3":
-            # Remove APEv2 tags if present (they often cause conflicting dual-genres).
+            # A genre can hide in several ID3 spots that override the standard
+            # TCON in some players (the deadbeef "won't update" trap): an APEv2
+            # tag, the ID3v1 genre byte, and a custom TXXX:GENRE frame. Clear all
+            # three, then write one clean TCON. Qualified TXXX frames
+            # (AcousticBrainz AB:*, ALBUMGENRE, MusicBrainz, etc.) are left alone.
             try:
-                from mutagen.apev2 import APEv2
-
                 APEv2(filepath).delete()
             except Exception:
                 pass
 
             try:
-                audio = EasyID3(filepath)
+                tags = ID3(filepath)
             except ID3NoHeaderError:
-                audio = mutagen.File(filepath, easy=True)
-                audio.add_tags()
+                tags = ID3()
 
-            audio.pop("genre", None)
-            audio["genre"] = new_genres
-            # Force v2.3 for widespread player compatibility; sync v1 tags.
-            audio.save(v2_version=3, v1=2)
+            tags.delall("TCON")
+            for key in [k for k in tags if k.upper() == "TXXX:GENRE"]:
+                del tags[key]
+            tags.add(TCON(encoding=3, text=new_genres))
+            # v2.3 for widespread player compatibility; refresh the ID3v1 genre.
+            tags.save(filepath, v2_version=3, v1=2)
 
         elif ext in (".flac", ".opus", ".ogg"):
             audio = mutagen.File(filepath)
