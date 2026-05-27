@@ -4,7 +4,8 @@ cleaner.py — consolidate fragmented album folders.
 
 Walks a music root looking for sibling folders whose names differ only in
 quote rendering (' vs '), dash/hyphen variant (- vs ‐ vs – vs —), case,
-or whitespace. Such pairs typically result from inconsistent metadata
+whitespace, or apostrophe presence ("Director's Cut" vs "Directors Cut").
+Such pairs typically result from inconsistent metadata
 across import sources (e.g. some tracks tagged with curly apostrophes,
 others straight) and produce album fragments scattered across two folders.
 
@@ -35,6 +36,8 @@ import sys
 import unicodedata
 from datetime import datetime
 from pathlib import Path
+
+__version__ = "1.0.0"
 
 AUDIO_EXT = {
     ".mp3",
@@ -69,7 +72,10 @@ def normalize_name(s: str) -> str:
     s = unicodedata.normalize("NFKC", s)
     for k, v in QUOTE_DASH_FOLD.items():
         s = s.replace(k, v)
-    return s.strip().lower()
+    # Fold apostrophe-present vs absent ("Director's Cut" == "Directors Cut") and
+    # collapse whitespace so removing a quote can't leave a stray double space.
+    s = s.replace("'", "").replace('"', "")
+    return " ".join(s.split()).lower()
 
 
 class Run:
@@ -240,6 +246,9 @@ def main() -> int:
         dest="log_path",
         default=None,
         help="Override log file path (default: <directory>/cleanup.log)",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
     args = parser.parse_args()
 

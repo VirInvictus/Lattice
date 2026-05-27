@@ -1,20 +1,54 @@
 #!/usr/bin/env python3
+"""retag.py — universal genre rewriter for one album directory.
+
+Hard-overwrites the genre tag(s) on every audio file in a directory, hiding the
+per-container differences (ID3 null-byte/slash multi-values, Vorbis repeated
+GENRE keys, MP4 atoms). Designed to consume `lattice --all-wings --paths`
+output one album at a time.
+
+Destructive: it rewrites tags in place. Preview with --dry-run first.
+
+Usage:
+    ./retag.py /path/to/album "Genre One" "Genre Two"
+    ./retag.py /path/to/album "Alternative Rap" --dry-run
+    ./retag.py /path/to/album "Jazz" --log ~/retag.log
+"""
+
+import argparse
 import os
 import sys
-import argparse
+from datetime import datetime
+
 import mutagen
 from mutagen.easyid3 import EasyID3
+from mutagen.id3 import ID3NoHeaderError
 from mutagen.mp4 import MP4
 
-# Dropped wav, wma, and bare aac to match the handled logic
+__version__ = "1.0.0"
+
+# Only formats whose genre containers are handled below.
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".mp4"}
 
 
-def apply_genres(filepath: str, new_genres: list) -> bool:
+def read_genres(filepath: str) -> list[str]:
+    """Best-effort current genre(s), for preview and logging. Never raises."""
+    try:
+        audio = mutagen.File(filepath, easy=True)
+        if audio is not None:
+            g = audio.get("genre")
+            if g:
+                return list(g)
+    except Exception:
+        pass
+    return []
+
+
+def apply_genres(filepath: str, new_genres: list[str]) -> bool:
+    """Overwrite the genre tag(s) on one file. Returns True on success."""
     ext = os.path.splitext(filepath)[1].lower()
     try:
         if ext == ".mp3":
-            # Remove APEv2 tags if present (they often cause conflicting dual-genres)
+            # Remove APEv2 tags if present (they often cause conflicting dual-genres).
             try:
                 from mutagen.apev2 import APEv2
 
@@ -24,33 +58,30 @@ def apply_genres(filepath: str, new_genres: list) -> bool:
 
             try:
                 audio = EasyID3(filepath)
-            except mutagen.id3.ID3NoHeaderError:
+            except ID3NoHeaderError:
                 audio = mutagen.File(filepath, easy=True)
                 audio.add_tags()
 
             audio.pop("genre", None)
             audio["genre"] = new_genres
-            # Force v2.3 for widespread player compatibility, sync v1 tags
+            # Force v2.3 for widespread player compatibility; sync v1 tags.
             audio.save(v2_version=3, v1=2)
 
-        elif ext in [".flac", ".opus", ".ogg"]:
+        elif ext in (".flac", ".opus", ".ogg"):
             audio = mutagen.File(filepath)
             if audio is None:
                 return False
-            # Vorbis comments natively support multiple tags with the same name.
-            # Clear existing genres first (handling both case variations)
+            # Vorbis comments natively support repeated keys; clear both cases first.
             audio.pop("genre", None)
             audio.pop("GENRE", None)
-            # Passing a list creates multiple 'GENRE' tags perfectly.
             audio["genre"] = new_genres
             audio.save()
 
-        elif ext in [".m4a", ".mp4"]:
+        elif ext in (".m4a", ".mp4"):
             audio = MP4(filepath)
-            # Clear existing standard (gnre) and custom (\xa9gen) genres
+            # Clear standard (gnre) and custom (\xa9gen) genre atoms.
             audio.pop("gnre", None)
             audio.pop("\xa9gen", None)
-            # Mutagen expects a list of strings for the custom genre atom
             audio["\xa9gen"] = new_genres
             audio.save()
 
@@ -63,39 +94,72 @@ def apply_genres(filepath: str, new_genres: list) -> bool:
         return False
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Apply universal genre tags to a directory of audio files."
+        description="Overwrite genre tags on every audio file in a directory."
     )
-    parser.add_argument("directory", help="Absolute path to the album directory")
+    parser.add_argument("directory", help="Path to the album directory")
     parser.add_argument("genres", nargs="+", help="One or more genres to apply")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the old -> new genre change per file; write nothing",
+    )
+    parser.add_argument(
+        "--log",
+        dest="log_path",
+        default=None,
+        help="Append a timestamped record of each change to this file",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     args = parser.parse_args()
 
     target_dir = args.directory
     genres = args.genres
 
     if not os.path.isdir(target_dir):
-        print(f"[!] Directory not found: {target_dir}")
-        sys.exit(1)
+        print(f"[!] Directory not found: {target_dir}", file=sys.stderr)
+        return 1
 
-    print(f"Tagging: {target_dir}")
-    print(f"Genres:  {genres}")
+    log_fh = open(args.log_path, "a", encoding="utf-8") if args.log_path else None
 
-    success_count = 0
-    files = sorted(os.listdir(target_dir))
+    def log(msg: str) -> None:
+        print(msg)
+        if log_fh is not None:
+            prefix = "[DRY] " if args.dry_run else ""
+            ts = datetime.now().isoformat(timespec="seconds")
+            log_fh.write(f"[{ts}] {prefix}{msg}\n")
 
-    for f in files:
-        ext = os.path.splitext(f)[1].lower()
-        if ext in AUDIO_EXTENSIONS:
+    try:
+        log(f"{'[DRY RUN] ' if args.dry_run else ''}Tagging: {target_dir}")
+        log(f"Genres:  {genres}")
+
+        updated = 0
+        for f in sorted(os.listdir(target_dir)):
+            if os.path.splitext(f)[1].lower() not in AUDIO_EXTENSIONS:
+                continue
             filepath = os.path.join(target_dir, f)
-            if apply_genres(filepath, genres):
-                success_count += 1
+            old = read_genres(filepath)
+            if args.dry_run:
+                log(f"  would retag {f}: {old} -> {genres}")
+                updated += 1
+            elif apply_genres(filepath, genres):
+                log(f"  retagged {f}: {old} -> {genres}")
+                updated += 1
 
-    if success_count == 0:
-        print("  -> No valid audio files updated.")
-    else:
-        print(f"  -> Successfully updated {success_count} files.")
+        verb = "would update" if args.dry_run else "updated"
+        if updated == 0:
+            log("  -> No valid audio files found.")
+        else:
+            log(f"  -> {verb} {updated} file(s).")
+    finally:
+        if log_fh is not None:
+            log_fh.close()
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
