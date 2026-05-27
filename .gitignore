@@ -18,3 +18,6 @@ build/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Session scratch (handoff note, not part of the project)
+pick-it-up.md

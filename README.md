@@ -94,7 +94,7 @@ On Debian/Ubuntu: `sudo apt install flac ffmpeg`
 
 **Tests:**
 
-The test suite is stdlib `unittest` (no extra dependencies) and covers the pure helpers (rating and key normalization, duration clustering, image-header parsing, filename cleanup). Run it from the repo root:
+The test suite is stdlib `unittest` (no extra dependencies): pure-helper unit tests plus integration tests that run the report modes against a committed fixture library. Run it from the repo root:
 
 ```bash
 python -m unittest discover
