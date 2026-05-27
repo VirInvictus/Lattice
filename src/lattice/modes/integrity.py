@@ -8,7 +8,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from lattice.utils import run_proc, has_tool, _make_pbar
+from lattice.utils import run_proc, has_tool, _make_pbar, green, red, yellow
 from lattice.tags import HAVE_MUTAGEN_MP3, MUTAGEN_MP3
 from lattice.config import (
     DEFAULT_MP3_OUTPUT,
@@ -236,12 +236,15 @@ def run_flac_mode(
 
     if not quiet:
         if counts[TIER_CORRUPT] or counts[TIER_SUSPECT]:
-            print(
-                f"Scanned {total}. Corrupt: {counts[TIER_CORRUPT]}  "
-                f"Suspect: {counts[TIER_SUSPECT]}. Details: {out_path}"
-            )
+            corrupt_s = f"Corrupt: {counts[TIER_CORRUPT]}"
+            suspect_s = f"Suspect: {counts[TIER_SUSPECT]}"
+            if counts[TIER_CORRUPT]:
+                corrupt_s = red(corrupt_s)
+            if counts[TIER_SUSPECT]:
+                suspect_s = yellow(suspect_s)
+            print(f"Scanned {total}. {corrupt_s}  {suspect_s}. Details: {out_path}")
         else:
-            print("✅ All FLAC files passed integrity checks.")
+            print(green("✅ All FLAC files passed integrity checks."))
     return 1 if counts[TIER_CORRUPT] > 0 else 0
 
 
@@ -500,9 +503,15 @@ def _run_decode_scan(
 
     if not quiet:
         print(f"\nScanned: {len(targets)} files in {elapsed:.1f}s")
+        suspect_s = f"suspect: {counts[TIER_SUSPECT]}"
+        corrupt_s = f"corrupt: {counts[TIER_CORRUPT]}"
+        if counts[TIER_SUSPECT]:
+            suspect_s = yellow(suspect_s)
+        if counts[TIER_CORRUPT]:
+            corrupt_s = red(corrupt_s)
         print(
-            f"ok: {counts[TIER_OK]}  metadata: {counts[TIER_METADATA]}  "
-            f"suspect: {counts[TIER_SUSPECT]}  corrupt: {counts[TIER_CORRUPT]}"
+            f"{green('ok: ' + str(counts[TIER_OK]))}  "
+            f"metadata: {counts[TIER_METADATA]}  {suspect_s}  {corrupt_s}"
         )
         print(f"Report written to: {out_path}")
     return 1 if counts[TIER_CORRUPT] > 0 else 0

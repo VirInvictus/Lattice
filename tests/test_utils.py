@@ -1,11 +1,14 @@
 import unittest
 
+import lattice.utils as utils
 from lattice.utils import (
     normalize_rating,
     format_rating,
     clean_song_name,
     parse_layout,
     _looks_numeric,
+    color,
+    green,
 )
 
 
@@ -97,6 +100,25 @@ class LooksNumericTests(unittest.TestCase):
         self.assertFalse(_looks_numeric(None))
         self.assertFalse(_looks_numeric("abc"))
         self.assertFalse(_looks_numeric("3stars"))
+
+
+class ColorTests(unittest.TestCase):
+    def test_plain_when_not_a_tty(self):
+        # The test runner's stdout is not a tty, so output stays uncolored,
+        # which keeps report files and pipes clean.
+        self.assertEqual(color("x", "32"), "x")
+        self.assertEqual(green("ok"), "ok")
+
+    def test_codes_when_enabled(self):
+        orig = utils._use_color
+        utils._use_color = lambda: True
+        try:
+            self.assertEqual(utils.color("x", "32"), "\033[32mx\033[0m")
+            self.assertEqual(utils.green("ok"), "\033[32mok\033[0m")
+            self.assertEqual(utils.red("bad"), "\033[31mbad\033[0m")
+            self.assertEqual(utils.yellow("warn"), "\033[33mwarn\033[0m")
+        finally:
+            utils._use_color = orig
 
 
 if __name__ == "__main__":

@@ -20,6 +20,29 @@ except ImportError:
 IN_TUI = False
 
 
+def _use_color() -> bool:
+    """ANSI color only for an interactive terminal: never in the TUI, never when
+    piped or redirected (so reports/pipes stay clean), never when NO_COLOR is
+    set. Evaluated per call because the TUI swaps stdout at runtime."""
+    return not IN_TUI and "NO_COLOR" not in os.environ and sys.stdout.isatty()
+
+
+def color(text: str, code: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _use_color() else text
+
+
+def green(s: str) -> str:
+    return color(s, "32")
+
+
+def red(s: str) -> str:
+    return color(s, "31")
+
+
+def yellow(s: str) -> str:
+    return color(s, "33")
+
+
 def is_audio(filename: str) -> bool:
     """Check if a filename has a recognized audio extension."""
     return os.path.splitext(filename)[1].lower() in AUDIO_EXTENSIONS
