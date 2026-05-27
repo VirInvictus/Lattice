@@ -42,7 +42,7 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 AUDIO_EXT = {
     ".mp3",
@@ -75,9 +75,14 @@ QUOTE_DASH_FOLD = {
 }
 
 # Narrower fold for *display* renaming (canonical_render): only characters that
-# are genuinely wrong in a folder name. Deliberately excludes the en-dash and
-# em-dash (correct punctuation, e.g. ranges like "85–92") that QUOTE_DASH_FOLD
-# collapses for matching.
+# are genuinely wrong AND whose ASCII form is legal on every filesystem the
+# library may live on. The target is frequently NTFS/exFAT (shared with
+# Windows), which forbids a trailing "." and the literal " character. So this
+# deliberately leaves alone:
+#   - en/em dashes (correct punctuation, e.g. ranges like "85–92")
+#   - the ellipsis glyph … ("..." would end a name in dots -> NTFS rejects it)
+#   - curly double quotes (straight " is forbidden on Windows)
+# Those glyphs are all valid in a path component, so keeping them is safe.
 RENDER_FOLD = {
     "‐": "-",  # U+2010 hyphen
     "‑": "-",  # U+2011 non-breaking hyphen
@@ -86,10 +91,15 @@ RENDER_FOLD = {
     "‘": "'",  # left single quote
     "’": "'",  # right single quote (curly apostrophe)
     "ʼ": "'",  # modifier letter apostrophe
-    "“": '"',  # left double quote
-    "”": '"',  # right double quote
-    "…": "...",  # horizontal ellipsis
 }
+
+# Path-component characters forbidden on Windows/NTFS/exFAT, plus the trailing
+# "." / " " rule. A normalized name that would be illegal there is skipped.
+_ILLEGAL_NAME_CHARS = set('<>:"/\\|?*')
+
+
+def is_legal_name(name: str) -> bool:
+    return bool(name) and not (_ILLEGAL_NAME_CHARS & set(name)) and name[-1] not in ". "
 
 
 def normalize_name(s: str) -> str:
@@ -104,11 +114,12 @@ def normalize_name(s: str) -> str:
 
 def canonical_render(s: str) -> str:
     """Normalized *display* rendering of a folder name via RENDER_FOLD: broken
-    hyphens, curly quotes/apostrophes, and the ellipsis glyph go to ASCII, and
-    whitespace is collapsed. Case, en/em dashes, and prime marks are preserved,
-    and no NFKC is applied. Deliberately narrower than normalize_name, which
-    folds aggressively (NFKC, en/em dashes, apostrophe stripping, lowercasing)
-    for *duplicate matching*."""
+    hyphens and curly single-quotes/apostrophes go to ASCII, and whitespace is
+    collapsed. Case, en/em dashes, curly double quotes, the ellipsis glyph, and
+    prime marks are preserved (all valid path characters), and no NFKC is
+    applied. Deliberately narrower than normalize_name, which folds aggressively
+    (NFKC, en/em dashes, apostrophe stripping, lowercasing) for *duplicate
+    matching*."""
     for k, v in RENDER_FOLD.items():
         s = s.replace(k, v)
     return " ".join(s.split())
@@ -340,11 +351,20 @@ def _normalize_folder_name(folder: Path, run: Run) -> Path:
     target_name = canonical_render(folder.name)
     if target_name == folder.name:
         return folder
+    if not is_legal_name(target_name):
+        run.log(f"    SKIP RENAME (illegal target name): {folder.name}")
+        return folder
     dst = folder.parent / target_name
     if dst.exists() and dst != folder:
         run.log(f"    RETAIN NAME (normalized target exists): {folder.name}")
         return folder
-    run._rename(folder, dst)
+    try:
+        run._rename(folder, dst)
+    except OSError as e:
+        # A bad rename (e.g. a filesystem-rejected name) logs and is skipped;
+        # it must never abort the whole run mid-way.
+        run.log(f"    ERROR rename {folder.name} -> {target_name}: {e}")
+        return folder
     run.stats["renamed"] += 1
     run.log(f"    RENAME: {folder.name}  ->  {target_name}")
     return dst

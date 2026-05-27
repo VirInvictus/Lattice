@@ -156,20 +156,22 @@ class CanonicalRenderTests(unittest.TestCase):
             cleaner.canonical_render("Drive‐By Truckers"), "Drive-By Truckers"
         )
 
-    def test_curly_quotes_to_straight(self):
-        self.assertEqual(
-            cleaner.canonical_render("Damian “Jr. Gong” Marley"),
-            'Damian "Jr. Gong" Marley',
-        )
-
     def test_curly_apostrophe_to_straight(self):
         self.assertEqual(cleaner.canonical_render("You’re"), "You're")
 
     def test_case_preserved_whitespace_collapsed(self):
         self.assertEqual(cleaner.canonical_render("  The   XX "), "The XX")
 
-    def test_ellipsis_folded(self):
-        self.assertEqual(cleaner.canonical_render("Rooms…"), "Rooms...")
+    def test_curly_double_quotes_preserved(self):
+        # Straight " is forbidden on Windows/NTFS, so curly double quotes stay.
+        self.assertEqual(
+            cleaner.canonical_render("Damian “Jr. Gong” Marley"),
+            "Damian “Jr. Gong” Marley",
+        )
+
+    def test_ellipsis_preserved(self):
+        # "..." would end a name in dots, which NTFS rejects; keep the glyph.
+        self.assertEqual(cleaner.canonical_render("Rooms…"), "Rooms…")
 
     def test_en_dash_preserved(self):
         # En-dashes in ranges are correct; canonical_render must not fold them.
@@ -183,6 +185,22 @@ class CanonicalRenderTests(unittest.TestCase):
             cleaner.canonical_render("Damian Jr. Gong Marley"),
             "Damian Jr. Gong Marley",
         )
+
+
+class IsLegalNameTests(unittest.TestCase):
+    def test_rejects_trailing_dot_or_space(self):
+        self.assertFalse(cleaner.is_legal_name("Rooms..."))
+        self.assertFalse(cleaner.is_legal_name("Album "))
+
+    def test_rejects_windows_forbidden_chars(self):
+        self.assertFalse(cleaner.is_legal_name('a"b'))
+        self.assertFalse(cleaner.is_legal_name("a:b"))
+        self.assertFalse(cleaner.is_legal_name("a/b"))
+
+    def test_accepts_normal_names(self):
+        self.assertTrue(cleaner.is_legal_name("Drive-By Truckers"))
+        self.assertTrue(cleaner.is_legal_name("Get Rich or Die Tryin'"))
+        self.assertTrue(cleaner.is_legal_name("85–92"))
 
 
 class GetImageSizeTests(unittest.TestCase):
@@ -297,6 +315,18 @@ class NormalizeTreeTests(_TreeCase):
         run.close()
         self.assertTrue((self.root / "Jay‐Z").exists())
         self.assertEqual(run.stats["renamed"], 1)
+
+    def test_ellipsis_folder_left_alone(self):
+        # Regression: folding … -> "..." produced an NTFS-illegal trailing-dot
+        # name and crashed the run. The glyph is valid, so it must be kept.
+        album = self.root / "Artist" / "Rooms…"
+        album.mkdir(parents=True)
+        (album / "t.flac").write_bytes(b"1")
+        run = self._run()
+        cleaner.normalize_tree(self.root, run)
+        run.close()
+        self.assertTrue((self.root / "Artist" / "Rooms…").is_dir())
+        self.assertEqual(run.stats["renamed"], 0)
 
 
 if __name__ == "__main__":
