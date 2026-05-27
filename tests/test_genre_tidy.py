@@ -1,7 +1,7 @@
 import os
 import sys
 import unittest
-from collections import Counter, namedtuple
+from collections import namedtuple
 
 # genre_tidy.py lives in scripts/ (outside the lattice package); add it to the
 # path so its pure helpers can be imported and unit-tested. The lattice scan and
@@ -27,45 +27,24 @@ class NormTests(unittest.TestCase):
         self.assertEqual(gt.norm(None), "")
 
 
-class CanonicalGenreTests(unittest.TestCase):
-    def test_most_common_wins(self):
-        c = Counter({"Trap": 1})
-        c.update(["Gangsta Rap"] * 3)
-        self.assertEqual(gt.canonical_genre(c), "Gangsta Rap")
-
-    def test_tie_breaks_to_first_inserted(self):
-        c = Counter()
-        c["Emo"] = 2
-        c["Orgcore"] = 2
-        self.assertEqual(gt.canonical_genre(c), "Emo")
-
-    def test_empty(self):
-        self.assertEqual(gt.canonical_genre(Counter()), "")
-
-
-class ParseAllowedTests(unittest.TestCase):
-    def test_split_and_strip(self):
-        self.assertEqual(
-            gt.parse_allowed("Conscious Hip Hop;  Jazz Rap "),
-            ["Conscious Hip Hop", "Jazz Rap"],
-        )
-
-    def test_drops_empties(self):
-        self.assertEqual(gt.parse_allowed("Trap; ; "), ["Trap"])
-
-
 class ParseMapTests(unittest.TestCase):
     def test_skips_comments_and_blanks(self):
         entries = gt.parse_map(["# header", "", "  ", "Eminem\tHardcore Hip Hop"])
         self.assertEqual(set(entries), {gt.norm("Eminem")})
 
-    def test_canonical_is_first_allowed(self):
-        entries = gt.parse_map(["Kendrick Lamar\tConscious Hip Hop; Jazz Rap"])
+    def test_canonical_is_first_column(self):
+        entries = gt.parse_map(["Kendrick Lamar\tConscious Hip Hop\tJazz Rap"])
         e = entries[gt.norm("Kendrick Lamar")]
         self.assertEqual(e.canonical, "Conscious Hip Hop")
         self.assertEqual(
             e.allowed_norm,
             frozenset({gt.norm("Conscious Hip Hop"), gt.norm("Jazz Rap")}),
+        )
+
+    def test_drops_empty_columns(self):
+        entries = gt.parse_map(["Trap Lord\tTrap\t\t "])
+        self.assertEqual(
+            entries[gt.norm("Trap Lord")].allowed_norm, frozenset({"trap"})
         )
 
     def test_blanked_genre_means_skip(self):
@@ -142,20 +121,22 @@ class BuildRowsTests(unittest.TestCase):
         rows = gt.build_rows(reduced)
         self.assertEqual(rows, ["AFI\tPost-Hardcore"])
 
-    def test_multi_genre_gets_review_comment(self):
+    def test_multi_genre_lists_all_with_comment(self):
         reduced = gt.reduce_artists(
             [FakeAD("Kendrick Lamar", "Conscious Hip Hop")] * 7
             + [FakeAD("Kendrick Lamar", "Jazz Rap")] * 2
         )
         rows = gt.build_rows(reduced)
         self.assertTrue(rows[0].startswith("# Kendrick Lamar:"))
-        self.assertEqual(rows[1], "Kendrick Lamar\tConscious Hip Hop")
+        # The data line lists every genre, most-common first.
+        self.assertEqual(rows[1], "Kendrick Lamar\tConscious Hip Hop\tJazz Rap")
 
     def test_no_genre_artist_flagged(self):
         reduced = gt.reduce_artists([FakeAD("Mystery Act", "")])
         rows = gt.build_rows(reduced)
         self.assertIn("no genre tags found", rows[0])
-        self.assertEqual(rows[1], "Mystery Act\t")
+        # No genres means just the artist (no tab) -> skipped by apply.
+        self.assertEqual(rows[1], "Mystery Act")
 
     def test_round_trips_through_parse_map(self):
         reduced = gt.reduce_artists(
@@ -164,8 +145,14 @@ class BuildRowsTests(unittest.TestCase):
         )
         entries = gt.parse_map(gt.build_rows(reduced))
         self.assertEqual(entries[gt.norm("Aesop Rock")].canonical, "Abstract Hip Hop")
-        # Deftones tie (1 each): canonical is whichever the Counter saw first.
-        self.assertEqual(entries[gt.norm("Deftones")].canonical, "Nu Metal")
+        # Deftones tie (1 each): canonical is whichever the Counter saw first,
+        # and both genres survive the round-trip into the allowed set.
+        deftones = entries[gt.norm("Deftones")]
+        self.assertEqual(deftones.canonical, "Nu Metal")
+        self.assertEqual(
+            deftones.allowed_norm,
+            frozenset({gt.norm("Nu Metal"), gt.norm("Alternative Rock")}),
+        )
 
 
 if __name__ == "__main__":

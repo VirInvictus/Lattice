@@ -263,29 +263,30 @@ Same album, no track overlap, scattered between two folders by filesystem accide
 
 Also in `scripts/` is `genre_tidy.py`, a two-phase tool for libraries whose genre tags have drifted: it builds an **artist to genre authority map**, then collapses any album that disagrees with it. It pairs Lattice with `retag.py`: the `build` phase only reads (through lattice's scanner), and the `apply` phase does every write through `retag.py`. Like the other companions it lives outside the `lattice` package because it mutates tags. (It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.)
 
-This is aimed at the messy general library, not a meticulously tagged one. If your artists already each sit under a single consistent genre, `apply` will simply report everything as compliant.
+This is aimed at the messy general library, not a meticulously tagged one. Because `build` records every genre an artist already uses, `apply` does nothing until you edit the map; on a cleanly tagged library it reports everything compliant.
 
-**The map.** `build` writes an editable TSV (default `<library>/genre_map.tsv`), one line per artist:
+**The map.** `build` writes an editable tab-separated file (default `<library>/genre_map.tsv`), one line per artist listing every genre that artist is allowed to carry:
 
 ```
-Artist<TAB>Canonical Genre; Other Allowed Genre; ...
+Artist<TAB>Genre<TAB>Second Genre<TAB>...
 ```
 
-- The **first** genre is the fix target: `apply` overwrites any of that artist's albums whose genre is not in the list to this first genre.
-- Add more genres after a `;` to **allow** them; albums already tagged with an allowed genre are left untouched. This is how you protect an artist who legitimately spans genres (e.g. `Kendrick Lamar<TAB>Conscious Hip Hop; Jazz Rap`).
-- **Blank** the genre column to skip an artist entirely.
-- Artists whose albums currently disagree get a `#` comment above their row showing the breakdown, so the rows worth reviewing are obvious.
+- Every genre on the line is **allowed**: albums tagged with any of them are left untouched.
+- The **first** genre is the fix target: `apply` retags any of that artist's albums whose genre is *not* on the line to this first genre.
+- `build` seeds the line with all the genres the artist currently uses (most-common first), so the map starts as a faithful snapshot and `apply` is a no-op. **To tidy, remove a stray genre from a line**; its albums then collapse to the first genre. Reorder the line to change which genre is the target.
+- Leave only the artist (nothing after it) to skip that artist entirely.
+- Multi-genre artists get a `#` comment above their line with the per-genre counts, so low-count strays worth trimming stand out (e.g. `# Eminem: 3 genres: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1`).
 
 Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name, so a compilation folder is keyed under its `Various Artists` tag.
 
-**Safety.** `build` seeds each artist with only their majority genre, so an un-reviewed `apply` will collapse stray tags to that majority; reviewing the map first is the whole point of the two phases. `apply` is otherwise guarded like the other companions: `--dry-run` previews every `retag.py` call and writes nothing (log lines prefixed `[DRY]`), an append-only timestamped log records every decision (default `<library>/genre_tidy.log`), and the operation is idempotent (a second `apply` is all no-ops). Re-running `build` over an existing map preserves your edits and only appends artists new to the library.
+**Safety.** Seeding the map from the library's current state means `apply` changes nothing you have not asked for: a retag happens only where you removed a genre from a line. `apply` is otherwise guarded like the other companions: `--dry-run` previews every `retag.py` call and writes nothing (log lines prefixed `[DRY]`), an append-only timestamped log records every decision (default `<library>/genre_tidy.log`), and the operation is idempotent (a second `apply` is all no-ops). Re-running `build` over an existing map preserves your edits and only appends artists new to the library.
 
 **The Workflow:**
 1. Build the map (read-only):
    ```bash
    ./scripts/genre_tidy.py build /mnt/SharedData/Music
    ```
-2. Open `genre_map.tsv`: fix any wrong canonical genres, append allowed genres to the `#`-flagged rows you want to keep split, and blank artists you want left alone.
+2. Open `genre_map.tsv`. Each line lists an artist's current genres; remove the strays you consider mistakes (the `#`-commented lines with low counts are the usual suspects), reorder to change a fix target, or blank a line to leave an artist alone.
 3. Preview the changes (writes nothing):
    ```bash
    ./scripts/genre_tidy.py apply /mnt/SharedData/Music --dry-run
@@ -296,9 +297,9 @@ Matching is by the **artist tag** (normalized for quote, dash, and case variants
    ./scripts/genre_tidy.py apply /mnt/SharedData/Music
    ```
 
-**Relationship to `retag.py`.** `retag.py` is the manual, one-album tool; `genre_tidy.py` is the library-wide policy layer on top of it, calling it once per non-compliant album. Reach for `retag.py` for a one-off fix, `genre_tidy.py` to enforce a whole-collection rule.
+**Relationship to `retag.py`.** `retag.py` is the manual, one-album tool; `genre_tidy.py` is the library-wide policy layer on top of it, calling it once per album you have tidied out of compliance. Reach for `retag.py` for a one-off fix, `genre_tidy.py` to enforce a whole-collection rule.
 
-A real, `build`-generated map from a roughly 877-artist library ships at [`genre_map.tsv`](genre_map.tsv) in the repo root as a worked example of the format (canonical rows, the `#`-flagged disagreements, and the allowed-set / blanked-row patterns).
+A real, `build`-generated map from a roughly 877-artist library ships at [`artist_genre_defaults.tsv`](artist_genre_defaults.tsv) in the repo root. It doubles as a worked example of the format (single- and multi-genre lines, the `#`-flagged counts, the blank-to-skip pattern) and as a maintained authority: point the tool at it with `--map artist_genre_defaults.tsv`. Keep it current by re-running `build`, which appends artists new to the library under a dated marker while preserving every line you have edited; hand-edit a line to accept a new genre for an existing artist.
 
 ## Integrity checks
 

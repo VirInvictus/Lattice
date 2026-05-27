@@ -1,9 +1,13 @@
 # Lattice genre authority map (genre_tidy.py)
-# Format:  Artist<TAB>Canonical Genre; Other Allowed Genre; ...
-#   - The first genre is the fix target: `apply` overwrites any album whose
-#     genre is not in this list to the first genre.
-#   - Add more allowed genres after a ';' to leave those albums alone.
-#   - Blank the genre column to skip an artist entirely.
+# Format:  Artist<TAB>Genre<TAB>Second Genre<TAB>...   (tab-separated)
+#   - Every genre on the line is ALLOWED for that artist; albums tagged
+#     with any of them are left untouched.
+#   - The FIRST genre is the fix target: `apply` retags any album whose
+#     genre is NOT on the line to that first genre.
+#   - `build` lists every genre an artist currently uses, so `apply`
+#     changes nothing until you edit. To tidy, REMOVE a stray genre from a
+#     line and its albums collapse to the first genre; reorder to retarget.
+#   - Leave only the artist (no genres) to skip that artist entirely.
 #   - Lines starting with # are comments.
 
 $uicideboy$	Memphis Rap
@@ -56,8 +60,8 @@ Andrew Jackson Jihad	Folk Punk
 Andrew W.K.	Rock
 Anti‐Flag	Punk Rock
 Apes of the State	Folk Punk
-# Aphex Twin: IDM×4, Ambient×2, Drum & Bass×1  (append "; <genre>" to allow extras)
-Aphex Twin	IDM
+# Aphex Twin: 3 genres: IDM×4, Ambient×2, Drum & Bass×1
+Aphex Twin	IDM	Ambient	Drum & Bass
 Apollo Brown & Joell Ortiz	Boom Bap
 Armand Hammer	Abstract Hip Hop
 Armand Hammer & The Alchemist	Abstract Hip Hop
@@ -213,8 +217,8 @@ Deafheaven	Metal
 Death Cab for Cutie	Indie Rock
 Death Grips	Industrial
 Defeater	The Wave
-# Deftones: Nu Metal×1, Alternative Rock×1  (append "; <genre>" to allow extras)
-Deftones	Nu Metal
+# Deftones: 2 genres: Nu Metal×1, Alternative Rock×1
+Deftones	Nu Metal	Alternative Rock
 Deltron 3030	Alternative Rap
 Deniro Farrar	Hardcore Hip Hop
 Denzel Curry	Hardcore Hip Hop
@@ -262,16 +266,16 @@ Earl Sweatshirt & The Alchemist	Abstract Hip Hop
 Earl Sweatshirt, MIKE & SURF GANG	Abstract Hip Hop
 Earth Crisis	Metalcore
 EDEN	Alternative Pop
-# edIT: IDM×2, Trip Hop×1  (append "; <genre>" to allow extras)
-edIT	IDM
+# edIT: 2 genres: IDM×2, Trip Hop×1
+edIT	IDM	Trip Hop
 Elcamino	Coke Rap
 Electric President	Indie Rock
 Elliott Smith	Indie Folk
 Elucid	Abstract Hip Hop
 El‐P	Abstract Hip Hop
 Emarosa	Post-Hardcore
-# Eminem: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1  (append "; <genre>" to allow extras)
-Eminem	Hardcore Hip Hop
+# Eminem: 3 genres: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1
+Eminem	Hardcore Hip Hop	Boom Bap	Horrorcore
 Eminem/Eminem	Horrorcore
 Emma Goldman	Skramz
 Emotional Oranges	R&B
@@ -297,8 +301,8 @@ Father John Misty	Indie Folk
 FBG Duck	Drill
 Feed Me	Dubstep
 Fennesz	Ambient
-# Fetty Wap: Trap×1, R&B×1  (append "; <genre>" to allow extras)
-Fetty Wap	Trap
+# Fetty Wap: 2 genres: Trap×1, R&B×1
+Fetty Wap	Trap	R&B
 FKA twigs	Alternative Pop
 FLASCH	Southern Rap
 Flatbush ZOMBiES	East Coast Rap
@@ -308,19 +312,19 @@ Flume & JPEGMAFIA	Experimental Hip Hop
 Flying Lotus	IDM
 Foxing	Emo
 Frank Ocean	R&B
-# Freddie Gibbs: Gangsta Rap×2, Hardcore Hip Hop×1  (append "; <genre>" to allow extras)
-Freddie Gibbs	Gangsta Rap
+# Freddie Gibbs: 2 genres: Gangsta Rap×2, Hardcore Hip Hop×1
+Freddie Gibbs	Gangsta Rap	Hardcore Hip Hop
 Freddie Gibbs & Madlib	Hardcore Hip Hop
-# Freddie Gibbs & The Alchemist: Hardcore Hip Hop×1, Gangsta Rap×1  (append "; <genre>" to allow extras)
-Freddie Gibbs & The Alchemist	Hardcore Hip Hop
+# Freddie Gibbs & The Alchemist: 2 genres: Hardcore Hip Hop×1, Gangsta Rap×1
+Freddie Gibbs & The Alchemist	Hardcore Hip Hop	Gangsta Rap
 Fredo	Drill
 Freeway & Jake One	East Coast Rap
 Frightened Rabbit	Indie Rock
 FromSoftware	Video Game
 FromSoftware Sound Team	Video Game
 Fugazi	Post-Hardcore
-# Full of Hell: Grindcore×2, Powerviolence×1  (append "; <genre>" to allow extras)
-Full of Hell	Grindcore
+# Full of Hell: 2 genres: Grindcore×2, Powerviolence×1
+Full of Hell	Grindcore	Powerviolence
 Future	Trap
 Future & Metro Boomin	Trap
 Future & Zaytoven	Trap
@@ -355,8 +359,8 @@ Hard Bass School	Hardbass
 Have a Nice Life	Post-Punk
 Have Heart	Hardcore
 HAZEY	Drill
-# Headie One: UK Rap×2, Drill×1  (append "; <genre>" to allow extras)
-Headie One	UK Rap
+# Headie One: 2 genres: UK Rap×2, Drill×1
+Headie One	UK Rap	Drill
 Headie One & Fred again..	Drill
 Headie One & K‐Trap	UK Rap
 HEALTH	Industrial
@@ -391,8 +395,8 @@ James Blake	IDM
 Jarrod Alonge	Comedy Rock
 Jason Isbell	Country
 Jawbreaker	Orgcore
-# Jay-Z: East Coast Rap×2, Mafioso Rap×1  (append "; <genre>" to allow extras)
-Jay-Z	East Coast Rap
+# Jay-Z: 2 genres: East Coast Rap×2, Mafioso Rap×1
+Jay-Z	East Coast Rap	Mafioso Rap
 Jay-Z & Kanye West	Mafioso Rap
 Jazz Cartier	Northern Rap
 Jeff Buckley	Alternative Rock
@@ -422,13 +426,13 @@ Juelz Santana	The Diplomats
 July Talk	Indie Rock
 Jóhann Jóhannsson	Neoclassical
 Ka	Abstract Hip Hop
-# Kanye West: Midwest Rap×5, Alternative Pop×1, Experimental Hip Hop×1  (append "; <genre>" to allow extras)
-Kanye West	Midwest Rap
+# Kanye West: 3 genres: Midwest Rap×5, Alternative Pop×1, Experimental Hip Hop×1
+Kanye West	Midwest Rap	Alternative Pop	Experimental Hip Hop
 Kay Flock	Drill
-# Keaton Henson: Indie Folk×6, Neoclassical×2  (append "; <genre>" to allow extras)
-Keaton Henson	Indie Folk
-# Kendrick Lamar: Conscious Hip Hop×7, Jazz Rap×2  (append "; <genre>" to allow extras)
-Kendrick Lamar	Conscious Hip Hop
+# Keaton Henson: 2 genres: Indie Folk×6, Neoclassical×2
+Keaton Henson	Indie Folk	Neoclassical
+# Kendrick Lamar: 2 genres: Conscious Hip Hop×7, Jazz Rap×2
+Kendrick Lamar	Conscious Hip Hop	Jazz Rap
 Kenny Mason	Grunge Rap
 Kero Kero Bonito	Pop
 Kevin Gates	Trap
@@ -452,8 +456,8 @@ Kuniva & Swifty McVay	Hardcore Hip Hop
 k‐os	Northern Rap
 La Dispute	The Wave
 Lagwagon	Punk Rock
-# Landon Tewers: Alternative Pop×2, Metalcore×1  (append "; <genre>" to allow extras)
-Landon Tewers	Alternative Pop
+# Landon Tewers: 2 genres: Alternative Pop×2, Metalcore×1
+Landon Tewers	Alternative Pop	Metalcore
 Latterman	Orgcore
 Laura Stevenson	Indie Folk
 Lauryn Hill	R&B
@@ -469,13 +473,13 @@ letterstoyou	Skramz
 Lil B	Cloud Rap
 Lil Baby & Lil Durk	Trap
 Lil Boosie	Southern Rap
-# Lil Durk: Trap×1, Drill×1  (append "; <genre>" to allow extras)
-Lil Durk	Trap
+# Lil Durk: 2 genres: Trap×1, Drill×1
+Lil Durk	Trap	Drill
 Lil Peep	Soundcloud Rap
-# Lil Tjay: Drill×1, Trap×1  (append "; <genre>" to allow extras)
-Lil Tjay	Drill
-# Lil Ugly Mane: Memphis Rap×3, Experimental Hip Hop×1  (append "; <genre>" to allow extras)
-Lil Ugly Mane	Memphis Rap
+# Lil Tjay: 2 genres: Drill×1, Trap×1
+Lil Tjay	Drill	Trap
+# Lil Ugly Mane: 2 genres: Memphis Rap×3, Experimental Hip Hop×1
+Lil Ugly Mane	Memphis Rap	Experimental Hip Hop
 Lil Uzi Vert	Trap
 Lil Wayne	Southern Rap
 Lil Wayne & Juelz Santana	Southern Rap
@@ -489,8 +493,8 @@ LSD	Pop
 Lupe Fiasco	Conscious Hip Hop
 M1llionz	Drill
 Maassai	Abstract Hip Hop
-# Mac Miller: Alternative Rap×5, Alternative Pop×1  (append "; <genre>" to allow extras)
-Mac Miller	Alternative Rap
+# Mac Miller: 2 genres: Alternative Rap×5, Alternative Pop×1
+Mac Miller	Alternative Rap	Alternative Pop
 Machine Girl	Breakcore
 Mach‐Hommy	Abstract Hip Hop
 Madlib	Instrumental Hip Hop
@@ -608,8 +612,8 @@ Pavement	Indie Rock
 Pete Rock & CL Smooth	Boom Bap
 pg.99	Skramz
 Photek	Drum & Bass
-# Pianos Become the Teeth: The Wave×2, Emo×1  (append "; <genre>" to allow extras)
-Pianos Become the Teeth	The Wave
+# Pianos Become the Teeth: 2 genres: The Wave×2, Emo×1
+Pianos Become the Teeth	The Wave	Emo
 Pierce the Veil	Post-Hardcore
 Pink Floyd	Art Rock
 PinkPantheress	Pop
@@ -720,8 +724,8 @@ Soundgarden	Grunge
 Source Direct	Drum & Bass
 Space Laces	Dubstep
 SpaceGhostPurrp	Memphis Rap
-# Spanish Love Songs: Emo×3, Orgcore×2  (append "; <genre>" to allow extras)
-Spanish Love Songs	Emo
+# Spanish Love Songs: 2 genres: Emo×3, Orgcore×2
+Spanish Love Songs	Emo	Orgcore
 Spark Master Tape	Experimental Hip Hop
 Spoon	Indie Rock
 Squarepusher	IDM
@@ -758,8 +762,8 @@ The Antlers	Indie Rock
 The Armed	Metalcore
 The Avalanches	Electronic
 The Beach Boys	Art Rock
-# The Body: Experimental Doom×2, Metal×1  (append "; <genre>" to allow extras)
-The Body	Experimental Doom
+# The Body: 2 genres: Experimental Doom×2, Metal×1
+The Body	Experimental Doom	Metal
 The Body & Full of Hell	Experimental Doom
 The Bug	Dubstep
 The Callous Daoboys	Metalcore
@@ -791,8 +795,8 @@ the Microphones	Slowcore
 The National	Indie Rock
 The Notorious B.I.G.	Mafioso Rap
 The Obsessives	Emo
-# The Offspring: Pop Punk×3, Punk Rock×1  (append "; <genre>" to allow extras)
-The Offspring	Pop Punk
+# The Offspring: 2 genres: Pop Punk×3, Punk Rock×1
+The Offspring	Pop Punk	Punk Rock
 The Offspring/The Offspring	Punk Rock
 The Plot in You	Metalcore
 The Prodigy	Electronic
@@ -831,8 +835,8 @@ Tobe Nwigwe	Southern Rap
 Tom Waits	Singer-Songwriter
 Tool	Progressive Metal
 Top5	Drill
-# Tory Lanez: R&B×2, Trap×2  (append "; <genre>" to allow extras)
-Tory Lanez	R&B
+# Tory Lanez: 2 genres: R&B×2, Trap×2
+Tory Lanez	R&B	Trap
 Touché Amoré	The Wave
 Touché Amoré / La Dispute	The Wave
 Townes Van Zandt	Country
@@ -843,8 +847,8 @@ Travis Scott	Trap
 Trent Reznor / Atticus Ross	Post-Industrial
 Trent Reznor and Atticus Ross	Soundtrack
 Trivium	Metalcore
-# Turnstile: Hardcore×3, Alternative Rock×1  (append "; <genre>" to allow extras)
-Turnstile	Hardcore
+# Turnstile: 2 genres: Hardcore×3, Alternative Rock×1
+Turnstile	Hardcore	Alternative Rock
 TV on the Radio	Indie Rock
 Ty Dolla $ign feat. The Weeknd, Wiz Khalifa & DJ Mustard	R&B
 Tycho	Downtempo
@@ -857,16 +861,16 @@ Uncle Murda	Hardcore Hip Hop
 Underoath	Metalcore
 Unknown T	Drill
 Vampire Weekend	Indie Rock
-# Various Artists: Video Game×3, Pop×2, Northern Rap×1, Electronic×1, Techno×1, Soundtrack×1, Drum & Bass×1, Hardcore Hip Hop×1, Midwest Rap×1, Rock×1, Dubstep×1, Metal×1, Punk Rock×1  (append "; <genre>" to allow extras)
-Various Artists	Video Game
+# Various Artists: 13 genres: Video Game×3, Pop×2, Northern Rap×1, Electronic×1, Techno×1, Soundtrack×1, Drum & Bass×1, Hardcore Hip Hop×1, Midwest Rap×1, Rock×1, Dubstep×1, Metal×1, Punk Rock×1
+Various Artists	Video Game	Pop	Northern Rap	Electronic	Techno	Soundtrack	Drum & Bass	Hardcore Hip Hop	Midwest Rap	Rock	Dubstep	Metal	Punk Rock
 Veeze	Trap
 Vein.fm	Metalcore
 Venetian Snares	Breakcore
 Vex’d	Dubstep
 Viagra Boys	Post-Punk
 Viktor Vaughn	Abstract Hip Hop
-# Vince Staples: Alternative Rap×5, Gangsta Rap×5  (append "; <genre>" to allow extras)
-Vince Staples	Alternative Rap
+# Vince Staples: 2 genres: Alternative Rap×5, Gangsta Rap×5
+Vince Staples	Alternative Rap	Gangsta Rap
 Vince Staples & Larry Fisherman	Alternative Rap
 Virtual Riot	Dubstep
 Waka Flocka Flame	Trap
@@ -885,8 +889,8 @@ Wormrot	Grindcore
 Wugazi	Alternative Rap
 Wu‐Tang Clan	Hardcore Hip Hop
 XS Project	Hardbass
-# XXXTENTACION: Trap Metal×1, Alternative Rap×1  (append "; <genre>" to allow extras)
-XXXTENTACION	Trap Metal
+# XXXTENTACION: 2 genres: Trap Metal×1, Alternative Rap×1
+XXXTENTACION	Trap Metal	Alternative Rap
 Xzibit	Gangsta Rap
 Ye	Midwest Rap
 Yelawolf	Southern Rap

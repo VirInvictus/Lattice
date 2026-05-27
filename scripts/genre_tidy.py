@@ -7,17 +7,18 @@ A two-phase companion that pairs Lattice (the read-only scanner) with retag.py
     genre_tidy.py build <library>   # read-only: scan, write an editable TSV map
     genre_tidy.py apply <library>   # destructive: retag albums that disagree
 
-The map (`<library>/genre_map.tsv` by default) is one editable line per artist:
+The map (`<library>/genre_map.tsv` by default) is one editable tab-separated
+line per artist, listing every genre that artist is allowed to carry:
 
-    Artist<TAB>Canonical Genre; Other Allowed Genre; ...
+    Artist<TAB>Genre<TAB>Second Genre<TAB>...
 
-`build` seeds each artist with the single most-common genre across their albums
-and leaves a `#` comment for any artist whose albums disagree, so the rows worth
-reviewing are obvious. `apply` reads the map, re-scans the library, and for every
-album whose genre is not in its artist's allowed set, calls retag.py to overwrite
-it to the first (canonical) genre. The first genre is the fix target; the rest
-are extra genres that are left untouched (e.g. an artist who legitimately spans
-two genres). Blank the genre column to skip an artist entirely.
+`build` seeds each line with every genre the artist currently uses (most-common
+first), so `apply` is a no-op until you edit. To tidy, REMOVE a stray genre from
+a line: `apply` re-scans, and for every album whose genre is no longer on its
+artist's line, calls retag.py to overwrite it to the first (canonical) genre.
+Reorder the line to change the fix target; leave only the artist (no genres) to
+skip that artist entirely. Multi-genre artists also get a `#` comment with the
+per-genre counts, so low-count strays worth trimming stand out.
 
 Lives in scripts/ (outside the lattice package) because it mutates tags, which
 the package's read-only contract (spec.md §5) forbids. It reads through lattice
@@ -39,9 +40,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-__version__ = "1.0.0"
-
-ALLOWED_SEP = ";"  # separates allowed genres for one artist in the TSV
+__version__ = "1.1.0"
 
 # Folds curly quotes, dash variants, and case so artist/genre strings compare
 # the way a human reads them. Mirrors audit._norm_key / cleaner.normalize_name;
@@ -62,11 +61,15 @@ _QUOTE_DASH_FOLD = {
 
 TSV_HEADER = [
     "# Lattice genre authority map (genre_tidy.py)",
-    "# Format:  Artist<TAB>Canonical Genre; Other Allowed Genre; ...",
-    "#   - The first genre is the fix target: `apply` overwrites any album whose",
-    "#     genre is not in this list to the first genre.",
-    f"#   - Add more allowed genres after a '{ALLOWED_SEP}' to leave those albums alone.",
-    "#   - Blank the genre column to skip an artist entirely.",
+    "# Format:  Artist<TAB>Genre<TAB>Second Genre<TAB>...   (tab-separated)",
+    "#   - Every genre on the line is ALLOWED for that artist; albums tagged",
+    "#     with any of them are left untouched.",
+    "#   - The FIRST genre is the fix target: `apply` retags any album whose",
+    "#     genre is NOT on the line to that first genre.",
+    "#   - `build` lists every genre an artist currently uses, so `apply`",
+    "#     changes nothing until you edit. To tidy, REMOVE a stray genre from a",
+    "#     line and its albums collapse to the first genre; reorder to retarget.",
+    "#   - Leave only the artist (no genres) to skip that artist entirely.",
     "#   - Lines starting with # are comments.",
     "",
 ]
@@ -90,17 +93,9 @@ class MapEntry(NamedTuple):
     allowed_norm: frozenset[str]
 
 
-def canonical_genre(genres: Counter) -> str:
-    """Most-common genre string; ties broken by first insertion (Counter order)."""
-    return genres.most_common(1)[0][0] if genres else ""
-
-
-def parse_allowed(field: str) -> list[str]:
-    return [g.strip() for g in field.split(ALLOWED_SEP) if g.strip()]
-
-
 def parse_map(lines) -> dict[str, MapEntry]:
-    """Parse TSV lines into {norm_artist: MapEntry}. Skips blank and # lines."""
+    """Parse TSV lines into {norm_artist: MapEntry}. Skips blank and # lines.
+    Columns after the artist are the allowed genres; the first is canonical."""
     entries: dict[str, MapEntry] = {}
     for raw in lines:
         line = raw.rstrip("\n")
@@ -110,7 +105,7 @@ def parse_map(lines) -> dict[str, MapEntry]:
         artist = cols[0].strip()
         if not artist:
             continue
-        allowed = parse_allowed(cols[1]) if len(cols) > 1 else []
+        allowed = [c.strip() for c in cols[1:] if c.strip()]
         entries[norm(artist)] = MapEntry(
             display=artist,
             canonical=allowed[0] if allowed else "",
@@ -160,20 +155,20 @@ def reduce_artists(album_dirs) -> dict[str, tuple[str, Counter]]:
 
 
 def build_rows(reduced: dict[str, tuple[str, Counter]]) -> list[str]:
-    """Format reduced artists into TSV rows, sorted by artist. Artists whose
-    albums disagree (or have no genre) get a leading # comment to flag review."""
+    """Format reduced artists into TSV rows, sorted by artist. The line lists
+    every genre the artist currently uses (most-frequent first = canonical).
+    Multi-genre artists also get a leading # comment with the per-genre counts,
+    so low-count strays worth trimming stand out."""
     rows: list[str] = []
     for key in sorted(reduced, key=lambda k: reduced[k][0].lower()):
         display, genres = reduced[key]
-        canonical = canonical_genre(genres)
-        if len(genres) > 1:
+        ordered = [g for g, _ in genres.most_common()]
+        if len(ordered) > 1:
             breakdown = ", ".join(f"{g}×{n}" for g, n in genres.most_common())
-            rows.append(
-                f'# {display}: {breakdown}  (append "{ALLOWED_SEP} <genre>" to allow extras)'
-            )
-        elif not genres:
+            rows.append(f"# {display}: {len(ordered)} genres: {breakdown}")
+        elif not ordered:
             rows.append(f"# {display}: no genre tags found")
-        rows.append(f"{display}\t{canonical}")
+        rows.append("\t".join([display, *ordered]))
     return rows
 
 
@@ -261,8 +256,8 @@ def cmd_build(args) -> int:
     map_path.write_text("\n".join(TSV_HEADER + rows) + "\n", encoding="utf-8")
     flagged = sum(1 for r in rows if r.startswith("#"))
     print(f"Wrote {len(reduced)} artists to {map_path}.")
-    print(f"  {flagged} flagged for review (albums disagree / no genre).")
-    print("Review the map, then: genre_tidy.py apply <library> --dry-run")
+    print(f"  {flagged} artist(s) carry multiple genres (commented with counts).")
+    print("Trim any stray genres, then: genre_tidy.py apply <library> --dry-run")
     return 0
 
 
