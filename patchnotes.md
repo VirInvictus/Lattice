@@ -1,10 +1,19 @@
 # Lattice Patch Notes
 
-## Repo cleanup (2026-05-26)
+## v4.5.0 (2026-05-26)
 
 ---
 
-Moved the companion scripts `cleaner.py` and `retag.py` into a `scripts/` directory; invoke them as `./scripts/cleaner.py` and `./scripts/retag.py` now. They remain outside the `lattice` package, preserving the read-only contract (spec §5). Also recast prose em-dashes and trimmed a few marketing adjectives across the docs. No package code or behavior changed.
+### TUI
+- **Richer report pager.** The in-TUI viewer every report passes through now supports PageUp/PageDown, Home/End, and vim g/G on top of line scrolling, uses the full terminal height, and widens to the longest line (up to the terminal width) instead of a fixed 80 columns so long paths are no longer truncated. Folded in from the CalibreQuarry TUI.
+
+### Internal
+- **Python 3.14 modernization.** With the floor at 3.14, legacy `typing` generics were dropped for builtin generics and PEP 604 unions (`Dict`/`List`/`Tuple[...]` to `dict`/`list`/`tuple[...]`, `Optional[X]` to `X | None`) across the package and scripts; the redundant `from __future__ import annotations` was removed from `cleaner.py` and one `subprocess.run` simplified to `capture_output=True`.
+- **Expanded test suite.** Added a committed fixture library (`tests/fixtures/`) and integration tests (`tests/test_modes.py`) that run the report modes end to end, plus decode-classifier tests. 78 stdlib `unittest` tests; run with `python -m unittest discover`.
+
+### Repository
+- **Companion scripts moved to `scripts/`.** Invoke `cleaner.py` and `retag.py` as `./scripts/cleaner.py` and `./scripts/retag.py`. They remain outside the `lattice` package (spec §5).
+- **Documentation pass.** Recast em-dashes out of the prose, trimmed marketing language, fixed an unclosed README code fence, and condensed the per-mode sections.
 
 ## v4.4.2 (2026-05-26)
 
