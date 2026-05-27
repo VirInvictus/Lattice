@@ -12,12 +12,16 @@ others straight) and produce album fragments scattered across two folders.
 For each detected group, picks the folder with the most files as the
 canonical target and merges siblings into it. mp3, opus, flac, etc.
 are never overwritten or deleted: audio collisions where sizes differ
-keep both copies (source renamed with a `.from-fragment` suffix). Only
-non-audio collisions (cover.jpg, .nfo) drop the source.
+keep both copies (source renamed with a `.from-fragment` suffix). On a
+cover-image collision the higher-resolution file is kept; other non-audio
+collisions (.nfo, .cue) drop the source. The surviving merged folder is
+renamed to its normalized form (ASCII hyphen, straight quotes).
 
-Two passes:
+Passes:
   1. Artist-folder level (e.g. 'Jay-Z & Kanye West' vs 'JAY‐Z & Kanye West')
   2. Album-folder level within each artist directory
+  3. (only with --normalize-names) rename every remaining folder whose name
+     uses non-standard characters to its normalized form
 
 Conservative by design — folders whose normalized names don't match are
 never touched, even if they're "obviously" the same album. Cases like
@@ -32,12 +36,13 @@ Usage:
 
 import argparse
 import shutil
+import struct
 import sys
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 AUDIO_EXT = {
     ".mp3",
@@ -53,6 +58,8 @@ AUDIO_EXT = {
     ".aiff",
 }
 
+IMAGE_EXT = {".jpg", ".jpeg", ".png"}
+
 QUOTE_DASH_FOLD = {
     "‘": "'",  # left single quote
     "’": "'",  # right single quote (curly apostrophe)
@@ -67,6 +74,23 @@ QUOTE_DASH_FOLD = {
     "―": "-",  # horizontal bar
 }
 
+# Narrower fold for *display* renaming (canonical_render): only characters that
+# are genuinely wrong in a folder name. Deliberately excludes the en-dash and
+# em-dash (correct punctuation, e.g. ranges like "85–92") that QUOTE_DASH_FOLD
+# collapses for matching.
+RENDER_FOLD = {
+    "‐": "-",  # U+2010 hyphen
+    "‑": "-",  # U+2011 non-breaking hyphen
+    "‒": "-",  # U+2012 figure dash
+    "―": "-",  # U+2015 horizontal bar
+    "‘": "'",  # left single quote
+    "’": "'",  # right single quote (curly apostrophe)
+    "ʼ": "'",  # modifier letter apostrophe
+    "“": '"',  # left double quote
+    "”": '"',  # right double quote
+    "…": "...",  # horizontal ellipsis
+}
+
 
 def normalize_name(s: str) -> str:
     s = unicodedata.normalize("NFKC", s)
@@ -78,17 +102,80 @@ def normalize_name(s: str) -> str:
     return " ".join(s.split()).lower()
 
 
+def canonical_render(s: str) -> str:
+    """Normalized *display* rendering of a folder name via RENDER_FOLD: broken
+    hyphens, curly quotes/apostrophes, and the ellipsis glyph go to ASCII, and
+    whitespace is collapsed. Case, en/em dashes, and prime marks are preserved,
+    and no NFKC is applied. Deliberately narrower than normalize_name, which
+    folds aggressively (NFKC, en/em dashes, apostrophe stripping, lowercasing)
+    for *duplicate matching*."""
+    for k, v in RENDER_FOLD.items():
+        s = s.replace(k, v)
+    return " ".join(s.split())
+
+
+def _get_image_size(data: bytes) -> tuple[int, int] | None:
+    """Parse JPEG or PNG dimensions from header bytes without external libraries.
+    Ported from lattice.modes.artwork._get_image_size to keep cleaner.py
+    self-contained."""
+    size = len(data)
+    if size >= 24 and data.startswith(b"\x89PNG\r\n\x1a\n") and data[12:16] == b"IHDR":
+        w, h = struct.unpack(">LL", data[16:24])
+        return w, h
+    if size >= 2 and data.startswith(b"\xff\xd8"):
+        try:
+            i = 2
+            while i < size:
+                while i < size and data[i] != 0xFF:
+                    i += 1
+                while i < size and data[i] == 0xFF:
+                    i += 1
+                if i >= size:
+                    break
+                marker = data[i]
+                i += 1
+                if marker == 0x01 or 0xD0 <= marker <= 0xD9:
+                    continue
+                if i + 2 > size:
+                    break
+                (length,) = struct.unpack(">H", data[i : i + 2])
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    if i + 7 <= size:
+                        h, w = struct.unpack(">HH", data[i + 3 : i + 7])
+                        return w, h
+                i += length
+        except Exception:
+            pass
+    return None
+
+
+def image_pixels(path: Path) -> int | None:
+    """Pixel count (w*h) of an image file, or None if it is not a parseable
+    JPEG/PNG. Used to keep the higher-resolution cover on a collision."""
+    try:
+        with path.open("rb") as f:
+            dims = _get_image_size(f.read())
+    except OSError:
+        return None
+    return dims[0] * dims[1] if dims else None
+
+
 class Run:
     def __init__(self, root: Path, log_path: Path, dry_run: bool):
         self.root = root
         self.dry_run = dry_run
         self.log_file = log_path.open("a", encoding="utf-8")
+        # Paths (virtually) removed this run; lets dry-run emptiness checks
+        # predict the real outcome instead of seeing the unchanged filesystem.
+        self.removed: set[Path] = set()
         self.stats = {
             "groups": 0,
             "moves": 0,
             "collisions_kept": 0,
+            "covers_replaced": 0,
             "non_audio_dropped": 0,
             "exact_dupes_dropped": 0,
+            "renamed": 0,
             "rmdirs": 0,
         }
 
@@ -104,24 +191,43 @@ class Run:
 
     # ------- filesystem ops with dry-run guards -------
 
+    def _effective_children(self, p: Path) -> list[Path]:
+        """Children of p minus anything (virtually) removed this run, so a
+        dry-run predicts whether p would really be empty."""
+        try:
+            return [c for c in p.iterdir() if c not in self.removed]
+        except OSError:
+            return []
+
     def _move(self, src: Path, dst: Path) -> None:
         if self.dry_run:
+            self.removed.add(src)
             return
         shutil.move(str(src), str(dst))
 
     def _unlink(self, p: Path) -> None:
         if self.dry_run:
+            self.removed.add(p)
             return
         p.unlink()
 
     def _rmdir(self, p: Path) -> bool:
         if self.dry_run:
+            if self._effective_children(p):
+                return False
+            self.removed.add(p)
             return True
         try:
             p.rmdir()
             return True
         except OSError:
             return False
+
+    def _rename(self, src: Path, dst: Path) -> None:
+        if self.dry_run:
+            self.removed.add(src)
+            return
+        src.rename(dst)
 
 
 def find_groups(directory: Path, run: Run) -> list[list[Path]]:
@@ -185,6 +291,33 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
                             f"({src_size}B) -> {new_target.name} "
                             f"vs existing ({tgt_size}B)"
                         )
+                    elif item.suffix.lower() in IMAGE_EXT:
+                        # Keep the better cover instead of blindly keeping
+                        # canonical's: more pixels wins, ties (or unparseable)
+                        # fall back to larger bytes.
+                        src_px = image_pixels(item)
+                        tgt_px = image_pixels(target_item)
+                        if src_px is not None and tgt_px is not None:
+                            source_wins = (src_px, src_size) > (tgt_px, tgt_size)
+                        else:
+                            source_wins = src_size > tgt_size
+                        if source_wins:
+                            run._unlink(target_item)
+                            run._move(item, target_item)
+                            run.stats["covers_replaced"] += 1
+                            run.log(
+                                f"    REPLACE IMAGE (higher-res source kept): "
+                                f"{item.name}  src={src_px}px/{src_size}B "
+                                f"tgt={tgt_px}px/{tgt_size}B"
+                            )
+                        else:
+                            run._unlink(item)
+                            run.stats["non_audio_dropped"] += 1
+                            run.log(
+                                f"    DROP IMAGE (canonical higher-res): "
+                                f"{item.name}  src={src_px}px/{src_size}B "
+                                f"tgt={tgt_px}px/{tgt_size}B"
+                            )
                     else:
                         run.log(
                             f"    DROP NON-AUDIO ({item.suffix}, "
@@ -200,6 +333,23 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
             run.log(f"    MV: {item.name}")
 
 
+def _normalize_folder_name(folder: Path, run: Run) -> Path:
+    """Rename `folder` to its canonical_render when they differ, guarding a
+    collision with an existing different folder. Returns the (possibly new)
+    path. Used for both merge survivors and the --normalize-names sweep."""
+    target_name = canonical_render(folder.name)
+    if target_name == folder.name:
+        return folder
+    dst = folder.parent / target_name
+    if dst.exists() and dst != folder:
+        run.log(f"    RETAIN NAME (normalized target exists): {folder.name}")
+        return folder
+    run._rename(folder, dst)
+    run.stats["renamed"] += 1
+    run.log(f"    RENAME: {folder.name}  ->  {target_name}")
+    return dst
+
+
 def consolidate_group(folders: list[Path], context: str, run: Run) -> None:
     folders_sorted = sorted(folders, key=lambda p: (-file_count(p), p.name))
     canonical = folders_sorted[0]
@@ -213,19 +363,42 @@ def consolidate_group(folders: list[Path], context: str, run: Run) -> None:
     for source in sources:
         run.log(f"  MERGING: {source.name}  ->  {canonical.name}")
         merge_dir(source, canonical, run)
+        remaining = run._effective_children(source)
+        if not remaining:
+            if run._rmdir(source):
+                run.stats["rmdirs"] += 1
+                run.log(f"    RMDIR: {source}")
+        else:
+            run.log(
+                f"    RETAIN (not empty after merge, {len(remaining)} items): {source}"
+            )
+
+    # The folder with the most files won as canonical, but its name may be the
+    # less-standard variant (unicode hyphen, curly quote); normalize the survivor.
+    _normalize_folder_name(canonical, run)
+
+
+def normalize_tree(root: Path, run: Run) -> None:
+    """Rename every artist/album folder whose name is not its canonical_render.
+    Albums first, then the artist folder, so child paths stay valid. Rename-only:
+    merging duplicates is Passes 1-2' job."""
+    artists = sorted(
+        (p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")),
+        key=lambda p: p.name.lower(),
+    )
+    for artist_dir in artists:
         try:
-            remaining = list(source.iterdir())
-            if not remaining:
-                if run._rmdir(source):
-                    run.stats["rmdirs"] += 1
-                    run.log(f"    RMDIR: {source}")
-            else:
-                run.log(
-                    f"    RETAIN (not empty after merge, "
-                    f"{len(remaining)} items): {source}"
-                )
+            albums = [
+                a
+                for a in artist_dir.iterdir()
+                if a.is_dir() and not a.name.startswith(".")
+            ]
         except OSError as e:
-            run.log(f"    ERROR rmdir {source}: {e}")
+            run.log(f"  WARN scan {artist_dir}: {e}")
+            albums = []
+        for album_dir in sorted(albums, key=lambda p: p.name.lower()):
+            _normalize_folder_name(album_dir, run)
+        _normalize_folder_name(artist_dir, run)
 
 
 def main() -> int:
@@ -246,6 +419,12 @@ def main() -> int:
         dest="log_path",
         default=None,
         help="Override log file path (default: <directory>/cleanup.log)",
+    )
+    parser.add_argument(
+        "--normalize-names",
+        action="store_true",
+        help="Also rename non-duplicate folders with non-standard characters "
+        "(unicode dashes, curly quotes) to their normalized ASCII/straight form",
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
@@ -286,6 +465,10 @@ def main() -> int:
             for group in album_groups:
                 consolidate_group(group, context=artist_dir.name, run=run)
         run.log(f"album-level consolidation touched {scanned} artist(s)")
+
+        if args.normalize_names:
+            run.log("\n--- PASS 3: normalize folder names ---")
+            normalize_tree(root, run)
 
         run.log("\n--- SUMMARY ---")
         for k, v in run.stats.items():

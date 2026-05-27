@@ -233,10 +233,11 @@ Same album, no track overlap, scattered between two folders by filesystem accide
 **Safety contract.**
 - **`mv` only** on the same filesystem: an atomic rename, so audio bytes are never read or rewritten.
 - **Audio collisions never auto-delete.** If a track of the same name exists in both folders with *different* file sizes, the source copy is kept under a `<stem>.from-fragment.<ext>` suffix instead of being overwritten. Identical-size copies (true duplicates) are dropped from the source.
-- **Non-audio collisions** (`cover.jpg`, `.nfo`, etc.) drop the source; the canonical folder's copy wins.
+- **Cover-art collisions keep the better image.** When a `.jpg`/`.png` exists in both folders, the higher-resolution file wins (ties, or images it cannot parse, fall back to the larger byte size). Other non-audio collisions (`.nfo`, `.cue`) drop the source; the canonical copy wins.
+- **The survivor is normalized.** The folder with the most files becomes canonical, so its name can be the less-standard variant; after merging, the survivor is renamed to its normalized form (broken hyphens, curly quotes/apostrophes, and the ellipsis glyph folded to ASCII; en/em dashes and prime marks preserved).
 - **Conservative matching.** Only sibling folders whose normalized names match are merged. Cases like `Domestica` vs `Cursive's Domestica (Deluxe Edition)` (different prefix, not just quote variation) are left alone for manual review.
-- **`--dry-run` flag** previews every move without touching the filesystem; log lines are prefixed `[DRY]`.
-- **Per-file logging** to `<directory>/cleanup.log` (or `--log` override): every move, drop, collision, and `rmdir` is timestamped and audit-trailed.
+- **`--dry-run` flag** previews every action without touching the filesystem (log lines prefixed `[DRY]`) and faithfully predicts the real run, including which folders get removed.
+- **Per-file logging** to `<directory>/cleanup.log` (or `--log` override): every move, drop, collision, rename, and `rmdir` is timestamped and audit-trailed.
 - **Idempotent**: running on an already-clean library is a no-op.
 
 **The Workflow:**
@@ -252,6 +253,8 @@ Same album, no track overlap, scattered between two folders by filesystem accide
 4. Re-run `lattice --duplicates` afterward to confirm the consolidated state.
 
 **Two passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder. The order matters: collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory.
+
+**Normalizing lone folders (`--normalize-names`).** The merge passes only touch *duplicate* folders. Libraries often also carry lone, non-duplicate folders whose names use non-standard characters (e.g. `At the Drive‐In` with a unicode hyphen, or a curly apostrophe). With `--normalize-names`, a third pass renames every folder whose name differs from its normalized form, folding the same classes as the survivor rename (broken hyphens, curly quotes/apostrophes, ellipsis; en/em dashes preserved). It is off by default and can touch many folders at once, so preview with `--dry-run` first.
 
 **What it does not do.** `cleaner.py` is intentionally narrow. It does not:
 - Rewrite tags (use `retag.py` for that)

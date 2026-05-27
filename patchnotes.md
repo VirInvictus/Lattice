@@ -1,5 +1,16 @@
 # Lattice Patch Notes
 
+## Companion script: `cleaner.py` v1.1.0 (2026-05-27)
+
+*(Companion-script change; no package version bump. Refinements learned from a real-library run.)*
+
+---
+
+- **Accurate `--dry-run`.** A dry-run now tracks virtual removals, so its `RMDIR`/retain lines and summary counts match the real run instead of misreporting emptied folders as retained.
+- **Survivor names are normalized.** The folder with the most files still wins as canonical, but its name is now rewritten to a normalized form afterward (so merging a unicode-hyphen `Drive‐By Truckers` no longer leaves the non-standard name as the survivor). Uses a new narrow `canonical_render` fold: broken hyphens (U+2010/11/12/15), curly quotes/apostrophes, and the ellipsis glyph go to ASCII, while **en/em dashes and prime marks are preserved** (en-dashes in ranges like `85–92` are correct). Distinct from `normalize_name`, which stays aggressive for duplicate matching.
+- **Higher-resolution cover wins.** On a cover-image collision (`.jpg`/`.png`), the higher-resolution file is kept rather than blindly keeping the canonical folder's copy (ties or unparseable images fall back to larger bytes). Dimensions are read with a stdlib JPEG/PNG parser ported from the package. Other non-audio collisions are unchanged.
+- **`--normalize-names` (opt-in).** A third pass renames lone, non-duplicate folders whose names carry non-standard characters (e.g. `At the Drive‐In` → `At the Drive-In`) to the same normalized form. Off by default; preview with `--dry-run`. Covered by expanded `tests/test_cleaner.py`.
+
 ## Companion script: `genre_tidy.py` (2026-05-27)
 
 *(Companion-script addition; no package version bump.)*
