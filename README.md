@@ -7,13 +7,23 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 
----
-
-# Lattice
-
 A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice handles library visualization, integrity verification, cover art extraction, and metadata auditing, built on `mutagen` and `tqdm`, with `flac` and `ffmpeg` shelled out for integrity checks.
 
+> **Lattice is read-only.** It reads tags and decodes audio, and it writes only reports, playlists, and extracted cover art. It never modifies the metadata inside your audio files. The optional companion scripts in `scripts/` are the deliberate exception: they **do** modify files (tags, rating bytes, folder layout) and must be used with caution. See [Companion scripts](#companion-scripts).
+
 > **Note:** This is considered completed software. It has been thoroughly tested and is known to be fully functional on the primary development environment: **Fedora Linux 44 (Workstation Edition)**, kernel `7.0.9-205.fc44.x86_64`, on **Python 3.14**, with `flac` and `ffmpeg` from the Fedora repositories. While it is pure Python and should be cross-platform, this specific setup is the only officially tested environment.
+
+## Contents
+
+- [Why this exists](#why-this-exists)
+- [Features](#features) · [Sample output](#sample-output)
+- [Installation](#installation) · [Requirements](#requirements)
+- [Usage](#usage)
+- Modes: [AI library export](#ai-library-export) · [Genre wings](#genre-wings) · [Multi-root scanning](#multi-root-scanning) · [Integrity checks](#integrity-checks) · [Library statistics](#library-statistics) · [Cover art extraction](#cover-art-extraction) · [Color output](#color-output) · [Supported formats](#supported-formats)
+- [Architecture](#architecture)
+- [Full help output](#full-help-output)
+- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy)
+- [Credits & Acknowledgements](#credits--acknowledgements) · [Support](#support)
 
 ## Why this exists
 
@@ -60,43 +70,40 @@ ARTIST: Ólafur Arnalds
 
 Genre tags are optional (`--genres`). If your genre metadata is inconsistent, leave them off; the tree gets unwieldy fast.
 
-## Architecture
+## Installation
 
-Lattice is a modular Python package:
+Lattice installs as a Python package, or compiles into a standalone binary (PyInstaller, `hatch run build-bin`).
 
-- `tags.py`: unified abstraction layer for format-agnostic metadata extraction.
-- `modes/`: per-mode implementation of auditing and visualization logic.
-- `tui.py`: full-screen curses interface for interactive maintenance.
-
-## Installation & Requirements
-
-Lattice can be installed as a Python package or compiled into a standalone binary.
-
-**Option 1: Install via pipx (Recommended)**
+**Option 1: pipx (recommended)**
 ```bash
 pipx install .
-# Now you can run `lattice` globally
+# now you can run `lattice` globally
 ```
 
-**Option 2: Install via pip (Virtual Environment)**
+**Option 2: pip (virtual environment)**
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install .
 ```
 
-**System tools (integrity modes):**
+## Requirements
+
+Runtime dependencies are `mutagen` and `tqdm` (installed automatically). The integrity modes shell out to system tools:
 
 - [`flac`](https://xiph.org/flac/): used by `--testFLAC` (preferred)
-- [`ffmpeg`](https://ffmpeg.org/): used by `--testMP3`, `--testOpus`, and as a fallback for `--testFLAC`
+- [`ffmpeg`](https://ffmpeg.org/): used by `--testMP3`, `--testOpus`, `--testWAV`, `--testWMA`, and as a fallback for `--testFLAC`
 
-On Windows: `winget install flac ffmpeg`
-On Fedora/RHEL: `sudo dnf install flac ffmpeg-free`
-On Debian/Ubuntu: `sudo apt install flac ffmpeg`
+```bash
+# Fedora/RHEL
+sudo dnf install flac ffmpeg-free
+# Debian/Ubuntu
+sudo apt install flac ffmpeg
+# Windows
+winget install flac ffmpeg
+```
 
-**Tests:**
-
-The test suite is stdlib `unittest` (no extra dependencies): pure-helper unit tests plus integration tests that run the report modes against a committed fixture library. Run it from the repo root:
+**Tests.** The suite is stdlib `unittest` (no extra dependencies): pure-helper unit tests plus integration tests that run the report modes, and the companion scripts, against a committed fixture library. Run it from the repo root:
 
 ```bash
 python -m unittest discover
@@ -192,142 +199,6 @@ To make several roots permanent, add a `library_roots` array to `~/.config/latti
 
 The first-run prompt still saves only the single `library_root`, so a throwaway `--root` is never written to config.
 
-## Color output
-
-The status summary that each integrity mode prints is colorized: green for an all-clear, yellow for suspect counts, red for corrupt counts. Color appears only on an interactive terminal. It is suppressed inside the TUI, when output is piped or redirected, and when `NO_COLOR` is set, so report files and pipes stay clean.
-
-## Companion Script: `retag.py`
-
-Included in `scripts/` is `retag.py`, a universal genre tagger designed to work directly with the `--all-wings --paths` output. 
-
-Audio metadata formats handle multiple genres entirely differently (ID3 uses null bytes or slashes, Vorbis uses multiple `GENRE=` pairs, Apple uses specific custom atoms). `retag.py` abstracts this container chaos away, allowing you to safely hard-overwrite genres on an entire album directory simultaneously.
-
-It writes tags in place, so it is destructive. Preview every change with `--dry-run` before committing, and pass `--log` to keep an append-only record.
-
-**The Workflow:**
-1. Generate your wings with paths: `lattice --all-wings --root ~/Music --output wings/ --paths`
-   *(If you are using the compiled binary, replace `lattice` with `./dist/lattice`)*
-2. Open a generated wing (e.g., `Uncategorized_Library.txt`) and copy the bracketed `[/path/to/album]` from an album header.
-3. Preview the change first with `--dry-run` (prints `old -> new` per file, writes nothing):
-   ```bash
-   ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial" --dry-run
-   ```
-4. When it looks right, drop `--dry-run` to apply it:
-   ```bash
-   ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial"
-   ```
-
-## Companion Script: `cleaner.py`
-
-Also in `scripts/` is `cleaner.py`, a one-shot consolidator for **album folders that have fragmented across two paths because of inconsistent metadata**. The pattern looks like this:
-
-```
-Music/Modern Baseball/You're Gonna Miss It All/   ← 3 mp3s (straight quote)
-Music/Modern Baseball/You’re Gonna Miss It All/   ← 3 opus (curly quote)
-```
-
-Same album, no track overlap, scattered between two folders by filesystem accident. The same artifact shows up at the artist level (`Jay-Z & Kanye West/` vs `JAY‐Z & Kanye West/`, different hyphen codepoints) and across casing variants (`BONES/` vs `Bones/`).
-
-`cleaner.py` walks the library, finds every sibling pair of folders whose names normalize to the same key (after folding curly→straight quotes, en/em-dashes→ASCII hyphen, NFKC, lowercase, strip), and merges the smaller into the larger.
-
-**Safety contract.**
-- **`mv` only** on the same filesystem: an atomic rename, so audio bytes are never read or rewritten.
-- **Audio collisions never auto-delete.** If a track of the same name exists in both folders with *different* file sizes, the source copy is kept under a `<stem>.from-fragment.<ext>` suffix instead of being overwritten. Identical-size copies (true duplicates) are dropped from the source.
-- **Cover-art collisions keep the better image.** When a `.jpg`/`.png` exists in both folders, the higher-resolution file wins (ties, or images it cannot parse, fall back to the larger byte size). Other non-audio collisions (`.nfo`, `.cue`) drop the source; the canonical copy wins.
-- **The survivor is normalized.** The folder with the most files becomes canonical, so its name can be the less-standard variant; after merging, the survivor is renamed to its normalized form (broken hyphens, curly quotes/apostrophes, and the ellipsis glyph folded to ASCII; en/em dashes and prime marks preserved).
-- **Conservative matching.** Only sibling folders whose normalized names match are merged. Cases like `Domestica` vs `Cursive's Domestica (Deluxe Edition)` (different prefix, not just quote variation) are left alone for manual review.
-- **`--dry-run` flag** previews every action without touching the filesystem (log lines prefixed `[DRY]`) and faithfully predicts the real run, including which folders get removed.
-- **Per-file logging** to `<directory>/cleanup.log` (or `--log` override): every move, drop, collision, rename, and `rmdir` is timestamped and audit-trailed.
-- **Idempotent**: running on an already-clean library is a no-op.
-
-**The Workflow:**
-1. Preview first:
-   ```bash
-   ./scripts/cleaner.py /mnt/SharedData/Music --dry-run
-   ```
-2. Inspect `/mnt/SharedData/Music/cleanup.log`; every action it would take is recorded with `[DRY]` prefixes.
-3. If the plan looks right, apply for real:
-   ```bash
-   ./scripts/cleaner.py /mnt/SharedData/Music
-   ```
-4. Re-run `lattice --duplicates` afterward to confirm the consolidated state.
-
-**Two passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder. The order matters: collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory.
-
-**Normalizing lone folders (`--normalize-names`).** The merge passes only touch *duplicate* folders. Libraries often also carry lone, non-duplicate folders whose names use non-standard characters (e.g. `At the Drive‐In` with a unicode hyphen, or a curly apostrophe). With `--normalize-names`, a third pass renames every folder whose name differs from its normalized form, folding the same classes as the survivor rename (broken hyphens, curly quotes/apostrophes, ellipsis; en/em dashes preserved). It is off by default and can touch many folders at once, so preview with `--dry-run` first.
-
-**What it does not do.** `cleaner.py` is intentionally narrow. It does not:
-- Rewrite tags (use `retag.py` for that)
-- Re-encode or transcode audio (filesystem operations only)
-- Match albums by tag content (folder name only, by design, so the operation is auditable from the log alone)
-- Touch the source-of-truth import pipeline. If the same fragmentation pattern keeps reappearing, the upstream tagger or downloader needs a curly-quote normalization rule.
-
-## Companion Script: `genre_tidy.py`
-
-Also in `scripts/` is `genre_tidy.py`, a two-phase tool for libraries whose genre tags have drifted: it builds an **artist to genre authority map**, then collapses any album that disagrees with it. It pairs Lattice with `retag.py`: the `build` phase only reads (through lattice's scanner), and the `apply` phase does every write through `retag.py`. Like the other companions it lives outside the `lattice` package because it mutates tags. (It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.)
-
-This is aimed at the messy general library, not a meticulously tagged one. Because `build` records every genre an artist already uses, `apply` does nothing until you edit the map; on a cleanly tagged library it reports everything compliant.
-
-**The map.** `build` writes an editable tab-separated file (default `<library>/genre_map.tsv`), one line per artist listing every genre that artist is allowed to carry:
-
-```
-Artist<TAB>Genre<TAB>Second Genre<TAB>...
-```
-
-- Every genre on the line is **allowed**: albums tagged with any of them are left untouched.
-- The **first** genre is the fix target: `apply` retags any of that artist's albums whose genre is *not* on the line to this first genre.
-- `build` seeds the line with all the genres the artist currently uses (most-common first), so the map starts as a faithful snapshot and `apply` is a no-op. **To tidy, remove a stray genre from a line**; its albums then collapse to the first genre. Reorder the line to change which genre is the target.
-- Leave only the artist (nothing after it) to skip that artist entirely.
-- Multi-genre artists get a `#` comment above their line with the per-genre counts, so low-count strays worth trimming stand out (e.g. `# Eminem: 3 genres: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1`).
-
-Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name, so a compilation folder is keyed under its `Various Artists` tag.
-
-**Safety.** Seeding the map from the library's current state means `apply` changes nothing you have not asked for: a retag happens only where you removed a genre from a line. `apply` is otherwise guarded like the other companions: `--dry-run` previews every `retag.py` call and writes nothing (log lines prefixed `[DRY]`), an append-only timestamped log records every decision (default `<library>/genre_tidy.log`), and the operation is idempotent (a second `apply` is all no-ops). Re-running `build` over an existing map preserves your edits and only appends artists new to the library.
-
-**The Workflow:**
-1. Build the map (read-only):
-   ```bash
-   ./scripts/genre_tidy.py build /mnt/SharedData/Music
-   ```
-2. Open `genre_map.tsv`. Each line lists an artist's current genres; remove the strays you consider mistakes (the `#`-commented lines with low counts are the usual suspects), reorder to change a fix target, or blank a line to leave an artist alone.
-3. Preview the changes (writes nothing):
-   ```bash
-   ./scripts/genre_tidy.py apply /mnt/SharedData/Music --dry-run
-   ```
-4. Inspect `genre_tidy.log`; every retag it would perform is recorded with `[DRY]`.
-5. Apply for real:
-   ```bash
-   ./scripts/genre_tidy.py apply /mnt/SharedData/Music
-   ```
-
-**Relationship to `retag.py`.** `retag.py` is the manual, one-album tool; `genre_tidy.py` is the library-wide policy layer on top of it, calling it once per album you have tidied out of compliance. Reach for `retag.py` for a one-off fix, `genre_tidy.py` to enforce a whole-collection rule.
-
-A real, `build`-generated map from a roughly 877-artist library ships at [`artist_genre_defaults.tsv`](artist_genre_defaults.tsv) in the repo root. It doubles as a worked example of the format (single- and multi-genre lines, the `#`-flagged counts, the blank-to-skip pattern) and as a maintained authority: point the tool at it with `--map artist_genre_defaults.tsv`. Keep it current by re-running `build`, which appends artists new to the library under a dated marker while preserving every line you have edited; hand-edit a line to accept a new genre for an existing artist.
-
-## Companion Script: `rerate.py`
-
-Also in `scripts/` is `rerate.py`, which reconciles MP3 star ratings between DeaDBeeF and foobar2000. Both store ratings in an ID3 POPM frame (a 0–255 byte), but on different scales, so a rating set in one reads shifted in the other. Measured on a real library:
-
-- DeaDBeeF 2★ writes byte `127`, which foobar reads as **3★**.
-- DeaDBeeF 4★ writes byte `254`, which foobar reads as **5★**.
-
-foobar's own values are read the same by both players (byte `196` shows 4★ in DeaDBeeF and foobar alike). So `rerate.py` rewrites DeaDBeeF's odd bytes to the equivalent foobar value, making the two agree without changing what DeaDBeeF shows: `127 → 64` (both 2★) and `254 → 196` (both 4★).
-
-It touches only those exact bytes. foobar's canonical values, MusicBee's bytes (`186`/`242`, which already read correctly), unrated files, and every non-MP3 file are left alone; Vorbis/Opus ratings are clean 0–5 integers and are unaffected. Like the other companions it lives outside the read-only `lattice` package, has a `--dry-run` flag, and writes an append-only timestamped log (default `<directory>/rerate.log`) recording every `old -> new` change, so a run is fully auditable and reversible. Idempotent.
-
-**The Workflow:**
-1. Preview:
-   ```bash
-   ./scripts/rerate.py /mnt/SharedData/Music --dry-run
-   ```
-2. Inspect `rerate.log` (each change is logged as `<file>: 254 -> 196`).
-3. Apply:
-   ```bash
-   ./scripts/rerate.py /mnt/SharedData/Music
-   ```
-
-**Scope.** `rerate.py` is MP3/POPM-only and remaps a fixed set of byte values (`REMAP` in the script). The diagnosis behind it is simply "which byte does each player read as which star"; if your players use a different scale, edit that map.
-
 ## Integrity checks
 
 The integrity modes (`--testFLAC`, `--testMP3`, `--testOpus`, `--testWAV`, `--testWMA`) decode every file and sort the results into four tiers rather than a flat pass/fail, because a decoder complaint is not by itself proof of damaged audio:
@@ -347,9 +218,23 @@ CORRUPT and SUSPECT are always listed in the report; METADATA and OK are summari
 
 `--extractArt` writes embedded art to `cover.jpg`, pulling from the highest-quality source in each directory (FLAC → Opus/OGG → M4A → MP3) and preferring the "Front Cover" picture type. It checks for existing covers case-insensitively (`cover`/`folder`/`front`/`album` in `.jpg`/`.jpeg`/`.png`), so it won't duplicate art. Reads FLAC pictures, Opus/OGG `METADATA_BLOCK_PICTURE`, M4A `covr` atoms, and MP3 `APIC` frames.
 
+## Color output
+
+The status summary that each integrity mode prints is colorized: green for an all-clear, yellow for suspect counts, red for corrupt counts. Color appears only on an interactive terminal. It is suppressed inside the TUI, when output is piped or redirected, and when `NO_COLOR` is set, so report files and pipes stay clean.
+
 ## Supported formats
 
 `.mp3` · `.flac` · `.ogg` · `.opus` · `.m4a` · `.wav` · `.wma` · `.aac`
+
+## Architecture
+
+Lattice is a modular Python package under `src/lattice/`:
+
+- `tags.py`: unified abstraction layer for format-agnostic metadata extraction (returns a `TagBundle` from a single `mutagen` open).
+- `modes/`: per-mode implementation of auditing and visualization logic (library, integrity, artwork, audit, stats, playlists).
+- `cli.py` / `tui.py`: the argparse dispatch and the full-screen curses interface; both call the same mode functions.
+
+The filesystem is the source of truth: Lattice walks the tree on every invocation and keeps no index or database.
 
 ## Full help output
 
@@ -412,6 +297,157 @@ options:
 ```
 
 </details>
+
+## Companion scripts
+
+The `scripts/` directory holds four standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
+
+**Use them with caution.** Have a backup or snapshot first, always preview with `--dry-run`, and read the log before applying. Each writes an append-only timestamped log and is idempotent, so a second run on an already-clean library is a no-op.
+
+| Script | What it changes | Scope |
+|--------|-----------------|-------|
+| [`retag.py`](#retagpy) | Genre tags on one album directory | manual, per-album |
+| [`genre_tidy.py`](#genre_tidypy) | Genre tags library-wide (through `retag.py`) | policy map, then apply |
+| [`rerate.py`](#reratepy) | MP3 POPM rating bytes | reconcile DeaDBeeF / foobar |
+| [`cleaner.py`](#cleanerpy) | Folder names and layout (moves, merges, renames) | filesystem |
+
+### `retag.py`
+
+> **Destructive: writes genre tags in place.** Always preview with `--dry-run`; pass `--log` to keep an append-only record.
+
+A universal genre tagger designed to work directly with the `--all-wings --paths` output.
+
+Audio metadata formats handle multiple genres entirely differently (ID3 uses null bytes or slashes, Vorbis uses multiple `GENRE=` pairs, Apple uses specific custom atoms). `retag.py` abstracts this container chaos away, allowing you to safely hard-overwrite genres on an entire album directory simultaneously.
+
+**The Workflow:**
+1. Generate your wings with paths: `lattice --all-wings --root ~/Music --output wings/ --paths`
+   *(If you are using the compiled binary, replace `lattice` with `./dist/lattice`)*
+2. Open a generated wing (e.g., `Uncategorized_Library.txt`) and copy the bracketed `[/path/to/album]` from an album header.
+3. Preview the change first with `--dry-run` (prints `old -> new` per file, writes nothing):
+   ```bash
+   ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial" --dry-run
+   ```
+4. When it looks right, drop `--dry-run` to apply it:
+   ```bash
+   ./scripts/retag.py "/mnt/SharedData/Music/Kanye West/Yeezus" "Alternative Rap" "Industrial"
+   ```
+
+### `genre_tidy.py`
+
+> **Destructive on `apply`.** `build` is read-only; `apply` rewrites genre tags through `retag.py`. Preview `apply` with `--dry-run` first.
+
+A two-phase tool for libraries whose genre tags have drifted: it builds an **artist to genre authority map**, then collapses any album that disagrees with it. It pairs Lattice with `retag.py`: the `build` phase only reads (through lattice's scanner), and the `apply` phase does every write through `retag.py`. It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.
+
+This is aimed at the messy general library, not a meticulously tagged one. Because `build` records every genre an artist already uses, `apply` does nothing until you edit the map; on a cleanly tagged library it reports everything compliant.
+
+**The map.** `build` writes an editable tab-separated file (default `<library>/genre_map.tsv`), one line per artist listing every genre that artist is allowed to carry:
+
+```
+Artist<TAB>Genre<TAB>Second Genre<TAB>...
+```
+
+- Every genre on the line is **allowed**: albums tagged with any of them are left untouched.
+- The **first** genre is the fix target: `apply` retags any of that artist's albums whose genre is *not* on the line to this first genre.
+- `build` seeds the line with all the genres the artist currently uses (most-common first), so the map starts as a faithful snapshot and `apply` is a no-op. **To tidy, remove a stray genre from a line**; its albums then collapse to the first genre. Reorder the line to change which genre is the target.
+- Leave only the artist (nothing after it) to skip that artist entirely.
+- Multi-genre artists get a `#` comment above their line with the per-genre counts, so low-count strays worth trimming stand out (e.g. `# Eminem: 3 genres: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1`).
+
+Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name, so a compilation folder is keyed under its `Various Artists` tag.
+
+**Safety.** Seeding the map from the library's current state means `apply` changes nothing you have not asked for: a retag happens only where you removed a genre from a line. `apply` is otherwise guarded like the other companions: `--dry-run` previews every `retag.py` call and writes nothing (log lines prefixed `[DRY]`), an append-only timestamped log records every decision (default `<library>/genre_tidy.log`), and the operation is idempotent (a second `apply` is all no-ops). Re-running `build` over an existing map preserves your edits and only appends artists new to the library.
+
+**The Workflow:**
+1. Build the map (read-only):
+   ```bash
+   ./scripts/genre_tidy.py build /mnt/SharedData/Music
+   ```
+2. Open `genre_map.tsv`. Each line lists an artist's current genres; remove the strays you consider mistakes (the `#`-commented lines with low counts are the usual suspects), reorder to change a fix target, or blank a line to leave an artist alone.
+3. Preview the changes (writes nothing):
+   ```bash
+   ./scripts/genre_tidy.py apply /mnt/SharedData/Music --dry-run
+   ```
+4. Inspect `genre_tidy.log`; every retag it would perform is recorded with `[DRY]`.
+5. Apply for real:
+   ```bash
+   ./scripts/genre_tidy.py apply /mnt/SharedData/Music
+   ```
+
+**Relationship to `retag.py`.** `retag.py` is the manual, one-album tool; `genre_tidy.py` is the library-wide policy layer on top of it, calling it once per album you have tidied out of compliance. Reach for `retag.py` for a one-off fix, `genre_tidy.py` to enforce a whole-collection rule.
+
+A real, `build`-generated map from a roughly 877-artist library ships at [`artist_genre_defaults.tsv`](artist_genre_defaults.tsv) in the repo root. It doubles as a worked example of the format (single- and multi-genre lines, the `#`-flagged counts, the blank-to-skip pattern) and as a maintained authority: point the tool at it with `--map artist_genre_defaults.tsv`. Keep it current by re-running `build`, which appends artists new to the library under a dated marker while preserving every line you have edited; hand-edit a line to accept a new genre for an existing artist.
+
+### `rerate.py`
+
+> **Destructive: rewrites MP3 rating bytes in place.** Preview with `--dry-run`; every change is logged, so a run is reversible.
+
+Reconciles MP3 star ratings between DeaDBeeF and foobar2000. Both store ratings in an ID3 POPM frame (a 0–255 byte), but on different scales, so a rating set in one reads shifted in the other. Measured on a real library:
+
+- DeaDBeeF 2★ writes byte `127`, which foobar reads as **3★**.
+- DeaDBeeF 4★ writes byte `254`, which foobar reads as **5★**.
+
+foobar's own values are read the same by both players (byte `196` shows 4★ in DeaDBeeF and foobar alike). So `rerate.py` rewrites DeaDBeeF's odd bytes to the equivalent foobar value, making the two agree without changing what DeaDBeeF shows: `127 → 64` (both 2★) and `254 → 196` (both 4★).
+
+It touches only those exact bytes. foobar's canonical values, MusicBee's bytes (`186`/`242`, which already read correctly), unrated files, and every non-MP3 file are left alone; Vorbis/Opus ratings are clean 0–5 integers and are unaffected. It writes an append-only timestamped log (default `<directory>/rerate.log`) recording every `old -> new` change, so a run is fully auditable and reversible. Idempotent.
+
+**The Workflow:**
+1. Preview:
+   ```bash
+   ./scripts/rerate.py /mnt/SharedData/Music --dry-run
+   ```
+2. Inspect `rerate.log` (each change is logged as `<file>: 254 -> 196`).
+3. Apply:
+   ```bash
+   ./scripts/rerate.py /mnt/SharedData/Music
+   ```
+
+**Scope.** `rerate.py` is MP3/POPM-only and remaps a fixed set of byte values (`REMAP` in the script). The diagnosis behind it is simply "which byte does each player read as which star"; if your players use a different scale, edit that map.
+
+### `cleaner.py`
+
+> **Destructive: moves, merges, and renames folders.** Preview with `--dry-run` and read the log before applying.
+
+A one-shot consolidator for **album folders that have fragmented across two paths because of inconsistent metadata**. The pattern looks like this:
+
+```
+Music/Modern Baseball/You're Gonna Miss It All/   ← 3 mp3s (straight quote)
+Music/Modern Baseball/You’re Gonna Miss It All/   ← 3 opus (curly quote)
+```
+
+Same album, no track overlap, scattered between two folders by filesystem accident. The same artifact shows up at the artist level (`Jay-Z & Kanye West/` vs `JAY‐Z & Kanye West/`, different hyphen codepoints) and across casing variants (`BONES/` vs `Bones/`).
+
+`cleaner.py` walks the library, finds every sibling pair of folders whose names normalize to the same key (after folding curly→straight quotes, en/em-dashes→ASCII hyphen, NFKC, lowercase, strip), and merges the smaller into the larger.
+
+**Safety contract.**
+- **`mv` only** on the same filesystem: an atomic rename, so audio bytes are never read or rewritten.
+- **Audio collisions never auto-delete.** If a track of the same name exists in both folders with *different* file sizes, the source copy is kept under a `<stem>.from-fragment.<ext>` suffix instead of being overwritten. Identical-size copies (true duplicates) are dropped from the source.
+- **Cover-art collisions keep the better image.** When a `.jpg`/`.png` exists in both folders, the higher-resolution file wins (ties, or images it cannot parse, fall back to the larger byte size). Other non-audio collisions (`.nfo`, `.cue`) drop the source; the canonical copy wins.
+- **The survivor is normalized.** The folder with the most files becomes canonical, so its name can be the less-standard variant; after merging, the survivor is renamed to its normalized form (broken hyphens, curly quotes/apostrophes folded to ASCII; en/em dashes, the ellipsis glyph, and prime marks preserved so names stay legal on NTFS/exFAT).
+- **Conservative matching.** Only sibling folders whose normalized names match are merged. Cases like `Domestica` vs `Cursive's Domestica (Deluxe Edition)` (different prefix, not just quote variation) are left alone for manual review.
+- **`--dry-run` flag** previews every action without touching the filesystem (log lines prefixed `[DRY]`) and faithfully predicts the real run, including which folders get removed.
+- **Per-file logging** to `<directory>/cleanup.log` (or `--log` override): every move, drop, collision, rename, and `rmdir` is timestamped and audit-trailed.
+- **Idempotent**: running on an already-clean library is a no-op.
+
+**The Workflow:**
+1. Preview first:
+   ```bash
+   ./scripts/cleaner.py /mnt/SharedData/Music --dry-run
+   ```
+2. Inspect `/mnt/SharedData/Music/cleanup.log`; every action it would take is recorded with `[DRY]` prefixes.
+3. If the plan looks right, apply for real:
+   ```bash
+   ./scripts/cleaner.py /mnt/SharedData/Music
+   ```
+4. Re-run `lattice --duplicates` afterward to confirm the consolidated state.
+
+**Two passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder. The order matters: collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory.
+
+**Normalizing lone folders (`--normalize-names`).** The merge passes only touch *duplicate* folders. Libraries often also carry lone, non-duplicate folders whose names use non-standard characters (e.g. `At the Drive‐In` with a unicode hyphen, or a curly apostrophe). With `--normalize-names`, a third pass renames every folder whose name differs from its normalized form, folding the same classes as the survivor rename (broken hyphens, curly quotes/apostrophes; en/em dashes and the ellipsis preserved). It is off by default and can touch many folders at once, so preview with `--dry-run` first.
+
+**What it does not do.** `cleaner.py` is intentionally narrow. It does not:
+- Rewrite tags (use `retag.py` for that)
+- Re-encode or transcode audio (filesystem operations only)
+- Match albums by tag content (folder name only, by design, so the operation is auditable from the log alone)
+- Touch the source-of-truth import pipeline. If the same fragmentation pattern keeps reappearing, the upstream tagger or downloader needs a curly-quote normalization rule.
 
 ## Credits & Acknowledgements
 
