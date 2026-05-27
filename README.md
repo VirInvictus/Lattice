@@ -13,6 +13,8 @@
 
 A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice handles library visualization, integrity verification, cover art extraction, and metadata auditing, built on `mutagen` and `tqdm`, with `flac` and `ffmpeg` shelled out for integrity checks.
 
+> **Note:** This is considered completed software. It has been thoroughly tested and is known to be fully functional on the primary development environment: **Fedora Linux 44 (Workstation Edition)**, kernel `7.0.9-205.fc44.x86_64`, on **Python 3.14**, with `flac` and `ffmpeg` from the Fedora repositories. While it is pure Python and should be cross-platform, this specific setup is the only officially tested environment.
+
 ## Why this exists
 
 Modern music players often hide your library behind proprietary databases. Lattice is built for collectors who treat the filesystem as the source of truth. It reads tags directly via `mutagen`, ensuring your library is portable and player-agnostic.
