@@ -1,7 +1,6 @@
 import re
 import os
 import json
-from typing import Optional
 
 VERSION = "4.4.2"
 
@@ -52,7 +51,7 @@ CONFIG_FILE = os.path.expanduser("~/.config/lattice/config.json")
 def load_config() -> dict:
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(CONFIG_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
@@ -65,7 +64,7 @@ def save_config(config: dict) -> None:
         json.dump(config, f, indent=4)
 
 
-def get_library_root() -> Optional[str]:
+def get_library_root() -> str | None:
     return load_config().get("library_root")
 
 

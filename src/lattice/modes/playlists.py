@@ -1,6 +1,5 @@
 import os
 import sys
-from typing import List
 
 from lattice.utils import count_audio_files, _make_pbar, is_audio, parse_layout
 from lattice.tags import get_all_tags
@@ -57,7 +56,7 @@ def generate_playlist(
 
     pbar = _make_pbar(total_files, "Building playlist", quiet)
 
-    playlist_entries: List[str] = []
+    playlist_entries: list[str] = []
 
     for dirpath, dirs, files in os.walk(root_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".")]

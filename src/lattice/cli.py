@@ -1,7 +1,6 @@
 import argparse
 import os
 import sys
-from typing import Optional, List
 
 from lattice.config import (
     VERSION,
@@ -183,7 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if len(argv) == 0:

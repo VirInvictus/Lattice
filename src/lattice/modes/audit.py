@@ -4,7 +4,8 @@ import sys
 import unicodedata
 from collections import defaultdict, Counter
 from difflib import SequenceMatcher
-from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
+from typing import NamedTuple
+from collections.abc import Sequence
 
 from lattice.utils import is_audio, count_audio_files, _make_pbar
 from lattice.tags import get_all_tags, HAVE_MUTAGEN_BASE, TagBundle
@@ -39,7 +40,7 @@ _PAREN_TAIL = re.compile(r"\s*[\(\[][^\(\[\)\]]*[\)\]]\s*$")
 _FEAT = re.compile(r"\s+(?:feat\.?|featuring|ft\.?)\s+.+$", re.IGNORECASE)
 
 
-def _norm_key(s: Optional[str]) -> str:
+def _norm_key(s: str | None) -> str:
     if not s:
         return ""
     s = unicodedata.normalize("NFKC", s)
@@ -48,7 +49,7 @@ def _norm_key(s: Optional[str]) -> str:
     return _WS_RUN.sub(" ", s).strip().lower()
 
 
-def _loose_key(s: Optional[str]) -> str:
+def _loose_key(s: str | None) -> str:
     """`_norm_key` plus stripping of trailing parentheticals and 'feat.' clauses;
     used only for fuzzy similarity matching, not exact lookup."""
     s = _norm_key(s)
@@ -71,19 +72,19 @@ class _DirInfo(NamedTuple):
     norm_album: str
     loose_album: str
     total_bytes: int
-    formats: Dict[str, int]
-    fmt_bitrate: Dict[str, int]
-    files: List[Tuple[str, TagBundle, int]]
+    formats: dict[str, int]
+    fmt_bitrate: dict[str, int]
+    files: list[tuple[str, TagBundle, int]]
 
 
 def _aggregate_dir(
-    dirpath: str, audio_files: List[str], tag_cache: Dict[str, TagBundle]
+    dirpath: str, audio_files: list[str], tag_cache: dict[str, TagBundle]
 ) -> _DirInfo:
-    files: List[Tuple[str, TagBundle, int]] = []
+    files: list[tuple[str, TagBundle, int]] = []
     artists: Counter = Counter()
     albums: Counter = Counter()
     formats: Counter = Counter()
-    fmt_kbps: Dict[str, List[int]] = defaultdict(list)
+    fmt_kbps: dict[str, list[int]] = defaultdict(list)
     total_bytes = 0
 
     for fname in audio_files:
@@ -136,7 +137,7 @@ def _fmt_size(n: int) -> str:
     return f"{f:.1f} GB"
 
 
-def _fmt_duration(secs: Optional[float]) -> str:
+def _fmt_duration(secs: float | None) -> str:
     if not secs:
         return "--:--"
     m, s = divmod(int(secs), 60)
@@ -155,8 +156,8 @@ def _fmt_dir_summary(d: _DirInfo, root: str) -> str:
     return f"       {rel}/  [{fmt_str}]  {_fmt_size(d.total_bytes)}"
 
 
-def _section_exact(dirs: List[_DirInfo], root: str, out) -> Tuple[int, set]:
-    groups: Dict[Tuple[str, str], List[_DirInfo]] = defaultdict(list)
+def _section_exact(dirs: list[_DirInfo], root: str, out) -> tuple[int, set]:
+    groups: dict[tuple[str, str], list[_DirInfo]] = defaultdict(list)
     for d in dirs:
         # Require both keys non-empty: grouping folders by ("metallica", "")
         # would mass-match every album-less folder for that artist.
@@ -182,22 +183,22 @@ def _section_exact(dirs: List[_DirInfo], root: str, out) -> Tuple[int, set]:
     return len(dupes), set(dupes.keys())
 
 
-def _section_multiformat(dirs: List[_DirInfo], root: str, out) -> int:
+def _section_multiformat(dirs: list[_DirInfo], root: str, out) -> int:
     # Each value: ext -> (filename, size, tag_title, original_stem)
-    hits: List[
-        Tuple[
+    hits: list[
+        tuple[
             _DirInfo,
-            Dict[
-                Tuple[Optional[int], str],
-                Dict[str, Tuple[str, int, Optional[str], str]],
+            dict[
+                tuple[int | None, str],
+                dict[str, tuple[str, int, str | None, str]],
             ],
         ]
     ] = []
     for d in dirs:
         if len(d.formats) < 2:
             continue
-        by_key: Dict[
-            Tuple[Optional[int], str], Dict[str, Tuple[str, int, Optional[str], str]]
+        by_key: dict[
+            tuple[int | None, str], dict[str, tuple[str, int, str | None, str]]
         ] = defaultdict(dict)
         for fname, t, sz in d.files:
             ext = os.path.splitext(fname)[1].lower()
@@ -239,9 +240,9 @@ def _section_multiformat(dirs: List[_DirInfo], root: str, out) -> int:
 
 
 def _section_similar(
-    dirs: List[_DirInfo], exact_keys: set, root: str, out, threshold: float = 0.85
+    dirs: list[_DirInfo], exact_keys: set, root: str, out, threshold: float = 0.85
 ) -> int:
-    by_artist: Dict[str, List[_DirInfo]] = defaultdict(list)
+    by_artist: dict[str, list[_DirInfo]] = defaultdict(list)
     for d in dirs:
         if not d.norm_artist:
             continue
@@ -251,7 +252,7 @@ def _section_similar(
             continue
         by_artist[d.norm_artist].append(d)
 
-    pairs: List[Tuple[float, _DirInfo, _DirInfo]] = []
+    pairs: list[tuple[float, _DirInfo, _DirInfo]] = []
     for items in by_artist.values():
         if len(items) < 2:
             continue
@@ -285,8 +286,8 @@ def _section_similar(
 
 
 def _cluster_by_duration(
-    entries: Sequence[Tuple[_DirInfo, str, TagBundle]], delta: float
-) -> List[List[Tuple[_DirInfo, str, TagBundle]]]:
+    entries: Sequence[tuple[_DirInfo, str, TagBundle]], delta: float
+) -> list[list[tuple[_DirInfo, str, TagBundle]]]:
     """Partition `entries` into duration-clusters where each cluster's spread
     fits within `delta` seconds. Greedy: a new cluster starts when the next
     entry exceeds `delta` past the cluster's first entry. Entries with no
@@ -296,7 +297,7 @@ def _cluster_by_duration(
     durs = [(e, e[2].duration_s) for e in entries if e[2].duration_s is not None]
     no_dur = [e for e in entries if e[2].duration_s is None]
 
-    clusters: List[List[Tuple[_DirInfo, str, TagBundle]]] = []
+    clusters: list[list[tuple[_DirInfo, str, TagBundle]]] = []
     if durs:
         durs.sort(key=lambda x: x[1])
         current = [durs[0][0]]
@@ -316,9 +317,9 @@ def _cluster_by_duration(
 
 
 def _section_track_dupes(
-    dirs: List[_DirInfo], root: str, out, duration_delta: float = 2.0
+    dirs: list[_DirInfo], root: str, out, duration_delta: float = 2.0
 ) -> int:
-    track_map: Dict[Tuple[str, str], List[Tuple[_DirInfo, str, TagBundle]]] = (
+    track_map: dict[tuple[str, str], list[tuple[_DirInfo, str, TagBundle]]] = (
         defaultdict(list)
     )
     for d in dirs:
@@ -332,7 +333,7 @@ def _section_track_dupes(
                 continue
             track_map[key].append((d, fname, t))
 
-    hits: List[Tuple[Tuple[str, str], List[Tuple[_DirInfo, str, TagBundle]]]] = []
+    hits: list[tuple[tuple[str, str], list[tuple[_DirInfo, str, TagBundle]]]] = []
     for key, entries in track_map.items():
         if len({e[0].path for e in entries}) < 2:
             continue
@@ -382,8 +383,8 @@ def run_duplicates(root: str, output: str, *, quiet: bool = False) -> int:
     total = count_audio_files(root)
     pbar = _make_pbar(total, "Reading tags", quiet)
 
-    tag_cache: Dict[str, TagBundle] = {}
-    dirs: List[_DirInfo] = []
+    tag_cache: dict[str, TagBundle] = {}
+    dirs: list[_DirInfo] = []
 
     for dirpath, subdirs, files in os.walk(root):
         subdirs[:] = [d for d in subdirs if not d.startswith(".")]
@@ -433,7 +434,7 @@ def run_tag_audit(root: str, output: str, *, quiet: bool = False) -> int:
         return 2
 
     root = os.path.abspath(root)
-    issues: List[Dict[str, str]] = []
+    issues: list[dict[str, str]] = []
 
     if not quiet:
         print(f"Auditing tags under: {root}")
@@ -454,7 +455,7 @@ def run_tag_audit(root: str, output: str, *, quiet: bool = False) -> int:
             filepath = os.path.join(dirpath, f)
             t = get_all_tags(filepath)
 
-            missing_fields: List[str] = []
+            missing_fields: list[str] = []
             if not t.title:
                 missing_fields.append("title")
             if not t.artist:
@@ -485,7 +486,7 @@ def run_tag_audit(root: str, output: str, *, quiet: bool = False) -> int:
             field_counts[field] += 1
 
     # Group issues by directory for readability
-    by_dir: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+    by_dir: dict[str, list[dict[str, str]]] = defaultdict(list)
     for issue in issues:
         parent = os.path.dirname(issue["path"])
         by_dir[parent].append(issue)
@@ -536,7 +537,7 @@ def run_bitrate_audit(
         return 2
 
     root = os.path.abspath(root)
-    issues: List[Dict[str, str]] = []
+    issues: list[dict[str, str]] = []
 
     if not quiet:
         print(f"Auditing bitrates (< {min_kbps} kbps) under: {root}")
@@ -577,7 +578,7 @@ def run_bitrate_audit(
     )
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
-    by_dir: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+    by_dir: dict[str, list[dict[str, str]]] = defaultdict(list)
     for issue in issues:
         parent = os.path.dirname(issue["path"])
         by_dir[parent].append(issue)

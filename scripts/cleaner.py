@@ -29,8 +29,6 @@ Usage:
     ./cleaner.py ~/Music --log /tmp/music-cleanup.log
 """
 
-from __future__ import annotations
-
 import argparse
 import shutil
 import sys
@@ -38,8 +36,19 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-AUDIO_EXT = {".mp3", ".opus", ".flac", ".wav", ".m4a", ".ogg",
-             ".aac", ".alac", ".ape", ".wv", ".aiff"}
+AUDIO_EXT = {
+    ".mp3",
+    ".opus",
+    ".flac",
+    ".wav",
+    ".m4a",
+    ".ogg",
+    ".aac",
+    ".alac",
+    ".ape",
+    ".wv",
+    ".aiff",
+}
 
 QUOTE_DASH_FOLD = {
     "‘": "'",  # left single quote
@@ -128,7 +137,7 @@ def find_groups(directory: Path, run: Run) -> list[list[Path]]:
 def file_count(p: Path) -> int:
     try:
         return sum(1 for _ in p.rglob("*") if _.is_file())
-    except (PermissionError, OSError):
+    except PermissionError, OSError:
         return 0
 
 
@@ -160,15 +169,21 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
                         counter = 1
                         while new_target.exists():
                             counter += 1
-                            new_target = target / f"{stem}.from-fragment-{counter}{suffix}"
+                            new_target = (
+                                target / f"{stem}.from-fragment-{counter}{suffix}"
+                            )
                         run._move(item, new_target)
                         run.stats["collisions_kept"] += 1
-                        run.log(f"    AUDIO COLLISION (kept both): {item.name} "
-                                f"({src_size}B) -> {new_target.name} "
-                                f"vs existing ({tgt_size}B)")
+                        run.log(
+                            f"    AUDIO COLLISION (kept both): {item.name} "
+                            f"({src_size}B) -> {new_target.name} "
+                            f"vs existing ({tgt_size}B)"
+                        )
                     else:
-                        run.log(f"    DROP NON-AUDIO ({item.suffix}, "
-                                f"src={src_size}B tgt={tgt_size}B): {item}")
+                        run.log(
+                            f"    DROP NON-AUDIO ({item.suffix}, "
+                            f"src={src_size}B tgt={tgt_size}B): {item}"
+                        )
                         run._unlink(item)
                         run.stats["non_audio_dropped"] += 1
             else:
@@ -180,9 +195,7 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
 
 
 def consolidate_group(folders: list[Path], context: str, run: Run) -> None:
-    folders_sorted = sorted(
-        folders, key=lambda p: (-file_count(p), p.name)
-    )
+    folders_sorted = sorted(folders, key=lambda p: (-file_count(p), p.name))
     canonical = folders_sorted[0]
     sources = folders_sorted[1:]
     run.log(f"  GROUP @ {context}")
@@ -201,8 +214,10 @@ def consolidate_group(folders: list[Path], context: str, run: Run) -> None:
                     run.stats["rmdirs"] += 1
                     run.log(f"    RMDIR: {source}")
             else:
-                run.log(f"    RETAIN (not empty after merge, "
-                        f"{len(remaining)} items): {source}")
+                run.log(
+                    f"    RETAIN (not empty after merge, "
+                    f"{len(remaining)} items): {source}"
+                )
         except OSError as e:
             run.log(f"    ERROR rmdir {source}: {e}")
 
@@ -212,11 +227,20 @@ def main() -> int:
         description="Consolidate fragmented album folders within a music library.",
         epilog="Default log: <directory>/cleanup.log",
     )
-    parser.add_argument("directory", help="Music library root (e.g. /mnt/SharedData/Music)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Preview only — no filesystem changes; log lines prefixed [DRY]")
-    parser.add_argument("--log", dest="log_path", default=None,
-                        help="Override log file path (default: <directory>/cleanup.log)")
+    parser.add_argument(
+        "directory", help="Music library root (e.g. /mnt/SharedData/Music)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview only — no filesystem changes; log lines prefixed [DRY]",
+    )
+    parser.add_argument(
+        "--log",
+        dest="log_path",
+        default=None,
+        help="Override log file path (default: <directory>/cleanup.log)",
+    )
     args = parser.parse_args()
 
     root = Path(args.directory).resolve()
@@ -241,8 +265,7 @@ def main() -> int:
 
         run.log("\n--- PASS 2: album-level consolidation per artist ---")
         artists = sorted(
-            (p for p in root.iterdir()
-             if p.is_dir() and not p.name.startswith(".")),
+            (p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")),
             key=lambda p: p.name.lower(),
         )
         scanned = 0

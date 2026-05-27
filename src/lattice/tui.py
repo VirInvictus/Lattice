@@ -2,7 +2,7 @@ import io
 import os
 import sys
 from contextlib import contextmanager
-from typing import Dict, Any, Optional
+from typing import Any
 
 try:
     import curses
@@ -58,7 +58,7 @@ from lattice.modes.audit import run_duplicates, run_tag_audit, run_bitrate_audit
 _USE_CURSES = HAVE_CURSES and sys.stdin.isatty()
 
 
-def _prompt_str(label: str, default: Optional[str]) -> str:
+def _prompt_str(label: str, default: str | None) -> str:
     if _USE_CURSES:
         return _tui_prompt_str(label, default)
     try:
@@ -146,7 +146,7 @@ def _tui_select(
     title: str,
     sections: list,
     hints: str = "\u2191\u2193 Navigate  \u23ce Select  q Quit",
-) -> Optional[tuple]:
+) -> tuple | None:
     """Full-screen arrow-key menu using curses."""
     BOX_W = _TUI_BOX_W
     INNER = _TUI_INNER
@@ -232,7 +232,7 @@ def _tui_select(
 
         stdscr.refresh()
 
-    def _run(stdscr) -> Optional[tuple]:
+    def _run(stdscr) -> tuple | None:
         _init_tui_colors()
         curses.curs_set(0)
         cur = 0
@@ -256,7 +256,7 @@ def _tui_select(
         return None
 
 
-def _tui_prompt_str(label: str, default: Optional[str]) -> str:
+def _tui_prompt_str(label: str, default: str | None) -> str:
     BOX_W = _TUI_BOX_W
     INNER = _TUI_INNER
 
@@ -395,7 +395,7 @@ def _tui_pause() -> None:
             pass
 
 
-_MAIN_FALLBACK_MAP: Dict[str, Optional[tuple]] = {
+_MAIN_FALLBACK_MAP: dict[str, tuple | None] = {
     "1": (0, 0),
     "l": (0, 0),
     "lib": (0, 0),
@@ -428,7 +428,7 @@ _MAIN_FALLBACK_MAP: Dict[str, Optional[tuple]] = {
     "exit": None,
 }
 
-_LIB_FALLBACK_MAP: Dict[str, Optional[tuple]] = {
+_LIB_FALLBACK_MAP: dict[str, tuple | None] = {
     "1": (0, 0),
     "tree": (0, 0),
     "lib": (0, 0),
@@ -512,7 +512,7 @@ _LIB_SECTIONS = [
 ]
 
 
-def _select_main() -> Optional[tuple]:
+def _select_main() -> tuple | None:
     if _USE_CURSES:
         return _tui_select(f"Lattice v{VERSION}", _MAIN_SECTIONS)
     _box_menu(
@@ -551,7 +551,7 @@ def _select_main() -> Optional[tuple]:
     return _fallback_input("  Select [1-13/s/q]: ", _MAIN_FALLBACK_MAP)
 
 
-def _select_library() -> Optional[tuple]:
+def _select_library() -> tuple | None:
     if _USE_CURSES:
         return _tui_select(
             "Library Tree & Exports",

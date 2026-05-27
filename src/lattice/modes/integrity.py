@@ -6,7 +6,7 @@ import time
 import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Tuple, List, Optional, Dict, Any
+from typing import Any
 
 from lattice.utils import run_proc, has_tool, _make_pbar
 from lattice.tags import HAVE_MUTAGEN_MP3, MUTAGEN_MP3
@@ -47,13 +47,13 @@ _BENIGN_MARKERS = (
 )
 
 
-def _matches(line: str, markers: Tuple[str, ...]) -> bool:
+def _matches(line: str, markers: tuple[str, ...]) -> bool:
     return any(m in line for m in markers)
 
 
 def classify_decode(
-    rc: int, stderr: str, declared_samples: Optional[int] = None
-) -> Tuple[str, str]:
+    rc: int, stderr: str, declared_samples: int | None = None
+) -> tuple[str, str]:
     """Map a decode tool's (exit code, stderr) into a severity tier and reason.
 
     Conservative by design. A decode that ran to completion (rc == 0) is never
@@ -99,7 +99,7 @@ def classify_decode(
 # =====================================
 
 
-def _flac_declared_samples(filepath: str) -> Optional[int]:
+def _flac_declared_samples(filepath: str) -> int | None:
     """Total sample count from the FLAC STREAMINFO, used to tell a truncated
     file (decoded < declared) from a trailing-junk tail (decoded >= declared)."""
     try:
@@ -126,8 +126,8 @@ _FFMPEG_DEMUXER = {
 
 
 def _flac_verdict(
-    filepath: str, *, use_flac: bool, ffmpeg_path: Optional[str]
-) -> Tuple[str, str, str]:
+    filepath: str, *, use_flac: bool, ffmpeg_path: str | None
+) -> tuple[str, str, str]:
     """Return (tool, tier, reason) for one FLAC. libFLAC is authoritative when
     available (its message carries the decoded sample count); ffmpeg is the
     fallback when flac is absent."""
@@ -174,9 +174,9 @@ def run_flac_mode(
         print(f"Found {total} FLAC files under: {root}")
 
     counts = {tier: 0 for tier in TIER_ORDER}
-    flagged: List[Tuple[str, str, str, str]] = []  # (path, tool, tier, reason)
+    flagged: list[tuple[str, str, str, str]] = []  # (path, tool, tier, reason)
 
-    def worker(path: Path) -> Tuple[str, str, str, str]:
+    def worker(path: Path) -> tuple[str, str, str, str]:
         try:
             tool, tier, reason = _flac_verdict(
                 str(path), use_flac=use_flac, ffmpeg_path=ffmpeg_path
@@ -188,8 +188,8 @@ def run_flac_mode(
             return str(path), "exception", TIER_CORRUPT, repr(e)
 
     pbar = _make_pbar(total, "Testing FLACs", quiet)
-    ex: Optional[ThreadPoolExecutor] = None
-    futures: Dict = {}
+    ex: ThreadPoolExecutor | None = None
+    futures: dict = {}
     try:
         ex = ThreadPoolExecutor(max_workers=max(1, workers))
         futures = {ex.submit(worker, p): p for p in flacs}
@@ -250,16 +250,16 @@ def run_flac_mode(
 # =====================================
 
 
-def _find_ffmpeg(explicit_path: Optional[str]) -> Optional[str]:
+def _find_ffmpeg(explicit_path: str | None) -> str | None:
     if explicit_path:
         p = Path(explicit_path)
         return str(p) if p.exists() else None
     return shutil.which("ffmpeg")
 
 
-def _find_files_by_ext_path(root: Path, ext: str) -> List[Path]:
+def _find_files_by_ext_path(root: Path, ext: str) -> list[Path]:
     """Walk tree and return all files matching extension as Path objects."""
-    out: List[Path] = []
+    out: list[Path] = []
     root = root.expanduser().resolve()
     if root.is_file() and root.suffix.lower() == ext:
         return [root]
@@ -270,7 +270,7 @@ def _find_files_by_ext_path(root: Path, ext: str) -> List[Path]:
     return out
 
 
-def _mutagen_header_info(path: Path) -> Dict[str, Any]:
+def _mutagen_header_info(path: Path) -> dict[str, Any]:
     if not HAVE_MUTAGEN_MP3:
         return {}
     try:
@@ -291,7 +291,7 @@ def _mutagen_header_info(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _ffmpeg_decode_check(ffmpeg_path: str, path: Path) -> Tuple[int, str]:
+def _ffmpeg_decode_check(ffmpeg_path: str, path: Path) -> tuple[int, str]:
     """Run a full decode and return (returncode, stderr). Judgment is left to
     classify_decode; this only produces the raw signal."""
     cmd = [ffmpeg_path, "-v", "error", "-nostats", "-hide_banner"]
@@ -306,8 +306,7 @@ def _ffmpeg_decode_check(ffmpeg_path: str, path: Path) -> Tuple[int, str]:
     try:
         proc = subprocess.run(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -318,11 +317,11 @@ def _ffmpeg_decode_check(ffmpeg_path: str, path: Path) -> Tuple[int, str]:
 
 
 def _scan_one_file(
-    path: Path, ffmpeg_path: Optional[str], *, enrich: bool = False
-) -> Dict[str, Any]:
+    path: Path, ffmpeg_path: str | None, *, enrich: bool = False
+) -> dict[str, Any]:
     """Scan a single audio file for decode errors. If enrich=True, also pull
     mutagen header info (bitrate, duration, sample rate, VBR mode)."""
-    row: Dict[str, Any] = {
+    row: dict[str, Any] = {
         "path": str(path),
         "size_bytes": None,
         "tier": TIER_OK,
@@ -359,9 +358,9 @@ def _scan_one_file(
     return row
 
 
-def _format_row_meta(row: Dict[str, Any]) -> str:
+def _format_row_meta(row: dict[str, Any]) -> str:
     """Format metadata fields into a compact summary string."""
-    parts: List[str] = []
+    parts: list[str] = []
     if row.get("bitrate_kbps"):
         parts.append(f"{row['bitrate_kbps']}kbps")
     if row.get("sample_rate_hz"):
@@ -377,7 +376,7 @@ def _run_decode_scan(
     root: str,
     output: str,
     workers: int,
-    ffmpeg: Optional[str],
+    ffmpeg: str | None,
     *,
     ext: str,
     report_title: str,
@@ -416,11 +415,11 @@ def _run_decode_scan(
     label = ext.strip(".").upper()
     started = time.time()
     counts = {tier: 0 for tier in TIER_ORDER}
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     pbar = _make_pbar(len(targets), f"Scanning {label}", quiet)
-    ex: Optional[ThreadPoolExecutor] = None
-    futures: Dict = {}
+    ex: ThreadPoolExecutor | None = None
+    futures: dict = {}
 
     if verbose:
         quiet = False
@@ -460,7 +459,7 @@ def _run_decode_scan(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _section(
-        handle, tier: str, rows: List[Dict[str, Any]], *, compact: bool = False
+        handle, tier: str, rows: list[dict[str, Any]], *, compact: bool = False
     ):
         if not rows:
             return
@@ -513,7 +512,7 @@ def run_mp3_mode(
     root: str,
     output: str,
     workers: int,
-    ffmpeg: Optional[str],
+    ffmpeg: str | None,
     *,
     only_errors: bool,
     verbose: bool,
@@ -539,7 +538,7 @@ def run_opus_mode(
     root: str,
     output: str,
     workers: int,
-    ffmpeg: Optional[str],
+    ffmpeg: str | None,
     *,
     only_errors: bool,
     verbose: bool,
@@ -565,7 +564,7 @@ def run_wav_mode(
     root: str,
     output: str,
     workers: int,
-    ffmpeg: Optional[str],
+    ffmpeg: str | None,
     *,
     only_errors: bool,
     verbose: bool,
@@ -591,7 +590,7 @@ def run_wma_mode(
     root: str,
     output: str,
     workers: int,
-    ffmpeg: Optional[str],
+    ffmpeg: str | None,
     *,
     only_errors: bool,
     verbose: bool,

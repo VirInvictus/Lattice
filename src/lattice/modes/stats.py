@@ -1,6 +1,5 @@
 import os
 from collections import Counter, defaultdict
-from typing import List, Optional, Dict
 
 from lattice.utils import count_audio_files, _make_pbar
 from lattice.tags import get_all_tags
@@ -21,7 +20,7 @@ _RATING_LABELS = (
 _UNRATED = "unrated"
 
 
-def _rating_label(rating: Optional[float]) -> str:
+def _rating_label(rating: float | None) -> str:
     """Bucket a 0–5 rating into its star label; None is "unrated". A 0 rating
     falls into the 1-star bucket, matching the original tally."""
     if rating is None:
@@ -30,7 +29,7 @@ def _rating_label(rating: Optional[float]) -> str:
     return _RATING_LABELS[5 - stars]
 
 
-def _empty_rating_tally() -> Dict[str, int]:
+def _empty_rating_tally() -> dict[str, int]:
     return {label: 0 for label in (*_RATING_LABELS, _UNRATED)}
 
 
@@ -46,7 +45,7 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024**3):.2f} GB"
 
 
-def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
+def run_stats(root: str, output: str | None, *, quiet: bool = False) -> str:
     """Generate a library-wide statistics report."""
     root = os.path.abspath(root)
 
@@ -70,13 +69,13 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
     format_sizes: Counter = Counter()
     genre_counts: Counter = Counter()
     artist_counts: Counter = Counter()
-    rating_counts: Dict[str, int] = _empty_rating_tally()
-    genre_ratings: Dict[str, Dict[str, int]] = defaultdict(_empty_rating_tally)
+    rating_counts: dict[str, int] = _empty_rating_tally()
+    genre_ratings: dict[str, dict[str, int]] = defaultdict(_empty_rating_tally)
     total_size = 0
     total_duration = 0.0
     album_dirs: set = set()
     artist_dirs: set = set()
-    bitrates: List[int] = []
+    bitrates: list[int] = []
     fully_tagged = 0  # has title + artist + track + genre
 
     for dirpath, dirs, files in os.walk(root):
@@ -136,7 +135,7 @@ def run_stats(root: str, output: Optional[str], *, quiet: bool = False) -> str:
     pbar.close()
 
     # Build report
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("LIBRARY STATISTICS")
     lines.append(f"Root: {root}")
     lines.append("=" * 60)

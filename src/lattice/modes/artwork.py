@@ -3,7 +3,6 @@ import sys
 import base64
 import struct
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
 
 from lattice.utils import is_audio, _has_cover_file
 from lattice.config import ART_FORMAT_PRIORITY, DEFAULT_MISSING_ART_OUTPUT
@@ -22,7 +21,7 @@ from lattice.tags import (
 # =====================================
 
 
-def _extract_art_from_flac(filepath: str) -> Optional[bytes]:
+def _extract_art_from_flac(filepath: str) -> bytes | None:
     """Extract embedded art from a FLAC file."""
     try:
         audio = FLAC(filepath)
@@ -38,7 +37,7 @@ def _extract_art_from_flac(filepath: str) -> Optional[bytes]:
     return None
 
 
-def _extract_art_from_opus(filepath: str) -> Optional[bytes]:
+def _extract_art_from_opus(filepath: str) -> bytes | None:
     """Extract embedded art from an Opus file (METADATA_BLOCK_PICTURE)."""
     try:
         audio = MutagenFile(filepath)
@@ -59,7 +58,7 @@ def _extract_art_from_opus(filepath: str) -> Optional[bytes]:
     return None
 
 
-def _extract_art_from_mp3(filepath: str) -> Optional[bytes]:
+def _extract_art_from_mp3(filepath: str) -> bytes | None:
     """Extract embedded art from an MP3 file (ID3 APIC frame)."""
     if not HAVE_MUTAGEN_MP3:
         return None
@@ -81,7 +80,7 @@ def _extract_art_from_mp3(filepath: str) -> Optional[bytes]:
     return None
 
 
-def _extract_art_from_m4a(filepath: str) -> Optional[bytes]:
+def _extract_art_from_m4a(filepath: str) -> bytes | None:
     """Extract embedded art from an M4A/MP4 file (covr atom)."""
     try:
         audio = MP4(filepath)
@@ -105,7 +104,7 @@ _ART_EXTRACTORS = {
 }
 
 
-def _extract_best_art(directory: str) -> Optional[bytes]:
+def _extract_best_art(directory: str) -> bytes | None:
     """
     Find the best embedded art in a directory by scanning files in format
     priority order: FLAC > Opus/OGG > M4A > MP3.
@@ -117,7 +116,7 @@ def _extract_best_art(directory: str) -> Optional[bytes]:
         return None
 
     # Group files by extension
-    files_by_ext: Dict[str, List[str]] = defaultdict(list)
+    files_by_ext: dict[str, list[str]] = defaultdict(list)
     for f in dir_files:
         ext = os.path.splitext(f)[1].lower()
         if ext in _ART_EXTRACTORS:
@@ -214,7 +213,7 @@ def run_missing_art(root: str, output: str, *, quiet: bool = False) -> int:
         return 2
 
     root = os.path.abspath(root)
-    missing: List[Dict[str, str]] = []
+    missing: list[dict[str, str]] = []
 
     if not quiet:
         print(f"Scanning for missing art under: {root}")
@@ -291,7 +290,7 @@ def run_missing_art(root: str, output: str, *, quiet: bool = False) -> int:
 # =====================================
 
 
-def _get_image_size(data: bytes) -> Optional[Tuple[int, int]]:
+def _get_image_size(data: bytes) -> tuple[int, int] | None:
     """Attempt to parse JPEG or PNG dimensions from binary data without external libraries."""
     size = len(data)
     # PNG
@@ -338,7 +337,7 @@ def run_art_quality_audit(
     from lattice.utils import _make_pbar
 
     root = os.path.abspath(root)
-    issues: List[Dict[str, str]] = []
+    issues: list[dict[str, str]] = []
 
     if not quiet:
         print(f"Auditing art quality (< {min_res}x{min_res}) under: {root}")

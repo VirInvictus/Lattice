@@ -2,7 +2,6 @@ import os
 import sys
 import shutil
 import subprocess
-from typing import Tuple, List, Optional
 
 from lattice.config import (
     AUDIO_EXTENSIONS,
@@ -53,7 +52,7 @@ def clean_song_name(filename: str) -> str:
     return name_without_ext.strip()
 
 
-def normalize_rating(val) -> Optional[float]:
+def normalize_rating(val) -> float | None:
     """Normalizes various rating scales (0-100, 0-255, 0-5) to a float 0-5."""
     try:
         val = float(val)
@@ -75,7 +74,7 @@ def _looks_numeric(val) -> bool:
     return bool(val) and str(val).replace(".", "").isdigit()
 
 
-def format_rating(rating: Optional[float]) -> str:
+def format_rating(rating: float | None) -> str:
     if rating is None:
         return ""
     full_stars = int(rating)
@@ -117,7 +116,7 @@ def _decode_bytes(b: bytes) -> str:
     return b.decode("latin-1", errors="replace")
 
 
-def run_proc(args: List[str]) -> Tuple[int, str, str]:
+def run_proc(args: list[str]) -> tuple[int, str, str]:
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("LANG", "C.UTF-8")

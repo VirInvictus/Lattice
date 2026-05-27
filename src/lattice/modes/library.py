@@ -2,7 +2,7 @@ import os
 import sys
 import re
 from collections import defaultdict
-from typing import Dict, List, NamedTuple, Optional, Tuple, TextIO
+from typing import NamedTuple, TextIO
 
 from lattice.utils import (
     count_audio_files,
@@ -14,8 +14,8 @@ from lattice.utils import (
 )
 from lattice.tags import get_all_tags, TagBundle
 
-Song = Tuple[str, str, TagBundle]  # (filename, filepath, tags)
-ArtistAlbums = Dict[str, Dict[str, List[Song]]]
+Song = tuple[str, str, TagBundle]  # (filename, filepath, tags)
+ArtistAlbums = dict[str, dict[str, list[Song]]]
 
 
 class _AlbumDir(NamedTuple):
@@ -30,28 +30,28 @@ class _AlbumDir(NamedTuple):
     artist: str
     album: str
     genre: str
-    songs: List[Song]
+    songs: list[Song]
 
 
-def _most_common(counts: Dict[str, int], default: str) -> str:
+def _most_common(counts: dict[str, int], default: str) -> str:
     """Return the most frequent key, breaking ties by first insertion; `default`
     when empty. Matches the directory-dominant selection used across modes."""
     return max(counts, key=lambda k: counts[k]) if counts else default
 
 
-def _scan_album_dirs(root_dir: str, layout: str, pbar) -> List[_AlbumDir]:
+def _scan_album_dirs(root_dir: str, layout: str, pbar) -> list[_AlbumDir]:
     """Walk `root_dir` and collapse each audio directory to an `_AlbumDir`."""
-    results: List[_AlbumDir] = []
+    results: list[_AlbumDir] = []
     for dirpath, dirs, files in os.walk(root_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         audio_in_dir = [f for f in files if is_audio(f)]
         if not audio_in_dir:
             continue
 
-        artists_count: Dict[str, int] = defaultdict(int)
-        albums_count: Dict[str, int] = defaultdict(int)
-        genres_count: Dict[str, int] = defaultdict(int)
-        songs: List[Song] = []
+        artists_count: dict[str, int] = defaultdict(int)
+        albums_count: dict[str, int] = defaultdict(int)
+        genres_count: dict[str, int] = defaultdict(int)
+        songs: list[Song] = []
 
         for f in audio_in_dir:
             filepath = os.path.join(dirpath, f)
@@ -90,7 +90,7 @@ def _song_display_name(song_filename: str, t: TagBundle, album_artist: str) -> s
         return clean_song_name(song_filename)
 
     guest = t.artist if (t.artist and t.artist != album_artist) else None
-    parts: List[str] = []
+    parts: list[str] = []
     if t.trackno:
         parts.append(f"{int(t.trackno):02d}.")
     if guest is not None:
@@ -107,7 +107,7 @@ def _write_tree(
     artist_albums: ArtistAlbums,
     *,
     show_genre: bool,
-    album_paths: Optional[Dict[Tuple[str, str], str]] = None,
+    album_paths: dict[tuple[str, str], str] | None = None,
 ) -> None:
     """Write an ARTIST → ALBUM → SONG tree. When `album_paths` is given, the
     album line is annotated with its absolute directory path."""
@@ -202,7 +202,7 @@ def write_ai_library(
     album_dirs = _scan_album_dirs(root_dir, layout, pbar)
     pbar.close()
 
-    albums: List[Tuple[str, str, str, str, int]] = []
+    albums: list[tuple[str, str, str, str, int]] = []
     for ad in album_dirs:
         ratings = [t.rating for _f, _p, t in ad.songs if t.rating is not None]
         rating_str = f"{sum(ratings) / len(ratings):.1f}" if ratings else ""
@@ -257,10 +257,10 @@ def write_all_wings(
         return 1
 
     # Re-bucket by genre -> artist -> album. A "/"-joined genre lands in each.
-    final_wings: Dict[str, ArtistAlbums] = defaultdict(
+    final_wings: dict[str, ArtistAlbums] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
     )
-    album_paths: Dict[Tuple[str, str], str] = {}
+    album_paths: dict[tuple[str, str], str] = {}
 
     for ad in album_dirs:
         genre_str = ad.genre or "Uncategorized"
@@ -323,7 +323,7 @@ def write_ai_wings(
         return 1
 
     # genre -> list of (artist, album, genre, path)
-    wings: Dict[str, List[Tuple[str, str, str, str]]] = defaultdict(list)
+    wings: dict[str, list[tuple[str, str, str, str]]] = defaultdict(list)
     for ad in album_dirs:
         genre_str = ad.genre or "Uncategorized"
         for genre in (g.strip() for g in genre_str.split("/") if g.strip()):

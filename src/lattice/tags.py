@@ -1,5 +1,5 @@
 import os
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 from lattice.utils import normalize_rating, _looks_numeric
 
@@ -7,14 +7,14 @@ from lattice.utils import normalize_rating, _looks_numeric
 class TagBundle(NamedTuple):
     """All metadata we care about, extracted once per file."""
 
-    title: Optional[str] = None
-    artist: Optional[str] = None
-    trackno: Optional[int] = None
-    album: Optional[str] = None
-    genre: Optional[str] = None
-    rating: Optional[float] = None
-    duration_s: Optional[float] = None
-    bitrate_kbps: Optional[int] = None
+    title: str | None = None
+    artist: str | None = None
+    trackno: int | None = None
+    album: str | None = None
+    genre: str | None = None
+    rating: float | None = None
+    duration_s: float | None = None
+    bitrate_kbps: int | None = None
 
 
 # --- Mutagen imports ---
@@ -47,7 +47,7 @@ except ImportError:
     HAVE_MUTAGEN_MP3 = False
 
 
-def _first_text(val) -> Optional[str]:
+def _first_text(val) -> str | None:
     if val is None:
         return None
     if isinstance(val, (list, tuple)):
@@ -71,7 +71,7 @@ def _first_text(val) -> Optional[str]:
     return None
 
 
-def _parse_track_number(val) -> Optional[int]:
+def _parse_track_number(val) -> int | None:
     if val is None:
         return None
     if isinstance(val, list) and val:
@@ -98,10 +98,10 @@ def get_all_tags(file_path: str) -> TagBundle:
         return TagBundle()
 
     title = artist = album = genre = None
-    trackno: Optional[int] = None
-    rating: Optional[float] = None
-    duration_s: Optional[float] = None
-    bitrate_kbps: Optional[int] = None
+    trackno: int | None = None
+    rating: float | None = None
+    duration_s: float | None = None
+    bitrate_kbps: int | None = None
 
     try:
         audio = MutagenFile(file_path)
