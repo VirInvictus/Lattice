@@ -1,0 +1,912 @@
+# Lattice genre authority map (genre_tidy.py)
+# Format:  Artist<TAB>Canonical Genre; Other Allowed Genre; ...
+#   - The first genre is the fix target: `apply` overwrites any album whose
+#     genre is not in this list to the first genre.
+#   - Add more allowed genres after a ';' to leave those albums alone.
+#   - Blank the genre column to skip an artist entirely.
+#   - Lines starting with # are comments.
+
+$uicideboy$	Memphis Rap
+$uicideboy$ & Pouya	Memphis Rap
+070 Shake	Alternative Pop
+070 Shake, Ralphy River & Hack & Tree	Alternative Rap
+16 Horsepower	Indie Rock
+2 Chainz	Trap
+21 Savage & Metro Boomin	Trap
+21 Savage, Offset & Metro Boomin	Trap
+22Gz	Drill
+2Pac	G-Funk
+38 Spesh	Hardcore Hip Hop
+38 Spesh & Benny	Hardcore Hip Hop
+50 Cent	Gangsta Rap
+50 Cent & DJ Whoo Kid	Gangsta Rap
+50 Cent, Whoo Kid & LeBron James	Gangsta Rap
+6ix9ine	Soundcloud Rap
+6LACK	R&B
+A Perfect Circle	Alternative Rock
+A Place for Owls	Emo
+A Silver Mt. Zion	Post-Rock
+A Tribe Called Quest	Jazz Rap
+A Wilhelm Scream	Melodic Hardcore
+A Winged Victory for the Sullen	Post-Rock
+A$AP Ferg	Trap
+A$AP Rocky	Trap
+Aaron West and The Roaring Twenties	Orgcore
+Aaryan Shah	R&B
+Abstract Division	Techno
+Action Bronson	Boom Bap
+Aesop Rock	Abstract Hip Hop
+Aesthetic Perfection	Industrial
+AFI	Post-Hardcore
+AFX	Acid Techno
+Against Me!	Orgcore
+AgusFortnite2008	Plugg
+AgusFortnite2008 & Stiffy	Plugg
+Aitch	UK Rap
+Al.Divino	Abstract Hip Hop
+Alexisonfire	Post-Hardcore
+Alice in Chains	Grunge
+All That Remains	Metalcore
+Ameer Vann	Hardcore Hip Hop
+American Football	Emo
+American Pleasure Club	Emo
+Anberlin	Alternative Rock
+Anberlin & Matty Mullins	Alternative Rock
+Andrew Jackson Jihad	Folk Punk
+Andrew W.K.	Rock
+Anti‐Flag	Punk Rock
+Apes of the State	Folk Punk
+# Aphex Twin: IDM×4, Ambient×2, Drum & Bass×1  (append "; <genre>" to allow extras)
+Aphex Twin	IDM
+Apollo Brown & Joell Ortiz	Boom Bap
+Armand Hammer	Abstract Hip Hop
+Armand Hammer & The Alchemist	Abstract Hip Hop
+Arvo Pärt	Neoclassical
+As I Lay Dying	Metalcore
+At the Drive‐In	Post-Hardcore
+Atmosphere	Midwest Rap
+Autechre	IDM
+Author & Punisher	Industrial
+Avenged Sevenfold	Metal
+Aystar	UK Rap
+AZ	Mafioso Rap
+B.HOODS	East Coast Rap
+Backxwash	Trap Metal
+Bad Brains	Hardcore
+Bad Bunny	Latin
+Bad Meets Evil	Hardcore Hip Hop
+Bad Religion	Punk Rock
+Banner Pilot	Orgcore
+Beanie Sigel	East Coast Rap
+Beastie Boys	Old School Hip Hop
+Bedwetter	Experimental Hip Hop
+Belle & Sebastian	Indie Rock
+Belle and Sebastian	Indie Rock
+Ben Frost	Ambient
+Ben Howard	Indie Folk
+Benjamin Tod	Country
+Benny the Butcher	Hardcore Hip Hop
+Benny x DJ Green Lantern	Hardcore Hip Hop
+Big Baby Gandhi	Alternative Rap
+Big D and the Kids Table	Punk Rock
+Big Gigantic	Glitch Hop
+Big L	Boom Bap
+Big Pun	Boom Bap
+Bill Evans Trio	Jazz
+billy woods	Abstract Hip Hop
+billy woods & Kenny Segal	Abstract Hip Hop
+Birds in Row	Skramz
+Black Atlass	R&B
+Black Star	Boom Bap
+Blacklisted	Hardcore
+Bladee	Cloud Rap
+Blind Pilot	Indie Folk
+blink‐182	Pop Punk
+Blu	Jazz Rap
+Blu & Exile	Jazz Rap
+Boards of Canada	IDM
+Bob Marley & The Wailers	Reggae
+Bohren & der Club of Gore	Ambient
+Boldy James & Conductor Williams	Abstract Hip Hop
+Boldy James & Harry Fraud	Abstract Hip Hop
+Boldy James & Real Bad Man	Abstract Hip Hop
+Boldy James & Rome Streetz	Abstract Hip Hop
+Boldy James & The Alchemist	Abstract Hip Hop
+Boldy James / Sterling Toles	Abstract Hip Hop
+Bone Thugs‐n‐Harmony	Midwest Rap
+BONES	Cloud Rap
+Bonez MC	Non-English Rap
+Booba	Non-English Rap
+Boosie Badazz	Southern Rap
+Boosie Badazz & YoungBoy Never Broke Again	Southern Rap
+Botch	Metalcore
+Boy Rex	Emo
+brakence	Alternative Pop
+Brand New	Emo
+Brent Faiyaz	R&B
+Bright Eyes	Indie Folk
+Bring Me the Horizon	Metalcore
+BROCKHAMPTON	Alternative Rap
+Brother Ali	Alternative Rap
+Bruiser Wolf	Midwest Rap
+Bryson Tiller	R&B
+Built to Spill	Indie Rock
+Burial	Future Garage
+Busdriver	Abstract Hip Hop
+C. Tangana	Latin
+Cam'ron	The Diplomats
+Cam’ron & Vado	The Diplomats
+Cannibal Ox	Abstract Hip Hop
+Capdown	Punk Rock
+Capone‐N‐Noreaga	Mafioso Rap
+Car Seat Headrest	Indie Rock
+Cardi B	Trap
+Catch 22	Punk Rock
+CB	Drill
+Ceephax Acid Crew	Acid Techno
+Central Cee	Drill
+Chance the Rapper	Midwest Rap
+Charli xcx	Pop
+Chase USA	Trap Metal
+Chat Pile	Metal
+Chef Boy, YG, E-40, & Mozzy	Gangsta Rap
+Chief Keef	Drill
+Chino XL	East Coast Rap
+Choking Victim	Punk Rock
+Chri$tian Gate$	Alternative Rap
+Chris Stapleton	Country
+Christopher Larkin	Video Game
+Chronixx	Reggae
+Chumbawamba	Punk Rock
+Cindy Lee	Indie Rock
+Circa Survive	Post-Hardcore
+Circle Takes the Square	Skramz
+City Morgue	Trap Metal
+Clavish	UK Rap
+Clinton Sparks & Eminem	Hardcore Hip Hop
+clipping.	Horrorcore
+Clipse	Mafioso Rap
+Clipse with Re-Up Gang	Mafioso Rap
+Comeback Kid	Metalcore
+Comethazine	Soundcloud Rap
+Common & Pete Rock	Jazz Rap
+Company Flow	Abstract Hip Hop
+Converge	Metalcore
+Conway	Hardcore Hip Hop
+Conway the Machine	Hardcore Hip Hop
+Conway the Machine & Big Ghost Ltd	Hardcore Hip Hop
+Copeland	Emo
+CORPSE	Trap Metal
+CORPSE & Night Lovell	Trap Metal
+CORPSE & Savage Ga$p	Trap Metal
+Crime in Stereo	Emo
+CRIMEAPPLE & Big Ghost Ltd	Coke Rap
+Cult Leader	Sludge Metal
+Cult of Luna	Metal
+Current Value	Drum & Bass
+Cursive	Emo
+Cypress Hill	Gangsta Rap
+CZARFACE	Boom Bap
+CZARFACE & MF DOOM	Boom Bap
+D12	Hardcore Hip Hop
+d4vd	R&B
+Dads	Emo
+Damian Jr. Gong Marley	Reggae
+Damien Rice	Indie Folk
+Dance Gavin Dance	Post-Hardcore
+Danger Mouse	Alternative Rap
+Danger Mouse & Black Thought	Boom Bap
+Daniel Son & Futurewave	Coke Rap
+Danny Brown	Experimental Hip Hop
+Das Racist	Alternative Rap
+Dashboard Confessional	Emo
+Daughters	Industrial
+Dave	UK Rap
+Dave & Fredo	UK Rap
+Dave East	East Coast Rap
+Dave Simon, 999999999 & Robert S (PT)	Techno
+Days N’ Daze	Folk Punk
+dBridge	Drum & Bass
+De La Soul	Jazz Rap
+Dead Kennedys	Hardcore
+Deafheaven	Metal
+Death Cab for Cutie	Indie Rock
+Death Grips	Industrial
+Defeater	The Wave
+# Deftones: Nu Metal×1, Alternative Rock×1  (append "; <genre>" to allow extras)
+Deftones	Nu Metal
+Deltron 3030	Alternative Rap
+Deniro Farrar	Hardcore Hip Hop
+Denzel Curry	Hardcore Hip Hop
+Denzel Curry X Kenny Beats	Hardcore Hip Hop
+Derek Wise	Northern Rap
+Descendents	Pop Punk
+Desiigner	Trap
+Destroyer	Indie Rock
+Digga D	UK Rap
+Diggy Graves	Horrorcore
+Dillinger Four	Orgcore
+Diplo x CL x RiFF RAFF x OG Maco	Trap
+DJ Blyatman	Hardbass
+DJ Blyatman & Russian Village Boys	Hardbass
+Dj Drama	Trap
+DJ Drama & Lil Wayne	Southern Rap
+DJ Drama, Young Jeezy	Trap
+DJ Dremond	Midwest Rap
+DJ Green Lantern	Hardcore Hip Hop
+DJ Muggs & Rome Streetz	Abstract Hip Hop
+DJ Quik	G-Funk
+DJ Shadow	Trip Hop
+DJ Sin-cero & Bad Bunny	Latin
+DJ Smallz presents 50 Cent	Gangsta Rap
+DJ Snat	Hardbass
+DMX	Hardcore Hip Hop
+DMX, Joyner Lucas	Hardcore Hip Hop
+Domani	Southern Rap
+Dowsing	Emo
+Dr. Dre	G-Funk
+Dr. Yen Lo	Abstract Hip Hop
+Drake	Northern Rap
+Drake & Future	Trap
+Drakeo the Ruler	Gangsta Rap
+Drakeo the Ruler feat. Earl Sweatshirt & 03 Greedo	Gangsta Rap
+Drive-By Truckers	Country
+Drug Church	Post-Hardcore
+Dry Cleaning	Post-Punk
+Duke Ellington & John Coltrane	Jazz
+Dustin Kensrue	Country
+dvsn	R&B
+D‐Block	Hardcore Hip Hop
+Earl Sweatshirt	Abstract Hip Hop
+Earl Sweatshirt & The Alchemist	Abstract Hip Hop
+Earl Sweatshirt, MIKE & SURF GANG	Abstract Hip Hop
+Earth Crisis	Metalcore
+EDEN	Alternative Pop
+# edIT: IDM×2, Trip Hop×1  (append "; <genre>" to allow extras)
+edIT	IDM
+Elcamino	Coke Rap
+Electric President	Indie Rock
+Elliott Smith	Indie Folk
+Elucid	Abstract Hip Hop
+El‐P	Abstract Hip Hop
+Emarosa	Post-Hardcore
+# Eminem: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1  (append "; <genre>" to allow extras)
+Eminem	Hardcore Hip Hop
+Eminem/Eminem	Horrorcore
+Emma Goldman	Skramz
+Emotional Oranges	R&B
+END	Metalcore
+End of a Year	Post-Hardcore
+envy	Skramz
+Eric B. & Rakim	Boom Bap
+Escape the Fate	Post-Hardcore
+EsDeeKid	UK Rap
+Eskmo	Glitch Hop
+Ethel Cain	Slowcore
+Eto x Superior	Coke Rap
+Eve 6	Pop Punk
+Every Time I Die	Metalcore
+Excision & Downlink	Dubstep
+Explosions in the Sky	Post-Rock
+Eyedea & Abilities	Alternative Rap
+Fabolous	East Coast Rap
+Fall Out Boy	Pop Punk
+FATBOI SHARIF & Roper Williams	Abstract Hip Hop
+Father	Trap
+Father John Misty	Indie Folk
+FBG Duck	Drill
+Feed Me	Dubstep
+Fennesz	Ambient
+# Fetty Wap: Trap×1, R&B×1  (append "; <genre>" to allow extras)
+Fetty Wap	Trap
+FKA twigs	Alternative Pop
+FLASCH	Southern Rap
+Flatbush ZOMBiES	East Coast Rap
+Flee Lord	Coke Rap
+Fleet Foxes	Indie Folk
+Flume & JPEGMAFIA	Experimental Hip Hop
+Flying Lotus	IDM
+Foxing	Emo
+Frank Ocean	R&B
+# Freddie Gibbs: Gangsta Rap×2, Hardcore Hip Hop×1  (append "; <genre>" to allow extras)
+Freddie Gibbs	Gangsta Rap
+Freddie Gibbs & Madlib	Hardcore Hip Hop
+# Freddie Gibbs & The Alchemist: Hardcore Hip Hop×1, Gangsta Rap×1  (append "; <genre>" to allow extras)
+Freddie Gibbs & The Alchemist	Hardcore Hip Hop
+Fredo	Drill
+Freeway & Jake One	East Coast Rap
+Frightened Rabbit	Indie Rock
+FromSoftware	Video Game
+FromSoftware Sound Team	Video Game
+Fugazi	Post-Hardcore
+# Full of Hell: Grindcore×2, Powerviolence×1  (append "; <genre>" to allow extras)
+Full of Hell	Grindcore
+Future	Trap
+Future & Metro Boomin	Trap
+Future & Zaytoven	Trap
+G Herbo	Drill
+G Jones	IDM
+Gang Starr	Boom Bap
+Geese	Indie Rock
+Genius/GZA	East Coast Rap
+Gesaffelstein	Techno
+Ghostemane	Trap Metal
+Ghostface Killah	Mafioso Rap
+Giggs	UK Rap
+Giles Corey	Slowcore
+Glassjaw	Orgcore
+Global Communication	Ambient
+Godhand	Metal
+Godspeed You Black Emperor!	Post-Rock
+Godspeed You! Black Emperor	Post-Rock
+Gopnik McBlyat	Hardbass
+grandson	Alternative Rock
+Griselda	Abstract Hip Hop
+GRiZ	Glitch Hop
+GRÓA	Post-Punk
+Gucci Mane	Trap
+GZA/Genius	East Coast Rap
+Gzuz	Non-English Rap
+G‐Unit	Gangsta Rap
+G‐Unit & 50 Cent	Gangsta Rap
+Haftbefehl	Non-English Rap
+Hans Zimmer	Soundtrack
+Hard Bass School	Hardbass
+Have a Nice Life	Post-Punk
+Have Heart	Hardcore
+HAZEY	Drill
+# Headie One: UK Rap×2, Drill×1  (append "; <genre>" to allow extras)
+Headie One	UK Rap
+Headie One & Fred again..	Drill
+Headie One & K‐Trap	UK Rap
+HEALTH	Industrial
+Heems	Alternative Rap
+Helena Hauff	Techno
+Heltah Skeltah	Hardcore Hip Hop
+Henryk Górecki; Dawn Upshaw, London Sinfonietta, David Zinman	Classical
+Hermit and the Recluse	Abstract Hip Hop
+Himanshu	Alternative Rap
+Hit-Boy & The Alchemist	Abstract Hip Hop
+Hot Mulligan	Emo
+Hot Water Music	Orgcore
+Hotel Books	Emo
+How to Destroy Angels	Post-Industrial
+I Hate Models	Techno
+I Prevail	Metalcore
+IAM	Non-English Rap
+IDK	Alternative Rap
+IDK & Joey Valence & Brae	Alternative Rap
+Iglooghost	IDM
+Ill Bill	Horrorcore
+Injury Reserve	Experimental Hip Hop
+Isaiah Rashad	Southern Rap
+Isles & Glaciers	Post-Hardcore
+J Dilla	Instrumental Hip Hop
+J. Cole	Southern Rap
+J. Cole & Kendrick Lamar	Southern Rap
+Jack M. Senff	Indie Folk
+Jack White	Garage Rock
+Jack’s Mannequin	Pop Punk
+James Blake	IDM
+Jarrod Alonge	Comedy Rock
+Jason Isbell	Country
+Jawbreaker	Orgcore
+# Jay-Z: East Coast Rap×2, Mafioso Rap×1  (append "; <genre>" to allow extras)
+Jay-Z	East Coast Rap
+Jay-Z & Kanye West	Mafioso Rap
+Jazz Cartier	Northern Rap
+Jeff Buckley	Alternative Rock
+Jeff Rosenstock	Orgcore
+Jeremih	R&B
+Jhené Aiko	R&B
+JID	Alternative Rap
+Jim Jones	The Diplomats
+Jimmy Eat World	Emo
+Jin Dogg	Non-English Rap
+Jlin	IDM
+JMSN	R&B
+Joey Bada$$	Boom Bap
+Joey Cape & Tony Sly	Orgcore
+Joey Valence & Brae	Alternative Rap
+Johann Sebastian Bach	Classical
+Johann Sebastian Bach; Angela Hewitt	Classical
+Johann Sebastian Bach; Glenn Gould	Classical
+John Coltrane	Jazz
+Johnny Cash	Country
+Jonny Craig	R&B
+Joy Division	Post-Punk
+Joyce Manor	Emo
+JPEGMAFIA	Experimental Hip Hop
+JPEGMAFIA & Danny Brown	Experimental Hip Hop
+Juelz Santana	The Diplomats
+July Talk	Indie Rock
+Jóhann Jóhannsson	Neoclassical
+Ka	Abstract Hip Hop
+# Kanye West: Midwest Rap×5, Alternative Pop×1, Experimental Hip Hop×1  (append "; <genre>" to allow extras)
+Kanye West	Midwest Rap
+Kay Flock	Drill
+# Keaton Henson: Indie Folk×6, Neoclassical×2  (append "; <genre>" to allow extras)
+Keaton Henson	Indie Folk
+# Kendrick Lamar: Conscious Hip Hop×7, Jazz Rap×2  (append "; <genre>" to allow extras)
+Kendrick Lamar	Conscious Hip Hop
+Kenny Mason	Grunge Rap
+Kero Kero Bonito	Pop
+Kevin Gates	Trap
+KIDS SEE GHOSTS	Experimental Hip Hop
+Kill the Noise	Dubstep
+Killswitch Engage	Metalcore
+King	Southern Rap
+King Geedorah	Abstract Hip Hop
+King Von	Drill
+Knife Party	Dubstep
+Knocked Loose	Metalcore
+knola	Emo
+Knoll	Grindcore
+Kobosil	Techno
+Kode9 + The Space Ape	Dubstep
+KOHH	Non-English Rap
+Kool G. Rap & D.J. Polo	Mafioso Rap
+Kraftwerk	IDM
+Kuniva	Hardcore Hip Hop
+Kuniva & Swifty McVay	Hardcore Hip Hop
+k‐os	Northern Rap
+La Dispute	The Wave
+Lagwagon	Punk Rock
+# Landon Tewers: Alternative Pop×2, Metalcore×1  (append "; <genre>" to allow extras)
+Landon Tewers	Alternative Pop
+Latterman	Orgcore
+Laura Stevenson	Indie Folk
+Lauryn Hill	R&B
+Leatherface	Orgcore
+Led Zeppelin	Rock
+Leftöver Crack	Punk Rock
+Leftöver Crack / Citizen Fish	Punk Rock
+Leif Vollebekk	Indie Folk
+Lenny Grant (aka Uncle Murda)	Hardcore Hip Hop
+Leonard Cohen	Singer-Songwriter
+letlive.	Post-Hardcore
+letterstoyou	Skramz
+Lil B	Cloud Rap
+Lil Baby & Lil Durk	Trap
+Lil Boosie	Southern Rap
+# Lil Durk: Trap×1, Drill×1  (append "; <genre>" to allow extras)
+Lil Durk	Trap
+Lil Peep	Soundcloud Rap
+# Lil Tjay: Drill×1, Trap×1  (append "; <genre>" to allow extras)
+Lil Tjay	Drill
+# Lil Ugly Mane: Memphis Rap×3, Experimental Hip Hop×1  (append "; <genre>" to allow extras)
+Lil Ugly Mane	Memphis Rap
+Lil Uzi Vert	Trap
+Lil Wayne	Southern Rap
+Lil Wayne & Juelz Santana	Southern Rap
+Limp Bizkit	Nu Metal
+Listener	Post-Hardcore
+Little Simz	Conscious Hip Hop
+Lloyd Banks	East Coast Rap
+Loma Prieta	Skramz
+Low Roar	Post-Rock
+LSD	Pop
+Lupe Fiasco	Conscious Hip Hop
+M1llionz	Drill
+Maassai	Abstract Hip Hop
+# Mac Miller: Alternative Rap×5, Alternative Pop×1  (append "; <genre>" to allow extras)
+Mac Miller	Alternative Rap
+Machine Girl	Breakcore
+Mach‐Hommy	Abstract Hip Hop
+Madlib	Instrumental Hip Hop
+Madvillain	Abstract Hip Hop
+Makaveli	G-Funk
+Make Do and Mend	The Wave
+Manchester Orchestra	Indie Rock
+Mandolin Orange	Country
+Mantits + Johnny Hobo and the Freight Trains	Folk Punk
+Marilyn Manson	Industrial
+Mark Morgan	Video Game
+Mase	East Coast Rap
+Massive Attack	Trip Hop
+Mastadon	Dubstep
+MASTER BOOT RECORD	Industrial
+Matrixxman & Echologist	Techno
+MAVI	Abstract Hip Hop
+Max Richter	Neoclassical
+Maxo	Abstract Hip Hop
+Mazza_l20	UK Rap
+McCafferty	Emo
+Meek Mill	East Coast Rap
+Merchant Ships	Skramz
+Mercy Union	Orgcore
+Metallica	Metal
+Method Man	Hardcore Hip Hop
+Method Man & Redman	Hardcore Hip Hop
+mewithoutYou	Post-Hardcore
+Meyhem Lauren & DJ Muggs	East Coast Rap
+MF DOOM	Abstract Hip Hop
+Mick Gordon	Video Game
+Microwave	Post-Hardcore
+Midwest Pen Pals	Emo
+Miguel	R&B
+MIKE	Abstract Hip Hop
+Mike Posner	Pop
+Miles Davis	Jazz
+Miles Davis & Robert Glasper	Jazz
+Militarie Gun	Post-Hardcore
+Milo	Abstract Hip Hop
+Mindless Self Indulgence	Industrial
+Minor Threat	Hardcore
+Mischief Brew	Folk Punk
+Mobb Deep	Hardcore Hip Hop
+Modern Baseball	Emo
+Modern Life Is War	Hardcore
+Modest Mouse	Indie Rock
+Mom Jeans.	Emo
+Moody Good	Dubstep
+Moor Mother & billy woods	Abstract Hip Hop
+Mos Def	Boom Bap
+Mount Eerie	Slowcore
+Moving Mountains	Post-Rock
+Mozzy	Gangsta Rap
+Mr. Muthafuckin’ eXquire	East Coast Rap
+My Chemical Romance	Emo
+Nails	Powerviolence
+Nas	Boom Bap
+Nas & DJ Green Lantern	Boom Bap
+Nas & DJ Premier	Boom Bap
+Natia	Hardcore Hip Hop
+Navy Blue	Abstract Hip Hop
+Necessary Response	Industrial
+Necro	Horrorcore
+Necro & Ill Bill	Horrorcore
+Necro, Ill Bill	Horrorcore
+Nelly	Midwest Rap
+Neutral Milk Hotel	Indie Folk
+Nicholas Craven & Boldy James	Abstract Hip Hop
+Nick Drake	Indie Folk
+Nickelus F	Alternative Rap
+Nicki Minaj	Pop
+Night Lovell	Cloud Rap
+Nils Frahm	Neoclassical
+Ninajirachi	Alternative Pop
+Nine Inch Nails	Industrial
+Nine Inch Noize	Techno
+Nipsey Hussle	Gangsta Rap
+Nirvana	Grunge
+NLE Choppa	Trap
+No Doubt	Pop
+No Use for a Name	Punk Rock
+NOFX	Punk Rock
+Noisia	Drum & Bass
+Norma Jean	Metalcore
+Nothing	Shoegaze
+Notorious B.I.G.	East Coast Rap
+Oathbreaker	Metal
+Obie Trice	Hardcore Hip Hop
+Odd Future	Alternative Rap
+Offspring	Pop Punk
+Old Gray	Skramz
+Old Gray / Tiny Moving Parts	Skramz
+Ol’ Dirty Bastard	Hardcore Hip Hop
+Oneohtrix Point Never	Ambient
+Only the Family	Drill
+Only the Family & Lil Durk	Drill
+Open Mike Eagle	Abstract Hip Hop
+Operation Ivy	Punk Rock
+Opeth	Metal
+Opiuo	Glitch Hop
+Orchid	Skramz
+Organized Konfusion	Boom Bap
+oso oso	Emo
+Our Lady Peace	Alternative Rock
+OutKast	Southern Rap
+Oxxxymiron	Non-English Rap
+P. Diddy & The Bad Boy Family	East Coast Rap
+Panic! at the Disco	Pop Punk
+Paris Texas	Grunge Rap
+Park Jefferson	Emo
+Pat the Bunny	Folk Punk
+Paul Wall	Southern Rap
+Pavement	Indie Rock
+Pete Rock & CL Smooth	Boom Bap
+pg.99	Skramz
+Photek	Drum & Bass
+# Pianos Become the Teeth: The Wave×2, Emo×1  (append "; <genre>" to allow extras)
+Pianos Become the Teeth	The Wave
+Pierce the Veil	Post-Hardcore
+Pink Floyd	Art Rock
+PinkPantheress	Pop
+Pixies	Alternative Rock
+Playboi Carti	Trap
+PNL	Non-English Rap
+Pooh Shiesty	Trap
+Pop Smoke	Drill
+Poppy	Metalcore
+Portishead	Trip Hop
+Potter Payper	UK Rap
+Pouya	Southern Rap
+Pouya & Fat Nick	Southern Rap
+Pouya & Ghostemane	Southern Rap
+PR SAD	Drill
+Preservation	Abstract Hip Hop
+Preservation x Gabe ’Nandez	Abstract Hip Hop
+Pretty Lights	Trip Hop
+PRhyme	Midwest Rap
+Prince Daddy & The Hyena	Emo
+Prodigy	Hardcore Hip Hop
+Prof	Midwest Rap
+Prof with That Mexican OT & 2 Chainz	Midwest Rap
+Proof	Hardcore Hip Hop
+Propagandhi	Orgcore
+Puff Daddy & the Family	East Coast Rap
+PUP	Orgcore
+Purple Mountains	Country
+Pusha T	Mafioso Rap
+QB Finest	East Coast Rap
+Queen	Rock
+Quelle Chris	Abstract Hip Hop
+R. Kelly	R&B
+R.A.P. Ferreira	Abstract Hip Hop
+Radiohead	Art Rock
+Rae Sremmurd	Trap
+Raein	Skramz
+Raekwon	Mafioso Rap
+Ramshackle Glory	Folk Punk
+Rancid	Punk Rock
+Ransom	Coke Rap
+Ransom x Boldy James x Nicholas Craven	Abstract Hip Hop
+RATKING	Experimental Hip Hop
+RAYE	Pop
+Red City Radio	Orgcore
+Redman	Hardcore Hip Hop
+Refused	Post-Hardcore
+Regional Justice Center	Powerviolence
+Rich Gang	Trap
+Rick Ross	Southern Rap
+Ricky Eat Acid	Ambient
+RiFF RAFF	Alternative Rap
+Rise Against	Punk Rock
+Rob Zombie	Industrial
+Robert Glasper	Jazz Rap
+Robert Glasper Experiment	R&B
+Robert Glasper × KAYTRANADA	R&B
+Roc Marciano	Abstract Hip Hop
+Roc Marciano & The Alchemist	Abstract Hip Hop
+Rome Streetz	Abstract Hip Hop
+ROSALÍA	Pop
+Royce da 5′9″	Midwest Rap
+Run the Jewels	Hardcore Hip Hop
+Run‐D.M.C.	Old School Hip Hop
+Rusko	Dubstep
+Russian Circles	Post-Rock
+Ruston Kelly	Country
+Rx Papi & Gud	Experimental Hip Hop
+RXK Nephew	Experimental Hip Hop
+RXK Nephew & Harry Fraud	Experimental Hip Hop
+RXKNephew	Experimental Hip Hop
+Ryuichi Sakamoto	Neoclassical
+Sailor Heart	Emo
+Saosin	Post-Hardcore
+Sara Landry	Techno
+Saweetie	Trap
+Scarlxrd	Trap Metal
+Scru Face Jean	Midwest Rap
+Seahaven	Emo
+Sean Leon	Northern Rap
+Sean Price	Boom Bap
+Secret Circle	Alternative Rap
+Self Defense Family	Post-Hardcore
+Sewerslvt	Breakcore
+Sheff G	Drill
+SHREDDERS	Hardcore Hip Hop
+Silver Jews	Indie Rock
+Silverchair	Grunge
+Single Mothers	Post-Hardcore
+Skee Mask	IDM
+Skepta	UK Rap
+Skrillex	Dubstep
+Skyzoo	Boom Bap
+Slaves	Post-Hardcore
+Sleeping With Sirens	Post-Hardcore
+Slick Rick	Old School Hip Hop
+Slint	Post-Rock
+Slipknot	Nu Metal
+Smidley	Indie Rock
+Smile Empty Soul	Alternative Rock
+Snoop Doggy Dogg	G-Funk
+Snow	Reggae
+Sonder	R&B
+Sorority Noise	Emo
+SosMula	Trap Metal
+Soul Glo	Hardcore
+Soundgarden	Grunge
+Source Direct	Drum & Bass
+Space Laces	Dubstep
+SpaceGhostPurrp	Memphis Rap
+# Spanish Love Songs: Emo×3, Orgcore×2  (append "; <genre>" to allow extras)
+Spanish Love Songs	Emo
+Spark Master Tape	Experimental Hip Hop
+Spoon	Indie Rock
+Squarepusher	IDM
+Stiffy	Plugg
+Stone Temple Pilots	Grunge
+Stormzy	UK Rap
+Stormzy & Fredo	UK Rap
+Stove God Cooks	Mafioso Rap
+Straylight Run	Emo
+Streetlight Manifesto	Punk Rock
+Strike Anywhere	Melodic Hardcore
+Sturgill Simpson	Country
+Sublime	Reggae
+Subtronics	Dubstep
+Subtronics & Friction feat. P Money	Dubstep
+Subtronics, Hedex & IRAH	Dubstep
+Sufjan Stevens	Indie Folk
+Sun Kil Moon	Indie Folk
+Sunny Day Real Estate	Emo
+Surf Gang	Soundcloud Rap
+Sus	Drill
+SVDDEN DEATH	Dubstep
+Swans	Post-Rock
+Swollen Members	Boom Bap
+System of a Down	Nu Metal
+Taking Back Sunday	Emo
+Takt32	Non-English Rap
+Taylor Swift	Pop
+Teen Suicide	Indie Rock
+teeway & M1llionz	Drill
+Telefon Tel Aviv	IDM
+Tha God Fahim & Your Old Droog	Boom Bap
+The Antlers	Indie Rock
+The Armed	Metalcore
+The Avalanches	Electronic
+The Beach Boys	Art Rock
+# The Body: Experimental Doom×2, Metal×1  (append "; <genre>" to allow extras)
+The Body	Experimental Doom
+The Body & Full of Hell	Experimental Doom
+The Bug	Dubstep
+The Callous Daoboys	Metalcore
+The Carolyn	Orgcore
+The Clash	Punk Rock
+The Cure	Post-Punk
+The Dear Hunter	Indie Rock
+The Devil Makes Three	Folk Punk
+The Devil Wears Prada	Metalcore
+The Diplomats	The Diplomats
+The Dismemberment Plan	Indie Rock
+The Faint	Post-Punk
+The Flat Stanleys	Emo
+The Flat Stanleys & Tim Neil	Emo
+The Flatliners	Orgcore
+The Front Bottoms	Folk Punk
+The Game	Gangsta Rap
+The Gaslight Anthem	Orgcore
+The Get Up Kids	Emo
+The Glitch Mob	Glitch Hop
+The Godfathers	Horrorcore
+The Hotelier	Emo
+The Jimi Hendrix Experience	Rock
+The Lawrence Arms	Orgcore
+The LOX	Hardcore Hip Hop
+The Mars Volta	Post-Hardcore
+The Menzingers	Orgcore
+the Microphones	Slowcore
+The National	Indie Rock
+The Notorious B.I.G.	Mafioso Rap
+The Obsessives	Emo
+# The Offspring: Pop Punk×3, Punk Rock×1  (append "; <genre>" to allow extras)
+The Offspring	Pop Punk
+The Offspring/The Offspring	Punk Rock
+The Plot in You	Metalcore
+The Prodigy	Electronic
+The Republic of Wolves	Post-Hardcore
+The Rolling Stones	Rock
+The Roots	Jazz Rap
+The Saddest Landscape	Skramz
+The Smashing Pumpkins	Alternative Rock
+The Smiths	Post-Punk
+The Strokes	Indie Rock
+The Suicide Machines	Punk Rock
+The Tower & the Fool	Indie Rock
+The Tuss	Acid Techno
+The War on Drugs	Indie Rock
+The Weakerthans	Orgcore
+The Weeknd	R&B
+The White Stripes	Garage Rock
+The Wonder Years	Orgcore
+The World Is a Beautiful Place & I Am No Longer Afraid to Die	Emo
+Therefore I Am	Post-Hardcore
+THEY.	R&B
+This Will Destroy You	Post-Rock
+Three 6 Mafia	Memphis Rap
+Thrice	Post-Hardcore
+thrown	Metalcore
+Thursday	Post-Hardcore
+Tigers Jaw	Emo
+Tigers on Trains	Indie Folk
+Tim Hecker	Ambient
+Tiny Moving Parts	Emo
+Tipper	Glitch Hop
+Tired Radio	Orgcore
+Title Fight	Emo
+Titus Andronicus	Orgcore
+Tobe Nwigwe	Southern Rap
+Tom Waits	Singer-Songwriter
+Tool	Progressive Metal
+Top5	Drill
+# Tory Lanez: R&B×2, Trap×2  (append "; <genre>" to allow extras)
+Tory Lanez	R&B
+Touché Amoré	The Wave
+Touché Amoré / La Dispute	The Wave
+Townes Van Zandt	Country
+Transplants	Punk Rock
+Trap Dickey	Hardcore Hip Hop
+Trap Them	Metalcore
+Travis Scott	Trap
+Trent Reznor / Atticus Ross	Post-Industrial
+Trent Reznor and Atticus Ross	Soundtrack
+Trivium	Metalcore
+# Turnstile: Hardcore×3, Alternative Rock×1  (append "; <genre>" to allow extras)
+Turnstile	Hardcore
+TV on the Radio	Indie Rock
+Ty Dolla $ign feat. The Weeknd, Wiz Khalifa & DJ Mustard	R&B
+Tycho	Downtempo
+Tyler, The Creator	Alternative Rap
+uamee	Hardbass
+UGK	Southern Rap
+Ugly Casanova	Indie Rock
+Umbra Vitae	Metal
+Uncle Murda	Hardcore Hip Hop
+Underoath	Metalcore
+Unknown T	Drill
+Vampire Weekend	Indie Rock
+# Various Artists: Video Game×3, Pop×2, Northern Rap×1, Electronic×1, Techno×1, Soundtrack×1, Drum & Bass×1, Hardcore Hip Hop×1, Midwest Rap×1, Rock×1, Dubstep×1, Metal×1, Punk Rock×1  (append "; <genre>" to allow extras)
+Various Artists	Video Game
+Veeze	Trap
+Vein.fm	Metalcore
+Venetian Snares	Breakcore
+Vex’d	Dubstep
+Viagra Boys	Post-Punk
+Viktor Vaughn	Abstract Hip Hop
+# Vince Staples: Alternative Rap×5, Gangsta Rap×5  (append "; <genre>" to allow extras)
+Vince Staples	Alternative Rap
+Vince Staples & Larry Fisherman	Alternative Rap
+Virtual Riot	Dubstep
+Waka Flocka Flame	Trap
+Walter Mitty and His Makeshift Orchestra	Folk Punk
+Warren G	G-Funk
+Wednesday	Shoegaze
+Weezer	Emo
+Westside Gunn	Abstract Hip Hop
+Westside Gunn & Conway	Abstract Hip Hop
+Westside Gunn, Conway the Machine, The Alchemist	Abstract Hip Hop
+White Zombie	Industrial
+Wilco	Indie Rock
+William Bonney	Skramz
+Wingnut Dishwashers Union	Folk Punk
+Wormrot	Grindcore
+Wugazi	Alternative Rap
+Wu‐Tang Clan	Hardcore Hip Hop
+XS Project	Hardbass
+# XXXTENTACION: Trap Metal×1, Alternative Rap×1  (append "; <genre>" to allow extras)
+XXXTENTACION	Trap Metal
+Xzibit	Gangsta Rap
+Ye	Midwest Rap
+Yelawolf	Southern Rap
+Yellowcard	Pop Punk
+YG	Gangsta Rap
+YG & Mozzy	Gangsta Rap
+Yo La Tengo	Indie Rock
+Young Buck	Southern Rap
+Young Jeezy	Trap
+Young Jeezy & DJ Drama	Trap
+Young LS	UK Rap
+Young Pappy	Drill
+Young Thug	Trap
+Young Thug, A$AP Ferg & Freddie Gibbs	Trap
+Your Old Droog	Boom Bap
+Yung Lean	Cloud Rap
+Zach Bryan	Country
+Zelooperz	Alternative Rap
+Zeromancer	Industrial
+Ólafur Arnalds	Neoclassical
+Ólafur Arnalds & Nils Frahm	Neoclassical
+μ‐Ziq	IDM
+Скриптонит	Non-English Rap

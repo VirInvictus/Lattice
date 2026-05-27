@@ -1,5 +1,13 @@
 # Lattice Patch Notes
 
+## Companion script: `genre_tidy.py` (2026-05-27)
+
+*(Companion-script addition; no package version bump.)*
+
+---
+
+- **New `scripts/genre_tidy.py`: artist→genre authority + reconciler.** A two-phase companion for libraries whose genre tags have drifted. `build` scans (read-only, through lattice) and writes an editable `genre_map.tsv` that pairs each artist with their majority genre, flagging with `#` comments any artist whose albums disagree. `apply` re-scans and, for every album whose genre falls outside its artist's allowed set, calls `retag.py` to overwrite it to the canonical (first) genre. Allowed-set per artist (append `; Other Genre` to keep a legitimate split), blank a row to skip an artist, `--dry-run` and append-only logging like the other companions, idempotent. The lattice package stays read-only; every write goes through `retag.py`. Keys on the normalized artist tag, not folder name. Covered by `tests/test_genre_tidy.py` (25 cases); the same pass backfilled `tests/test_retag.py` and `tests/test_cleaner.py`, so all three `scripts/` companions now have tests.
+
 ## v4.6.0 (2026-05-27)
 
 ---
