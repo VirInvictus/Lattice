@@ -11,7 +11,7 @@ A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice h
 
 > **Lattice is read-only.** It reads tags and decodes audio, and it writes only reports, playlists, and extracted cover art. It never modifies the metadata inside your audio files. The optional companion scripts in `scripts/` are the deliberate exception: they **do** modify files (tags, rating bytes, folder layout) and must be used with caution. See [Companion scripts](#companion-scripts).
 
-> **Note:** This is considered completed software. It has been thoroughly tested and is known to be fully functional on the primary development environment: **Fedora Linux 44 (Workstation Edition)**, kernel `7.0.9-205.fc44.x86_64`, on **Python 3.14**, with `flac` and `ffmpeg` from the Fedora repositories. While it is pure Python and should be cross-platform, this specific setup is the only officially tested environment.
+> **Note:** This is considered completed software. It is effectively feature complete; bug fixes will be addressed as they come, but no new features are planned. It has been thoroughly tested and is known to be fully functional on the primary development environment: **Fedora Linux 44 (Workstation Edition)**, kernel `7.0.9-205.fc44.x86_64`, on **Python 3.14**, with `flac` and `ffmpeg` from the Fedora repositories. While it is pure Python and should be cross-platform, this specific setup is the only officially tested environment.
 
 ## Contents
 
