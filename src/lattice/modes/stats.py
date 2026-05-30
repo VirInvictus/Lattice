@@ -1,9 +1,15 @@
 import os
 from collections import Counter, defaultdict
 
-from lattice.utils import count_audio_files, _make_pbar, iter_audio_dirs, as_roots
-from lattice.tags import get_all_tags
-from lattice.config import AUDIO_EXTENSIONS
+from lattice.utils import (
+    count_audio_files,
+    _make_pbar,
+    iter_audio_dirs,
+    as_roots,
+    parse_layout,
+    read_tags_concurrent,
+)
+from lattice.config import AUDIO_EXTENSIONS, DEFAULT_LAYOUT
 
 # =====================================
 # Mode: Library statistics
@@ -45,8 +51,18 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024**3):.2f} GB"
 
 
-def run_stats(root: str | list[str], output: str | None, *, quiet: bool = False) -> str:
-    """Generate a library-wide statistics report (combined across all roots)."""
+def run_stats(
+    root: str | list[str],
+    output: str | None,
+    *,
+    layout: str = DEFAULT_LAYOUT,
+    quiet: bool = False,
+) -> str:
+    """Generate a library-wide statistics report (combined across all roots).
+
+    `layout` is the path pattern used to recover the artist/album directory
+    component when grouping, so the artist count is correct on a genre-first
+    tree ({genre}/{artist}/{album}) as well as the default {artist}/{album}."""
     roots = as_roots(root)
 
     total_files = count_audio_files(roots)
@@ -78,60 +94,67 @@ def run_stats(root: str | list[str], output: str | None, *, quiet: bool = False)
     bitrates: list[int] = []
     fully_tagged = 0  # has title + artist + track + genre
 
-    for src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
-        for f in sorted(files):
-            ext = os.path.splitext(f)[1].lower()
-            if ext not in AUDIO_EXTENSIONS:
-                continue
-
-            filepath = os.path.join(dirpath, f)
-            format_counts[ext] += 1
-
-            try:
-                fsize = os.path.getsize(filepath)
-                total_size += fsize
-                format_sizes[ext] += fsize
-            except OSError:
-                fsize = 0
-
-            t = get_all_tags(filepath)
-
-            # Artist/album tracking from directory structure, relative to the
-            # root this file lives under (so multi-root counts stay correct).
-            rel = os.path.relpath(dirpath, src_root)
-            parts = rel.split(os.sep)
-            if len(parts) >= 1:
-                artist_dirs.add(parts[0])
-            if len(parts) >= 2:
-                album_dirs.add(rel)
-
-            # Artist from tags (prefer tag, fall back to directory)
-            artist_name = t.artist or (parts[0] if parts else None)
-            if artist_name:
-                artist_counts[artist_name] += 1
-
-            if t.genre:
-                genre_counts[t.genre] += 1
-
-            label = _rating_label(t.rating)
-            rating_counts[label] += 1
-            if t.genre:
-                genre_ratings[t.genre][label] += 1
-
-            # Duration and bitrate — now carried by TagBundle
-            if t.duration_s:
-                total_duration += t.duration_s
-            if t.bitrate_kbps:
-                bitrates.append(t.bitrate_kbps)
-
-            # Fully tagged check
-            has_all = all([t.title, t.artist, t.trackno is not None, t.genre])
-            if has_all:
-                fully_tagged += 1
-
-            pbar.update(1)
-
+    # (filepath, owning root) for every audio file, walked in deterministic
+    # order; tags are then read concurrently and the accumulation below stays
+    # exactly as before (Counters are order-independent).
+    entries: list[tuple[str, str]] = [
+        (os.path.join(dirpath, f), src_root)
+        for src_root, dirpath, _dirs, files in iter_audio_dirs(roots)
+        for f in sorted(files)
+        if os.path.splitext(f)[1].lower() in AUDIO_EXTENSIONS
+    ]
+    tags = read_tags_concurrent([e[0] for e in entries], pbar=pbar)
     pbar.close()
+
+    for filepath, src_root in entries:
+        ext = os.path.splitext(filepath)[1].lower()
+        format_counts[ext] += 1
+
+        try:
+            fsize = os.path.getsize(filepath)
+            total_size += fsize
+            format_sizes[ext] += fsize
+        except OSError:
+            fsize = 0
+
+        t = tags[filepath]
+
+        # Artist/album tracking from directory structure, via the configured
+        # layout so the artist component is correct on a genre-first tree too.
+        # Album dirs are counted by their full relative path (unique per album
+        # folder on any layout); artist comes from the layout's {artist} slot.
+        rel_file = os.path.relpath(filepath, src_root)
+        parsed = parse_layout(rel_file, layout)
+        artist_dir = parsed.get("artist")
+        if artist_dir:
+            artist_dirs.add(artist_dir)
+        rel = os.path.relpath(os.path.dirname(filepath), src_root)
+        if rel.count(os.sep) >= 1:
+            album_dirs.add(rel)
+
+        # Artist from tags (prefer tag, fall back to the layout's directory).
+        artist_name = t.artist or artist_dir
+        if artist_name:
+            artist_counts[artist_name] += 1
+
+        if t.genre:
+            genre_counts[t.genre] += 1
+
+        label = _rating_label(t.rating)
+        rating_counts[label] += 1
+        if t.genre:
+            genre_ratings[t.genre][label] += 1
+
+        # Duration and bitrate — now carried by TagBundle
+        if t.duration_s:
+            total_duration += t.duration_s
+        if t.bitrate_kbps:
+            bitrates.append(t.bitrate_kbps)
+
+        # Fully tagged check
+        has_all = all([t.title, t.artist, t.trackno is not None, t.genre])
+        if has_all:
+            fully_tagged += 1
 
     # Build report
     lines: list[str] = []

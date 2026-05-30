@@ -302,6 +302,15 @@ class ApplyRevertRoundTripTests(unittest.TestCase):
         self.assertEqual(self._snapshot(), before)
         self.assertFalse(self.manifest.exists())
 
+    def test_dry_run_predicts_pruning_without_removing(self):
+        # The prune step must *predict* emptied source dirs in a dry-run (via the
+        # virtual-removed set), not read the unchanged disk and report nothing.
+        moves, _, sources = gf.build_plan(self.records, self.root)
+        with gf.Runner(self.manifest, dry_run=True, quiet=True) as runner:
+            gf.execute(moves, sources, runner)
+        self.assertGreater(runner.stats["pruned"], 0)
+        self.assertTrue((self.root / "Aesop Rock").exists())  # still there
+
     def test_round_trip_restores_original(self):
         before = self._snapshot()
         self._apply()

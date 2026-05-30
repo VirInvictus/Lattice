@@ -48,7 +48,7 @@ from collections import Counter, namedtuple
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # Path-component characters forbidden on Windows/NTFS/exFAT (the library often
 # lives on a shared NTFS volume), plus the trailing "." / " " rule. Genre names
@@ -232,6 +232,14 @@ class Runner:
         self.quiet = quiet
         self.mf = None
         self.stats: Counter = Counter()
+        # Paths (virtually) removed this run. In a dry-run nothing actually
+        # moves, so the prune steps consult this to predict which folders would
+        # be emptied — matching the real run's output instead of seeing the
+        # unchanged disk.
+        self.removed: set[Path] = set()
+
+    def _effective_children(self, directory: Path) -> list[Path]:
+        return [c for c in _safe_iterdir(directory) if c not in self.removed]
 
     def __enter__(self):
         if not self.dry_run:
@@ -258,6 +266,7 @@ class Runner:
         self._emit(f"MV {kind}: {src}  ->  {dst}")
         self.stats[f"moved_{kind}"] += 1
         if self.dry_run:
+            self.removed.add(src)
             return
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
@@ -270,15 +279,17 @@ class Runner:
         """Remove `directory` and any now-empty subdirectories beneath it.
         Used to clear out source artist folders vacated by the moves; a folder
         that still holds files (or album subfolders not yet moved) is kept."""
-        if not directory.is_dir():
+        if not directory.is_dir() or directory in self.removed:
             return
-        for child in _safe_iterdir(directory):
+        for child in self._effective_children(directory):
             if child.is_dir():
                 self.prune_empty(child)
-        if not _safe_iterdir(directory):
+        if not self._effective_children(directory):
             self._emit(f"RMDIR (emptied): {directory}")
             self.stats["pruned"] += 1
-            if not self.dry_run:
+            if self.dry_run:
+                self.removed.add(directory)
+            else:
                 try:
                     directory.rmdir()
                 except OSError:
@@ -289,11 +300,13 @@ class Runner:
         until one still holds entries (the populated library root stops it).
         Used after a revert to clear the now-empty genre/artist/album dirs."""
         cur = directory
-        while cur != cur.parent and cur.is_dir() and not _safe_iterdir(cur):
+        while cur != cur.parent and cur.is_dir() and not self._effective_children(cur):
             self._emit(f"RMDIR (emptied): {cur}")
             self.stats["pruned"] += 1
             parent = cur.parent
-            if not self.dry_run:
+            if self.dry_run:
+                self.removed.add(cur)
+            else:
                 try:
                     cur.rmdir()
                 except OSError:
@@ -440,7 +453,9 @@ def main() -> int:
         "--only-genre",
         action="append",
         metavar="GENRE",
-        help="Restrict to this genre (repeatable). Useful for a staged rollout.",
+        help="Restrict to this genre (repeatable). Useful for a staged rollout. "
+        "Note: an artist-level sidecar (e.g. cover.jpg) follows its artist's "
+        "dominant genre, which may not be one you selected.",
     )
     parser.add_argument(
         "--log",

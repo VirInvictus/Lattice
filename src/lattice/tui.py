@@ -838,7 +838,12 @@ def interactive_menu() -> int:
                 _prompt_str("Output file (leave blank for screen)", "").strip() or None
             )
             _run_with_capture(
-                "Library Statistics", run_stats, root, output, quiet=False
+                "Library Statistics",
+                run_stats,
+                root,
+                output,
+                layout=get_layout(),
+                quiet=False,
             )
 
         elif result == (1, 0):

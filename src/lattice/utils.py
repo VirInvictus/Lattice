@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from lattice.config import (
     AUDIO_EXTENSIONS,
@@ -160,6 +161,42 @@ def count_audio_files(root) -> int:
     for _r, _dp, _dirs, files in iter_audio_dirs(root):
         total += sum(1 for f in files if is_audio(f))
     return total
+
+
+def default_tag_workers() -> int:
+    """Thread count for tag reads. Tag parsing is largely I/O-bound (open the
+    file, read a header), so a small pool overlaps that latency without
+    oversubscribing; capped to stay friendly on shared/network filesystems."""
+    return max(1, min(16, (os.cpu_count() or 4) * 2))
+
+
+def read_tags_concurrent(paths, pbar=None, workers: int | None = None) -> dict:
+    """Read a TagBundle for each path, concurrently, returning {path: TagBundle}.
+    Read order is non-deterministic, so callers must group/sort their own output
+    (every mode already does). `pbar.update(1)` is called as each file completes.
+
+    get_all_tags is imported lazily here: tags.py imports from utils, so a
+    top-level import would be circular."""
+    from lattice.tags import get_all_tags
+
+    paths = list(paths)
+    n = workers or default_tag_workers()
+    result: dict = {}
+    if n <= 1 or len(paths) <= 1:
+        for p in paths:
+            result[p] = get_all_tags(p)
+            if pbar is not None:
+                pbar.update(1)
+        return result
+
+    with ThreadPoolExecutor(max_workers=n) as ex:
+        futures = {ex.submit(get_all_tags, p): p for p in paths}
+        for fut in as_completed(futures):
+            path = futures[fut]
+            result[path] = fut.result()
+            if pbar is not None:
+                pbar.update(1)
+    return result
 
 
 def _decode_bytes(b: bytes) -> str:

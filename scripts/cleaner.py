@@ -260,7 +260,7 @@ def find_groups(directory: Path, run: Run) -> list[list[Path]]:
 def file_count(p: Path) -> int:
     try:
         return sum(1 for _ in p.rglob("*") if _.is_file())
-    except PermissionError, OSError:
+    except OSError:  # PermissionError is an OSError subclass
         return 0
 
 

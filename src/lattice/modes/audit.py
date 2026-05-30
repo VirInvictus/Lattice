@@ -14,12 +14,14 @@ from lattice.utils import (
     iter_audio_dirs,
     as_roots,
     relpath_under,
+    read_tags_concurrent,
 )
-from lattice.tags import get_all_tags, HAVE_MUTAGEN_BASE, TagBundle
+from lattice.tags import HAVE_MUTAGEN_BASE, TagBundle
 from lattice.config import (
     AUDIO_EXTENSIONS,
     DEFAULT_DUPLICATES_OUTPUT,
     DEFAULT_TAG_AUDIT_OUTPUT,
+    DEFAULT_BITRATE_AUDIT_OUTPUT,
 )
 
 # =====================================
@@ -395,18 +397,17 @@ def run_duplicates(root: str | list[str], output: str, *, quiet: bool = False) -
     total = count_audio_files(roots)
     pbar = _make_pbar(total, "Reading tags", quiet)
 
-    tag_cache: dict[str, TagBundle] = {}
     dirs: list[_DirInfo] = []
-
     for _src_root, dirpath, _subdirs, files in iter_audio_dirs(roots):
         audio_files = sorted(f for f in files if is_audio(f))
         if not audio_files:
             continue
-        for fname in audio_files:
-            fpath = os.path.join(dirpath, fname)
-            tag_cache[fpath] = get_all_tags(fpath)
-            pbar.update(1)
-        dirs.append(_aggregate_dir(dirpath, audio_files, tag_cache))
+        paths = [os.path.join(dirpath, fname) for fname in audio_files]
+        # Read this directory's tags concurrently. The dict is local to the
+        # iteration, so the library's tags are never held twice — they live on
+        # only in each _DirInfo (which the later sections need anyway).
+        tags = read_tags_concurrent(paths, pbar=pbar)
+        dirs.append(_aggregate_dir(dirpath, audio_files, tags))
 
     pbar.close()
 
@@ -453,37 +454,37 @@ def run_tag_audit(root: str | list[str], output: str, *, quiet: bool = False) ->
     total = count_audio_files(roots)
     pbar = _make_pbar(total, "Auditing tags", quiet)
 
-    for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
-        for f in sorted(files):
-            ext = os.path.splitext(f)[1].lower()
-            if ext not in AUDIO_EXTENSIONS:
-                continue
-
-            pbar.update(1)
-
-            filepath = os.path.join(dirpath, f)
-            t = get_all_tags(filepath)
-
-            missing_fields: list[str] = []
-            if not t.title:
-                missing_fields.append("title")
-            if not t.artist:
-                missing_fields.append("artist")
-            if t.trackno is None:
-                missing_fields.append("tracknumber")
-            if not t.genre:
-                missing_fields.append("genre")
-
-            if missing_fields:
-                issues.append(
-                    {
-                        "path": filepath,
-                        "format": ext.strip("."),
-                        "missing": ", ".join(missing_fields),
-                    }
-                )
-
+    paths = [
+        os.path.join(dirpath, f)
+        for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots)
+        for f in sorted(files)
+        if os.path.splitext(f)[1].lower() in AUDIO_EXTENSIONS
+    ]
+    tags = read_tags_concurrent(paths, pbar=pbar)
     pbar.close()
+
+    for filepath in paths:
+        t = tags[filepath]
+        ext = os.path.splitext(filepath)[1].lower()
+
+        missing_fields: list[str] = []
+        if not t.title:
+            missing_fields.append("title")
+        if not t.artist:
+            missing_fields.append("artist")
+        if t.trackno is None:
+            missing_fields.append("tracknumber")
+        if not t.genre:
+            missing_fields.append("genre")
+
+        if missing_fields:
+            issues.append(
+                {
+                    "path": filepath,
+                    "format": ext.strip("."),
+                    "missing": ", ".join(missing_fields),
+                }
+            )
 
     out_path = os.path.abspath(output or DEFAULT_TAG_AUDIT_OUTPUT)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -554,35 +555,31 @@ def run_bitrate_audit(
     total = count_audio_files(roots)
     pbar = _make_pbar(total, "Auditing bitrates", quiet)
 
-    for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
-        for f in sorted(files):
-            ext = os.path.splitext(f)[1].lower()
-            if ext not in AUDIO_EXTENSIONS:
-                continue
-
-            pbar.update(1)
-
-            filepath = os.path.join(dirpath, f)
-            t = get_all_tags(filepath)
-
-            if (
-                t.bitrate_kbps is not None
-                and t.bitrate_kbps > 0
-                and t.bitrate_kbps < min_kbps
-            ):
-                issues.append(
-                    {
-                        "path": filepath,
-                        "format": ext.strip("."),
-                        "bitrate": str(t.bitrate_kbps),
-                    }
-                )
-
+    paths = [
+        os.path.join(dirpath, f)
+        for _src_root, dirpath, _dirs, files in iter_audio_dirs(roots)
+        for f in sorted(files)
+        if os.path.splitext(f)[1].lower() in AUDIO_EXTENSIONS
+    ]
+    tags = read_tags_concurrent(paths, pbar=pbar)
     pbar.close()
 
-    out_path = os.path.abspath(
-        output or DEFAULT_TAG_AUDIT_OUTPUT.replace("tag_audit", "bitrate_audit")
-    )
+    for filepath in paths:
+        t = tags[filepath]
+        if (
+            t.bitrate_kbps is not None
+            and t.bitrate_kbps > 0
+            and t.bitrate_kbps < min_kbps
+        ):
+            issues.append(
+                {
+                    "path": filepath,
+                    "format": os.path.splitext(filepath)[1].lower().strip("."),
+                    "bitrate": str(t.bitrate_kbps),
+                }
+            )
+
+    out_path = os.path.abspath(output or DEFAULT_BITRATE_AUDIT_OUTPUT)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
     by_dir: dict[str, list[dict[str, str]]] = defaultdict(list)

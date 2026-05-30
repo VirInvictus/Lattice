@@ -33,7 +33,7 @@ import os
 import sys
 from datetime import datetime
 
-from mutagen.id3 import ID3, ID3NoHeaderError
+from mutagen.id3 import ID3
 
 __version__ = "1.0.0"
 
@@ -49,12 +49,28 @@ def remap_popm(rating: int) -> int | None:
     return REMAP.get(rating)
 
 
+def read_remaps(filepath: str) -> list[tuple[str, int, int]]:
+    """The POPM remaps that *would* be applied to one MP3, as
+    (email, old_byte, new_byte). Reads only; never mutates, saves, or raises.
+    Shared by the dry-run preview and rerate_file so both see the same changes."""
+    try:
+        tags = ID3(filepath)
+    except Exception:
+        return []
+    changes: list[tuple[str, int, int]] = []
+    for popm in tags.getall("POPM"):
+        new = remap_popm(popm.rating)
+        if new is not None:
+            changes.append((getattr(popm, "email", ""), popm.rating, new))
+    return changes
+
+
 def rerate_file(filepath: str) -> list[tuple[str, int, int]]:
     """Rewrite any remappable POPM byte in one MP3. Returns the changes made as
     (email, old_byte, new_byte); empty if nothing changed. Never raises."""
     try:
         tags = ID3(filepath)
-    except ID3NoHeaderError, Exception:
+    except Exception:
         return []
     changes: list[tuple[str, int, int]] = []
     for popm in tags.getall("POPM"):
@@ -122,19 +138,7 @@ def main() -> int:
                     continue
                 scanned += 1
                 path = os.path.join(dirpath, f)
-                if args.dry_run:
-                    # Preview without writing: read the bytes and report.
-                    try:
-                        tags = ID3(path)
-                    except ID3NoHeaderError, Exception:
-                        continue
-                    changes = []
-                    for p in tags.getall("POPM"):
-                        new = remap_popm(p.rating)
-                        if new is not None:
-                            changes.append((getattr(p, "email", ""), p.rating, new))
-                else:
-                    changes = rerate_file(path)
+                changes = read_remaps(path) if args.dry_run else rerate_file(path)
                 if changes:
                     changed += 1
                     rel = os.path.relpath(path, root)

@@ -1,5 +1,8 @@
+import ast
+import operator
 import os
 import sys
+from typing import Any, Callable
 
 from lattice.utils import (
     count_audio_files,
@@ -16,14 +19,78 @@ from lattice.tags import get_all_tags
 # =====================================
 
 
+# Smart-playlist rules are evaluated by walking a whitelisted AST, never by
+# eval(). eval with `{"__builtins__": {}}` is NOT a sandbox — a rule like
+# `genre.__class__.__mro__[-1].__subclasses__()` escapes it to arbitrary code.
+# Here only comparisons, boolean/arithmetic operators, the exposed field names,
+# and literal constants are allowed; attribute access, calls, and subscripts
+# raise, so a rule can read the fields and nothing else.
+_CMP_OPS: dict[type, Callable[[Any, Any], Any]] = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+    ast.In: lambda a, b: a in b,
+    ast.NotIn: lambda a, b: a not in b,
+}
+_BIN_OPS: dict[type, Callable[[Any, Any], Any]] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Mod: operator.mod,
+}
+_UNARY_OPS: dict[type, Callable[[Any], Any]] = {
+    ast.Not: operator.not_,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+
+class RuleError(Exception):
+    """A rule referenced an unknown field or used an unsupported construct."""
+
+
+def _eval_node(node: ast.AST, names: dict):
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body, names)
+    if isinstance(node, ast.BoolOp):
+        vals = [_eval_node(v, names) for v in node.values]
+        return all(vals) if isinstance(node.op, ast.And) else any(vals)
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPS:
+        return _UNARY_OPS[type(node.op)](_eval_node(node.operand, names))
+    if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
+        return _BIN_OPS[type(node.op)](
+            _eval_node(node.left, names), _eval_node(node.right, names)
+        )
+    if isinstance(node, ast.Compare):
+        left = _eval_node(node.left, names)
+        for op, comparator in zip(node.ops, node.comparators):
+            if type(op) not in _CMP_OPS:
+                raise RuleError(f"operator {type(op).__name__} not allowed")
+            right = _eval_node(comparator, names)
+            if not _CMP_OPS[type(op)](left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.Name):
+        if node.id in names:
+            return names[node.id]
+        raise RuleError(f"unknown field '{node.id}'")
+    if isinstance(node, ast.Constant):
+        return node.value
+    raise RuleError(f"unsupported expression: {type(node).__name__}")
+
+
 def _evaluate_rule(rule: str, t, parsed_layout: dict) -> bool:
-    """Evaluate a dynamic smart playlist rule against a track's metadata."""
-    if not rule:
+    """Evaluate a dynamic smart playlist rule against a track's metadata, using
+    a restricted AST walker (see _eval_node) rather than eval()."""
+    if not rule or not rule.strip():
         return True
 
-    # Field values exposed to the rule. eval runs with no builtins, so the
-    # rule can only reference these names and basic operators.
-    safe_locals = {
+    names = {
         "rating": t.rating or 0.0,
         "genre": t.genre or "",
         "artist": t.artist or parsed_layout.get("artist", ""),
@@ -36,7 +103,7 @@ def _evaluate_rule(rule: str, t, parsed_layout: dict) -> bool:
     try:
         # Accept SQL-style AND/OR as a convenience for Python's and/or.
         py_rule = rule.replace(" AND ", " and ").replace(" OR ", " or ")
-        return bool(eval(py_rule, {"__builtins__": {}}, safe_locals))
+        return bool(_eval_node(ast.parse(py_rule, mode="eval"), names))
     except Exception as e:
         print(f"Error evaluating rule '{rule}': {e}", file=sys.stderr)
         return False

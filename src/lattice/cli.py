@@ -202,6 +202,37 @@ def main(argv: list[str] | None = None) -> int:
         if getattr(args, "layout", None) is None and hasattr(args, "layout"):
             args.layout = get_layout()
 
+        # Exactly one mode runs per invocation. The dispatch below is
+        # first-match-wins, so reject multiple mode flags explicitly rather
+        # than silently ignoring all but the first.
+        _MODE_FLAGS = (
+            "library",
+            "ai_library",
+            "all_wings",
+            "ai_wings",
+            "testFLAC",
+            "testMP3",
+            "testOpus",
+            "testWAV",
+            "testWMA",
+            "extractArt",
+            "missingArt",
+            "auditArtQuality",
+            "duplicates",
+            "auditTags",
+            "auditBitrate",
+            "playlist",
+            "stats",
+        )
+        active_modes = [m for m in _MODE_FLAGS if getattr(args, m, False)]
+        if len(active_modes) > 1:
+            print(
+                "error: pick one mode at a time (got "
+                f"{', '.join('--' + m for m in active_modes)})",
+                file=sys.stderr,
+            )
+            return 2
+
         # Every named root (positional + each --root) is scanned together;
         # de-dupe so the same path passed twice isn't walked twice.
         raw_roots = list(args.root or [])
@@ -354,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         if args.stats:
-            run_stats(root, args.output, quiet=args.quiet)
+            run_stats(root, args.output, layout=args.layout, quiet=args.quiet)
             return 0
 
         build_parser().print_help()

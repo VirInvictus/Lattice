@@ -161,7 +161,9 @@ def get_all_tags(file_path: str) -> TagBundle:
                 for popm in tags.getall("POPM"):
                     if getattr(popm, "email", "") == "Windows Media Player 9 Series":
                         wmp_map = {1: 1.0, 64: 2.0, 128: 3.0, 196: 4.0, 255: 5.0}
-                        rating = wmp_map.get(popm.rating, normalize_rating(popm.rating))
+                        rating = wmp_map.get(popm.rating)
+                        if rating is None:
+                            rating = normalize_rating(popm.rating)
                         break
                 if rating is None:
                     for popm in tags.getall("POPM"):

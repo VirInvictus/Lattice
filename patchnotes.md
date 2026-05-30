@@ -1,5 +1,17 @@
 # Lattice Patch Notes
 
+## v4.7.1 (2026-05-30)
+
+Hardening pass from a full code audit.
+
+- **Security: smart-playlist rules no longer use `eval`.** `--playlist` rules were evaluated with `eval(rule, {"__builtins__": {}}, ...)`, which is not a sandbox: a rule like `genre.__class__.__mro__[-1].__subclasses__()` escapes it to arbitrary code. Rules are now evaluated by walking a restricted AST (comparisons, boolean and arithmetic operators, the exposed field names, literals); attribute access, calls, and subscripts are refused. Same rule syntax, no behavior change for valid rules.
+- **Fix: `--stats` artist count on a genre-first tree.** The artist tally was derived from the top-level directory, so on a Genre/Artist/Album layout it counted genres, not artists. `run_stats` now takes the path `layout` (like the other modes) and reads the artist from the correct component. Album counts were already layout-independent.
+- **Performance: read-heavy modes read tags concurrently.** New `read_tags_concurrent` helper (a small thread pool, since tag reads are I/O-bound) now backs duplicate detection, the tag and bitrate audits, and statistics, matching the integrity scanners' existing concurrency. Duplicate detection also drops a redundant whole-library tag cache, roughly halving its peak memory.
+- **Fix: bitrate audit default output path** now uses `DEFAULT_BITRATE_AUDIT_OUTPUT` instead of string-rewriting the tag-audit constant.
+- **`retag.py` (v1.1.0)** now writes genres to `.wma` (ASF `WM/Genre`); raw ADTS `.aac` stays unsupported (no tag container) and is documented as such.
+- **`genre_foldermap.py` (v1.1.0)**: artist-level sidecar files (e.g. an `Artist/cover.jpg` beside album subfolders) now follow the artist to its dominant genre instead of being orphaned in an emptied folder; the dry-run now predicts directory pruning instead of reading the unchanged disk.
+- **Cleanups**: a CLI guard rejects passing multiple mode flags at once (was first-match-wins); `rerate.py` shares one read-only scan between preview and apply; lazier POPM rating fallback in `tags.py`; `cleaner.py`/`rerate.py` exception handlers collapsed to a single base class where one subsumed the other.
+
 ## v4.7.0 (2026-05-30)
 
 - **Feature: configurable path-extraction layout.** The layout Lattice uses to recover artist/album/genre from a file's path (when a tag is missing) is now settable. A new `layout` key in `~/.config/lattice/config.json` becomes the default for every scanning mode, and `--layout` overrides it per-run. A genre-first library can pin `"{genre}/{artist}/{album}"` once instead of passing the flag each time. The default remains `{artist}/{album}`, so existing setups are unaffected. New `config.DEFAULT_LAYOUT` constant and `config.get_layout()` helper back this.

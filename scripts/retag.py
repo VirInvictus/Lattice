@@ -21,13 +21,15 @@ from datetime import datetime
 
 import mutagen
 from mutagen.apev2 import APEv2
+from mutagen.asf import ASF
 from mutagen.id3 import ID3, TCON, ID3NoHeaderError
 from mutagen.mp4 import MP4
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
-# Only formats whose genre containers are handled below.
-AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".mp4"}
+# Only formats whose genre containers are handled below. Raw ADTS .aac is
+# intentionally excluded: it has no standard tag container to write a genre to.
+AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".mp4", ".wma"}
 
 
 def read_genres(filepath: str) -> list[str]:
@@ -86,6 +88,12 @@ def apply_genres(filepath: str, new_genres: list[str]) -> bool:
             audio.pop("gnre", None)
             audio.pop("\xa9gen", None)
             audio["\xa9gen"] = new_genres
+            audio.save()
+
+        elif ext == ".wma":
+            audio = ASF(filepath)
+            # ASF genre lives in the multi-valued WM/Genre attribute.
+            audio["WM/Genre"] = new_genres
             audio.save()
 
         else:
