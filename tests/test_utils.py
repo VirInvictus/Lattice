@@ -106,8 +106,13 @@ class ColorTests(unittest.TestCase):
     def test_plain_when_not_a_tty(self):
         # The test runner's stdout is not a tty, so output stays uncolored,
         # which keeps report files and pipes clean.
-        self.assertEqual(color("x", "32"), "x")
-        self.assertEqual(green("ok"), "ok")
+        orig = utils._use_color
+        utils._use_color = lambda: False
+        try:
+            self.assertEqual(color("x", "32"), "x")
+            self.assertEqual(green("ok"), "ok")
+        finally:
+            utils._use_color = orig
 
     def test_codes_when_enabled(self):
         orig = utils._use_color

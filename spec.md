@@ -1,6 +1,6 @@
 # Lattice Application Specification
 
-**Version:** 4.6.0  
+**Version:** 4.6.1  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT
@@ -15,7 +15,10 @@ player-agnostic by design. Every operation works from the filesystem and
 embedded metadata, not from a proprietary database or cloud service.
 
 Design philosophy: **one toolkit, every library maintenance task.** The standard collector
-layout (`~/Music/ARTIST/ALBUM/01 - Track.flac`) is the only assumption.
+layout (`~/Music/ARTIST/ALBUM/01 - Track.flac`) is the default assumption. It is
+configurable: the `layout` config key (or `--layout`) sets the pattern Lattice
+uses to recover artist/album/genre from a path, so a genre-first tree
+(`{genre}/{artist}/{album}`) is fully supported.
 
 ---
 
@@ -28,7 +31,7 @@ The codebase is structured as a proper Python package (`src/lattice/`) managed b
 - `tui.py`: Full-screen interactive curses interface.
 - `tags.py`: Extraction logic (`TagBundle`) over mutagen.
 - `utils.py`: Shared utilities (progress bars, terminal formatting).
-- `config.py`: Default constants and persistent library root configuration (`~/.config/lattice/config.json`).
+- `config.py`: Default constants, the default path-extraction `layout`, and persistent library root configuration (`~/.config/lattice/config.json`).
 - `modes/`: The individual operation features (e.g., `library.py`, `integrity.py`, `artwork.py`).
 
 ### 2.2 Tag Reading
@@ -38,6 +41,8 @@ named tuple from a single `MutagenFile()` open. Format-specific tag field
 mapping (ID3 for MP3, VorbisComment for FLAC/Opus/OGG, MP4 atoms for M4A)
 is handled internally. Ratings are read from POPM, TXXX, or Vorbis comment
 fields, compatible with foobar2000's `foo_quicktag` and most other taggers.
+When a file is missing an artist, album, or genre tag, that field is recovered
+from the file's path according to the configured `layout`.
 
 ### 2.3 Supported Formats
 

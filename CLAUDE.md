@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Lattice is a CLI/TUI toolkit for music libraries that treats the filesystem as the source of truth. It reads tags through `mutagen`, walks the tree on every invocation (no index/database), and writes plain `.txt` reports. Python 3.14+, packaged with Hatch (`pyproject.toml`). Runtime deps: `mutagen`, `tqdm`. Current version is `4.6.0` (kept in `src/lattice/config.py`).
+Lattice is a CLI/TUI toolkit for music libraries that treats the filesystem as the source of truth. It reads tags through `mutagen`, walks the tree on every invocation (no index/database), and writes plain `.txt` reports. Python 3.14+, packaged with Hatch (`pyproject.toml`). Runtime deps: `mutagen`, `tqdm`. Current version is `4.6.1` (kept in `src/lattice/config.py`).
 
 The home directory `CLAUDE.md` at `~/CLAUDE.md` covers system-wide conventions (zsh aliases, package managers, dotfiles repo). This file overrides it for work scoped to Lattice.
 

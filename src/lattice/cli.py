@@ -4,6 +4,7 @@ import sys
 
 from lattice.config import (
     VERSION,
+    get_layout,
     DEFAULT_LIBRARY_OUTPUT,
     DEFAULT_AI_LIBRARY_OUTPUT,
     DEFAULT_FLAC_OUTPUT,
@@ -132,8 +133,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--layout",
-        default="{artist}/{album}",
-        help="Directory structure pattern for extracting tags from path (default: {artist}/{album})",
+        default=None,
+        help="Directory structure pattern for extracting tags from path "
+        "(default: the `layout` config key, or {artist}/{album}). "
+        "Use {genre}/{artist}/{album} for a genre-first library.",
     )
     p.add_argument(
         "--min-art-res",
@@ -193,6 +196,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         args = build_parser().parse_args(argv)
+
+        # Resolve the path-extraction layout: an explicit --layout wins,
+        # otherwise fall back to the configured/default layout.
+        if getattr(args, "layout", None) is None and hasattr(args, "layout"):
+            args.layout = get_layout()
 
         # Every named root (positional + each --root) is scanned together;
         # de-dupe so the same path passed twice isn't walked twice.

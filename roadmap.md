@@ -47,6 +47,7 @@ What's done, what's next, what's deferred. Sequenced for maximum utility as a st
 - [ ] **Progress Persistence**: Resume interrupted large-scale integrity scans (FLAC/MP3) from where they left off without restarting.
 - [x] **Color Output in CLI**: Status summaries are colorized (green all-clear, yellow suspect, red corrupt). Gated on an interactive TTY: off in the TUI, off when piped or redirected, off under `NO_COLOR`, so reports and pipes stay clean. (v4.6.0)
 - [x] **Multi-Root Scanning**: `--root` is repeatable; several libraries scan together in one pass and de-dupe a repeated path. Cross-library duplicate detection groups an album that lives in two libraries, with each entry prefixed by its root's basename. An optional `library_roots` array in the JSON config supplies default roots; the first-run prompt still saves only the single `library_root`. (v4.6.0)
+- [x] **Configurable Path Layout**: A `layout` config key (and `--layout`) sets the pattern Lattice uses to recover artist/album/genre from a path, so a genre-first tree (`{genre}/{artist}/{album}`) is fully supported; genre now falls back to the path like artist/album already did. Default stays `{artist}/{album}`. Pairs with the `genre_foldermap.py` companion script that builds such a tree. (v4.7.0)
 
 ## Found Bugs
 

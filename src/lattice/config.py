@@ -2,7 +2,7 @@ import re
 import os
 import json
 
-VERSION = "4.6.0"
+VERSION = "4.7.0"
 
 DEFAULT_LIBRARY_OUTPUT = "music_library.txt"
 DEFAULT_FLAC_OUTPUT = "flac_errors.txt"
@@ -18,6 +18,12 @@ DEFAULT_BITRATE_AUDIT_OUTPUT = "bitrate_audit.txt"
 DEFAULT_AI_LIBRARY_OUTPUT = "library_ai.txt"
 DEFAULT_STATS_OUTPUT = "library_stats.txt"
 DEFAULT_PLAYLIST_OUTPUT = "smart_playlist.m3u"
+
+# Path-extraction layout used to recover artist/album/genre from a file's path
+# when its tags are missing. The default suits an Artist/Album library; a
+# genre-first library can pin "{genre}/{artist}/{album}" via the `layout`
+# config key (see get_layout).
+DEFAULT_LAYOUT = "{artist}/{album}"
 
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".wav", ".wma", ".aac"}
 
@@ -66,6 +72,13 @@ def save_config(config: dict) -> None:
 
 def get_library_root() -> str | None:
     return load_config().get("library_root")
+
+
+def get_layout() -> str:
+    """Path-extraction layout for tag fallback: the `layout` config key when
+    set (e.g. "{genre}/{artist}/{album}" for a genre-first library), else
+    DEFAULT_LAYOUT. Lets a user pin a non-default tree shape once by hand."""
+    return load_config().get("layout") or DEFAULT_LAYOUT
 
 
 def get_library_roots() -> list[str]:

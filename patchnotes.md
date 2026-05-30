@@ -1,5 +1,16 @@
 # Lattice Patch Notes
 
+## v4.7.0 (2026-05-30)
+
+- **Feature: configurable path-extraction layout.** The layout Lattice uses to recover artist/album/genre from a file's path (when a tag is missing) is now settable. A new `layout` key in `~/.config/lattice/config.json` becomes the default for every scanning mode, and `--layout` overrides it per-run. A genre-first library can pin `"{genre}/{artist}/{album}"` once instead of passing the flag each time. The default remains `{artist}/{album}`, so existing setups are unaffected. New `config.DEFAULT_LAYOUT` constant and `config.get_layout()` helper back this.
+- **Feature: genre falls back to the path.** The library scanner already recovered a missing artist/album from the directory layout; it now does the same for a missing genre (`t.genre or parsed.get("genre")`). With a `{genre}/...` layout, an untagged file is still placed in the right wing.
+- **Companion script: `genre_foldermap.py` v1.0.0.** A new destructive tool in `scripts/` that restructures a flat `Artist/Album` library into `Genre/Artist/Album`, moving each album folder under its dominant genre (read through Lattice's scanner). Dry-run by default, `--apply` to perform, an append-only manifest with `--revert`, and `--only-genre` for a staged rollout. Loose single tracks are wrapped in a `Singles/` folder, and artist-level cover art follows the artist to its genre rather than being orphaned. `mv`-only on one filesystem, so audio bytes and embedded ratings are never rewritten.
+
+## v4.6.1 (2026-05-29)
+
+- **Fixes**: Fixed a flaky `test_plain_when_not_a_tty` test that failed when the suite was run under a pseudoterminal.
+- **Typing**: Added a missing `type: ignore` for `tqdm` in `utils.py` and correctly scoped the ignore for `OggOpus` in `tags.py` to ensure `mypy` runs completely clean.
+
 ## Companion script: `genre_tidy.py` v1.2.0 (2026-05-27)
 
 *(Companion-script change; no package version bump.)*

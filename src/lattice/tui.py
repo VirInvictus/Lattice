@@ -14,6 +14,7 @@ except ImportError:
 from lattice.utils import _reset_terminal
 from lattice.config import (
     VERSION,
+    get_layout,
     DEFAULT_LIBRARY_OUTPUT,
     DEFAULT_AI_LIBRARY_OUTPUT,
     DEFAULT_FLAC_OUTPUT,
@@ -717,7 +718,7 @@ def _library_submenu(root: str) -> None:
                 or DEFAULT_LIBRARY_OUTPUT
             )
             layout = (
-                _prompt_str("Path extraction layout", "{artist}/{album}")
+                _prompt_str("Path extraction layout", get_layout())
                 or "{artist}/{album}"
             )
             show_g = _prompt_str("Include genres? (y/N)", "N").lower().startswith("y")
@@ -736,7 +737,7 @@ def _library_submenu(root: str) -> None:
                 or DEFAULT_AI_LIBRARY_OUTPUT
             )
             layout = (
-                _prompt_str("Path extraction layout", "{artist}/{album}")
+                _prompt_str("Path extraction layout", get_layout())
                 or "{artist}/{album}"
             )
 
@@ -749,7 +750,7 @@ def _library_submenu(root: str) -> None:
         elif result == (0, 2):
             outdir = _prompt_str("Output directory", "wings") or "wings"
             layout = (
-                _prompt_str("Path extraction layout", "{artist}/{album}")
+                _prompt_str("Path extraction layout", get_layout())
                 or "{artist}/{album}"
             )
             show_g = _prompt_str("Include genres? (y/N)", "N").lower().startswith("y")
@@ -771,7 +772,7 @@ def _library_submenu(root: str) -> None:
         elif result == (0, 3):
             outdir = _prompt_str("Output directory", "wings_ai") or "wings_ai"
             layout = (
-                _prompt_str("Path extraction layout", "{artist}/{album}")
+                _prompt_str("Path extraction layout", get_layout())
                 or "{artist}/{album}"
             )
 
@@ -790,7 +791,7 @@ def _library_submenu(root: str) -> None:
                 "Smart rule (e.g. \"rating >= 4 and genre == 'Jazz'\")", ""
             )
             layout = (
-                _prompt_str("Path extraction layout", "{artist}/{album}")
+                _prompt_str("Path extraction layout", get_layout())
                 or "{artist}/{album}"
             )
 

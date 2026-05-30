@@ -22,7 +22,7 @@ A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice h
 - Modes: [AI library export](#ai-library-export) · [Genre wings](#genre-wings) · [Multi-root scanning](#multi-root-scanning) · [Integrity checks](#integrity-checks) · [Library statistics](#library-statistics) · [Cover art extraction](#cover-art-extraction) · [Color output](#color-output) · [Supported formats](#supported-formats)
 - [Architecture](#architecture)
 - [Full help output](#full-help-output)
-- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy)
+- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy) · [`genre_foldermap.py`](#genre_foldermappy)
 - [Credits & Acknowledgements](#credits--acknowledgements) · [Support](#support)
 
 ## Why this exists
@@ -300,7 +300,7 @@ options:
 
 ## Companion scripts
 
-The `scripts/` directory holds four standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
+The `scripts/` directory holds five standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
 
 **Use them with caution.** Have a backup or snapshot first, always preview with `--dry-run`, and read the log before applying. Each writes an append-only timestamped log and is idempotent, so a second run on an already-clean library is a no-op.
 
@@ -310,6 +310,7 @@ The `scripts/` directory holds four standalone maintenance tools. They are **not
 | [`genre_tidy.py`](#genre_tidypy) | Genre tags library-wide (through `retag.py`) | policy map, then apply |
 | [`rerate.py`](#reratepy) | MP3 POPM rating bytes | reconcile DeaDBeeF / foobar |
 | [`cleaner.py`](#cleanerpy) | Folder names and layout (moves, merges, renames) | filesystem |
+| [`genre_foldermap.py`](#genre_foldermappy) | Restructures the tree into Genre/Artist/Album | filesystem |
 
 ### `retag.py`
 
@@ -449,6 +450,44 @@ Same album, no track overlap, scattered between two folders by filesystem accide
 - Re-encode or transcode audio (filesystem operations only)
 - Match albums by tag content (folder name only, by design, so the operation is auditable from the log alone)
 - Touch the source-of-truth import pipeline. If the same fragmentation pattern keeps reappearing, the upstream tagger or downloader needs a curly-quote normalization rule.
+
+### `genre_foldermap.py`
+
+> **Destructive: moves folders.** Dry-run is the **default**; nothing moves until you pass `--apply`. Every move is recorded to a manifest that `--revert` replays in reverse.
+
+> **Tidy your genre tags first.** Placement uses each album's *dominant* genre, so an album whose tracks disagree on genre lands under whichever value wins the count, and the rest are not reflected in the tree. For predictable results, run strict tag hygiene before this script: a single, consistent genre per album is ideal. [`genre_tidy.py`](#genre_tidypy) is built for exactly that (enforce one canonical genre per artist/album), so a sensible order is `genre_tidy.py` first, then `genre_foldermap.py`.
+
+Restructures a flat `Artist/Album/Song` library into `Genre/Artist/Album/Song`, moving each album folder under a top-level genre directory. The genre is the album's dominant embedded genre tag, read through Lattice's scanner (the same aggregation every library/wing mode uses), so placement matches what Lattice reports. Folder names are preserved verbatim; nothing is retagged. It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.
+
+Two directory shapes are handled:
+- `Artist/Album` → `Genre/Artist/Album` (the whole album directory is moved).
+- An artist folder with **loose tracks** sitting directly inside (no album subfolder) → `Genre/Artist/Singles/`. Only the loose files move; any album subfolders are separate albums placed under their own genre.
+
+Artist-level sidecar files (e.g. an `Artist/cover.jpg` beside the album subfolders) follow the artist to its dominant genre, so they are never orphaned in an emptied folder.
+
+**Safety contract.**
+- **`mv` only** on the same filesystem: an atomic rename, so audio bytes (and embedded tags/ratings) are never read or rewritten.
+- **Dry-run by default.** Without `--apply` the tool only prints the plan; `--apply` performs it and writes the manifest.
+- **Reversible.** Every move is appended to a manifest TSV (`src<TAB>dst<TAB>time`); `genre_foldermap.py --revert <manifest>` undoes the run.
+- **Never overwrites.** A destination that already exists is reported and skipped; collisions are flagged before anything moves.
+- **Genre names are folded** to a filesystem-legal form (Windows/NTFS-forbidden characters become spaces), so a stray `:` or `/` in a tag can't break the tree.
+- **Idempotent**: running on an already-organized library is a no-op.
+
+**The Workflow:**
+1. Preview the full plan (writes nothing):
+   ```bash
+   ./scripts/genre_foldermap.py /mnt/SharedData/Music
+   ```
+2. Smoke-test one genre, verify it landed, then do the rest:
+   ```bash
+   ./scripts/genre_foldermap.py /mnt/SharedData/Music --only-genre "Comedy Rock" --apply
+   ./scripts/genre_foldermap.py /mnt/SharedData/Music --apply --log ~/foldermap.manifest.tsv
+   ```
+3. If you change your mind, replay the manifest in reverse:
+   ```bash
+   ./scripts/genre_foldermap.py --revert ~/foldermap.manifest.tsv
+   ```
+4. Point Lattice at the new shape by setting `"layout": "{genre}/{artist}/{album}"` in `~/.config/lattice/config.json` (or pass `--layout`), then regenerate your wings.
 
 ## Credits & Acknowledgements
 

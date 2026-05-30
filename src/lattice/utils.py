@@ -11,7 +11,7 @@ from lattice.config import (
 )
 
 try:
-    from tqdm import tqdm
+    from tqdm import tqdm  # type: ignore[import-untyped]
 
     HAVE_TQDM = True
 except ImportError:

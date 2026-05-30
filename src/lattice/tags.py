@@ -32,8 +32,8 @@ try:
         from mutagen.oggopus import OggOpus
     except ImportError:
 
-        class OggOpus:
-            pass  # type: ignore[no-redef]
+        class OggOpus:  # type: ignore[no-redef]
+            pass
 
     HAVE_MUTAGEN_BASE = True
 except ImportError:

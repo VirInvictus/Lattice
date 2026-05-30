@@ -13,7 +13,10 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
+import lattice.modes.library as library_mod
 from lattice.modes.library import (
     write_music_library_tree,
     write_ai_library,
@@ -165,6 +168,31 @@ class MultiRootTests(unittest.TestCase):
             run_stats(FIXTURE, None, quiet=True),
             run_stats([FIXTURE], None, quiet=True),
         )
+
+
+class ScanGenreFallbackTests(unittest.TestCase):
+    """The scanner derives genre from the path layout when a file carries no
+    genre tag — parity with the existing artist/album path-fallback."""
+
+    class _Pbar:
+        def update(self, n: int = 1) -> None:
+            pass
+
+    def test_genre_from_path_when_tag_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            f = root / "Jazz" / "Miles Davis" / "Kind of Blue" / "01.mp3"
+            f.parent.mkdir(parents=True)
+            f.write_text("x")  # contents irrelevant; get_all_tags is mocked
+            tagless = SimpleNamespace(artist=None, album=None, genre=None)
+            with mock.patch.object(library_mod, "get_all_tags", return_value=tagless):
+                dirs = library_mod._scan_album_dirs(
+                    [str(root)], "{genre}/{artist}/{album}", self._Pbar()
+                )
+            self.assertEqual(len(dirs), 1)
+            self.assertEqual(dirs[0].genre, "Jazz")
+            self.assertEqual(dirs[0].artist, "Miles Davis")
+            self.assertEqual(dirs[0].album, "Kind of Blue")
 
 
 if __name__ == "__main__":

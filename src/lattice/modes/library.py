@@ -62,11 +62,12 @@ def _scan_album_dirs(roots, layout: str, pbar) -> list[_AlbumDir]:
             t = get_all_tags(filepath)
             artist = t.artist or parsed.get("artist", "Unknown Artist")
             album = t.album or parsed.get("album", "Unknown Album")
+            genre = t.genre or parsed.get("genre", "")
 
             artists_count[artist] += 1
             albums_count[album] += 1
-            if t.genre:
-                genres_count[t.genre] += 1
+            if genre:
+                genres_count[genre] += 1
             songs.append((f, filepath, t))
             pbar.update(1)
 
