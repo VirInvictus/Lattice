@@ -10,7 +10,7 @@ Hardening pass from a full code audit.
 - **Fix: bitrate audit default output path** now uses `DEFAULT_BITRATE_AUDIT_OUTPUT` instead of string-rewriting the tag-audit constant.
 - **`retag.py` (v1.1.0)** now writes genres to `.wma` (ASF `WM/Genre`); raw ADTS `.aac` stays unsupported (no tag container) and is documented as such.
 - **`genre_foldermap.py` (v1.1.0)**: artist-level sidecar files (e.g. an `Artist/cover.jpg` beside album subfolders) now follow the artist to its dominant genre instead of being orphaned in an emptied folder; the dry-run now predicts directory pruning instead of reading the unchanged disk.
-- **Cleanups**: a CLI guard rejects passing multiple mode flags at once (was first-match-wins); `rerate.py` shares one read-only scan between preview and apply; lazier POPM rating fallback in `tags.py`; `cleaner.py`/`rerate.py` exception handlers collapsed to a single base class where one subsumed the other.
+- **Cleanups**: `rerate.py` shares one read-only scan between preview and apply; lazier POPM rating fallback in `tags.py`; `cleaner.py`/`rerate.py` exception handlers collapsed to a single base class where one subsumed the other.
 
 ## v4.7.0 (2026-05-30)
 

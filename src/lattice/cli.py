@@ -198,40 +198,11 @@ def main(argv: list[str] | None = None) -> int:
         args = build_parser().parse_args(argv)
 
         # Resolve the path-extraction layout: an explicit --layout wins,
-        # otherwise fall back to the configured/default layout.
+        # otherwise fall back to the configured/default layout. (The mode flags
+        # are a single argparse mutually-exclusive group, so picking more than
+        # one mode is already rejected at parse time.)
         if getattr(args, "layout", None) is None and hasattr(args, "layout"):
             args.layout = get_layout()
-
-        # Exactly one mode runs per invocation. The dispatch below is
-        # first-match-wins, so reject multiple mode flags explicitly rather
-        # than silently ignoring all but the first.
-        _MODE_FLAGS = (
-            "library",
-            "ai_library",
-            "all_wings",
-            "ai_wings",
-            "testFLAC",
-            "testMP3",
-            "testOpus",
-            "testWAV",
-            "testWMA",
-            "extractArt",
-            "missingArt",
-            "auditArtQuality",
-            "duplicates",
-            "auditTags",
-            "auditBitrate",
-            "playlist",
-            "stats",
-        )
-        active_modes = [m for m in _MODE_FLAGS if getattr(args, m, False)]
-        if len(active_modes) > 1:
-            print(
-                "error: pick one mode at a time (got "
-                f"{', '.join('--' + m for m in active_modes)})",
-                file=sys.stderr,
-            )
-            return 2
 
         # Every named root (positional + each --root) is scanned together;
         # de-dupe so the same path passed twice isn't walked twice.
