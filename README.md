@@ -504,6 +504,8 @@ The companion to the [`--auditReplayGain`](#features) audit: where the audit *re
 
 **Requires `rsgain`.** It is not bundled. On Fedora: `sudo dnf install rsgain`. Other platforms: see the [rsgain releases](https://github.com/complexlogic/rsgain/releases).
 
+**Cross-platform.** The script is pure, portable Python (paths via `os.path`, no shell invocation, UTF-8 logging) and runs on Linux, macOS, and Windows. It needs the same three things everywhere: Python 3.14+ (it imports `lattice`), `mutagen`, and `rsgain` on `PATH` (macOS: `brew install rsgain`; Windows: `winget install rsgain`, scoop, or choco). One Windows-only edge: `--target-lufs` passes each track's path to rsgain as an argument, so an unusually large folder (hundreds of files) could exceed Windows' ~32K command-line limit; a normal album is nowhere near it, and the default mode (no `--target-lufs`) is unaffected because it passes only the folder.
+
 **Safety contract.**
 - **Album = one folder.** The whole folder is rescanned together so album gain is correct.
 - **No half-scanned albums.** A partial album is rescanned in full; `--skip-tagged` skips an already-fully-tagged album *as a unit* (skipping only its tagged tracks would compute album gain over a subset and corrupt it).
@@ -525,6 +527,20 @@ The companion to the [`--auditReplayGain`](#features) audit: where the audit *re
    ```bash
    ./scripts/replaygain.py /mnt/SharedData/Music --skip-tagged --threads 4
    ```
+
+**Going louder than the standard (`--target-lufs`).** The default target is the 89 dB / -18 LUFS ReplayGain 2.0 reference, which most players (and the rest of your library) assume. If you want a louder result, `--target-lufs N` sets a different target loudness in LUFS; each 1 LUFS is 1 dB, so a higher target attenuates loud masters less:
+
+| Target | ≈ dB | vs 89 dB |
+|---|---|---|
+| `-18` | 89 dB | standard (default) |
+| `-16` | 91 dB | +2 dB, gentle |
+| `-14` | 93 dB | +4 dB, streaming-loud (Spotify/YouTube range) |
+
+```bash
+./scripts/replaygain.py /mnt/SharedData/Music --target-lufs -14
+```
+
+This switches rsgain to custom mode and writes standard `replaygain_*` tags for every format, Opus included (the `R128` convention is fixed at -23 LUFS and cannot carry a custom target, so it is not used here). Two caveats: keep **one** target across the whole library or albums will not be evenly normalized, and a louder target gives some tracks positive gain (clip protection stays on, but there is less headroom). For a louder result on one device only (e.g. weak laptop speakers), prefer your player's ReplayGain **pre-amp** instead: it is non-destructive, per-device, and leaves the portable 89 dB tags intact.
 
 ## Credits & Acknowledgements
 

@@ -45,7 +45,7 @@ from datetime import datetime
 
 from mutagen import File as MutagenFile
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 RSGAIN = "rsgain"
 
@@ -175,7 +175,10 @@ def scan_album(
             f"{target_lufs:g}",
         ]
         cmd += [os.path.join(dirpath, f) for f in audio_files]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    # errors="replace": rsgain's output is decoded with the locale encoding
+    # (cp1252 on Windows, possibly non-UTF-8 on Linux); a stray undecodable byte
+    # in an error message must not crash the run instead of being logged.
+    proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -253,8 +256,10 @@ def main() -> int:
 
     if not args.dry_run and shutil.which(RSGAIN) is None:
         print(
-            "error: rsgain not found on PATH. Install it "
-            "(Fedora: sudo dnf install rsgain).",
+            "error: rsgain not found on PATH. Install it and re-run "
+            "(Linux: e.g. `dnf install rsgain` or your package manager; "
+            "macOS: `brew install rsgain`; "
+            "Windows: `winget install rsgain`, scoop, or choco).",
             file=sys.stderr,
         )
         return 2
