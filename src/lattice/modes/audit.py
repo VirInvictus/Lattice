@@ -15,13 +15,15 @@ from lattice.utils import (
     as_roots,
     relpath_under,
     read_tags_concurrent,
+    map_concurrent,
 )
-from lattice.tags import HAVE_MUTAGEN_BASE, TagBundle
+from lattice.tags import HAVE_MUTAGEN_BASE, TagBundle, read_replaygain
 from lattice.config import (
     AUDIO_EXTENSIONS,
     DEFAULT_DUPLICATES_OUTPUT,
     DEFAULT_TAG_AUDIT_OUTPUT,
     DEFAULT_BITRATE_AUDIT_OUTPUT,
+    DEFAULT_REPLAYGAIN_AUDIT_OUTPUT,
 )
 
 # =====================================
@@ -607,5 +609,121 @@ def run_bitrate_audit(
     if not quiet:
         print(f"\nAudited {total} files. Found {len(issues)} below {min_kbps} kbps.")
         print(f"Results written to: {out_path}")
+
+    return 0
+
+
+# =====================================
+# Mode: ReplayGain audit
+# =====================================
+
+
+def _rg_bucket(n_track: int, n_album: int, n_total: int) -> str:
+    """Classify an album by its per-track ReplayGain coverage.
+
+    MISSING: no track carries track gain.
+    PARTIAL: some tracks tagged, some bare — the worst case for playback.
+    NO_ALBUM_GAIN: every track has track gain, but not every track has album
+    gain (album-mode replay has nothing to apply).
+    OK: every track has both track and album gain."""
+    if n_track == 0:
+        return "MISSING"
+    if n_track < n_total:
+        return "PARTIAL"
+    if n_album < n_total:
+        return "NO_ALBUM_GAIN"
+    return "OK"
+
+
+def _rg_section(out, title: str, entries: list, roots: list[str], kind: str) -> None:
+    out.write(f"[{title}]    ({len(entries)} album(s))\n")
+    for dirpath, n_track, n_album, n_total in sorted(entries, key=lambda e: e[0]):
+        rel = relpath_under(dirpath, roots)
+        if kind == "missing":
+            detail = f"0/{n_total} tracks tagged"
+        elif kind == "partial":
+            detail = f"{n_track}/{n_total} tracks tagged"
+        elif kind == "noalbum":
+            detail = f"{n_track}/{n_total} track gain, {n_album}/{n_total} album gain"
+        else:
+            detail = f"{n_total} track(s)"
+        out.write(f"  {rel}/    ({detail})\n")
+    out.write("\n")
+
+
+def run_replaygain_audit(
+    root: str | list[str],
+    output: str,
+    *,
+    verbose: bool = False,
+    quiet: bool = False,
+) -> int:
+    """Report per-album ReplayGain coverage. Format-aware: Opus R128 gain tags
+    count as ReplayGain, so an album tagged the R128 way is not mis-flagged as
+    untagged. Fully tagged albums are summarized and listed only with verbose."""
+    if not HAVE_MUTAGEN_BASE:
+        print("ERROR: mutagen is required for ReplayGain auditing.", file=sys.stderr)
+        return 2
+
+    roots = as_roots(root)
+    if not quiet:
+        print(f"Auditing ReplayGain under: {', '.join(roots)}")
+
+    total = count_audio_files(roots)
+    pbar = _make_pbar(total, "Auditing ReplayGain", quiet)
+
+    # (dirpath, n_track_gain, n_album_gain, n_total) per album directory.
+    albums: list[tuple[str, int, int, int]] = []
+    for _src_root, dirpath, _subdirs, files in iter_audio_dirs(roots):
+        audio_files = sorted(f for f in files if is_audio(f))
+        if not audio_files:
+            continue
+        paths = [os.path.join(dirpath, f) for f in audio_files]
+        statuses = map_concurrent(read_replaygain, paths, pbar=pbar)
+        n_track = sum(1 for p in paths if statuses[p].has_track_gain)
+        n_album = sum(1 for p in paths if statuses[p].has_album_gain)
+        albums.append((dirpath, n_track, n_album, len(paths)))
+
+    pbar.close()
+
+    by_bucket: dict[str, list] = defaultdict(list)
+    for dirpath, n_track, n_album, n_total in albums:
+        by_bucket[_rg_bucket(n_track, n_album, n_total)].append(
+            (dirpath, n_track, n_album, n_total)
+        )
+
+    n_ok = len(by_bucket["OK"])
+    n_noalbum = len(by_bucket["NO_ALBUM_GAIN"])
+    n_partial = len(by_bucket["PARTIAL"])
+    n_missing = len(by_bucket["MISSING"])
+
+    out_path = os.path.abspath(output or DEFAULT_REPLAYGAIN_AUDIT_OUTPUT)
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("REPLAYGAIN AUDIT REPORT\n")
+        f.write(f"Root: {', '.join(roots)}\n")
+        f.write(f"Albums: {len(albums)}    Audio files: {total}\n")
+        f.write(
+            f"OK: {n_ok}   No album gain: {n_noalbum}   "
+            f"Partial: {n_partial}   Missing: {n_missing}\n"
+        )
+        f.write("=" * 64 + "\n\n")
+
+        _rg_section(f, "MISSING REPLAYGAIN", by_bucket["MISSING"], roots, "missing")
+        _rg_section(f, "PARTIAL REPLAYGAIN", by_bucket["PARTIAL"], roots, "partial")
+        _rg_section(f, "NO ALBUM GAIN", by_bucket["NO_ALBUM_GAIN"], roots, "noalbum")
+        if verbose:
+            _rg_section(f, "FULLY TAGGED", by_bucket["OK"], roots, "ok")
+
+    if not quiet:
+        print(f"\nAudited {len(albums)} albums ({total} files).")
+        print(f"  Fully tagged:   {n_ok}")
+        print(f"  No album gain:  {n_noalbum}")
+        print(f"  Partial:        {n_partial}")
+        print(f"  Missing:        {n_missing}")
+        print(f"Results written to: {out_path}")
+
+    return 0
 
     return 0

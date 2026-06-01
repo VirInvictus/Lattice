@@ -27,6 +27,7 @@ from lattice.config import (
     DEFAULT_DUPLICATES_OUTPUT,
     DEFAULT_TAG_AUDIT_OUTPUT,
     DEFAULT_BITRATE_AUDIT_OUTPUT,
+    DEFAULT_REPLAYGAIN_AUDIT_OUTPUT,
     DEFAULT_PLAYLIST_OUTPUT,
 )
 
@@ -50,7 +51,12 @@ from lattice.modes.artwork import (
     run_missing_art,
     run_art_quality_audit,
 )
-from lattice.modes.audit import run_duplicates, run_tag_audit, run_bitrate_audit
+from lattice.modes.audit import (
+    run_duplicates,
+    run_tag_audit,
+    run_bitrate_audit,
+    run_replaygain_audit,
+)
 
 # =====================================
 # Curses TUI / Fallbacks
@@ -487,6 +493,7 @@ _MAIN_SECTIONS = [
             "Find duplicate albums",
             "Audit tags",
             "Audit bitrates",
+            "Audit ReplayGain",
         ],
     ),
     (
@@ -996,4 +1003,23 @@ def interactive_menu() -> int:
             min_kbps = _prompt_int("Minimum bitrate floor (kbps)", 192)
             _run_with_capture(
                 "Audit bitrates", run_bitrate_audit, root, output, min_kbps, quiet=False
+            )
+
+        elif result == (3, 3):
+            output = (
+                _prompt_str("Output file", DEFAULT_REPLAYGAIN_AUDIT_OUTPUT)
+                or DEFAULT_REPLAYGAIN_AUDIT_OUTPUT
+            )
+            include_ok = (
+                _prompt_str("List fully-tagged albums? (y/N)", "N")
+                .lower()
+                .startswith("y")
+            )
+            _run_with_capture(
+                "Audit ReplayGain",
+                run_replaygain_audit,
+                root,
+                output,
+                verbose=include_ok,
+                quiet=False,
             )

@@ -2,7 +2,7 @@ import re
 import os
 import json
 
-VERSION = "4.7.1"
+VERSION = "4.8.0"
 
 DEFAULT_LIBRARY_OUTPUT = "music_library.txt"
 DEFAULT_FLAC_OUTPUT = "flac_errors.txt"
@@ -15,6 +15,7 @@ DEFAULT_ART_QUALITY_OUTPUT = "art_quality_audit.txt"
 DEFAULT_DUPLICATES_OUTPUT = "duplicates.txt"
 DEFAULT_TAG_AUDIT_OUTPUT = "tag_audit.txt"
 DEFAULT_BITRATE_AUDIT_OUTPUT = "bitrate_audit.txt"
+DEFAULT_REPLAYGAIN_AUDIT_OUTPUT = "replaygain_audit.txt"
 DEFAULT_AI_LIBRARY_OUTPUT = "library_ai.txt"
 DEFAULT_STATS_OUTPUT = "library_stats.txt"
 DEFAULT_PLAYLIST_OUTPUT = "smart_playlist.m3u"

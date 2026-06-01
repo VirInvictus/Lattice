@@ -1,6 +1,6 @@
 # Lattice Application Specification
 
-**Version:** 4.6.1  
+**Version:** 4.8.0  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT
@@ -93,6 +93,7 @@ supplies default roots; the first-run prompt persists only the single
 | Duplicates | `--duplicates` | Four-section report: exact album dupes (cross-directory), within-folder multi-format pairs, fuzzy similar-name candidates, and track-level cross-library duplicates filtered by duration |
 | Tag audit | `--auditTags` | Report files missing title, artist, track number, or genre |
 | Bitrate audit | `--auditBitrate` | Report files below a configurable bitrate floor |
+| ReplayGain audit | `--auditReplayGain` | Report per-album ReplayGain coverage (missing / partial / no album gain / OK); Opus R128 gain counts as tagged |
 | Smart playlist | `--playlist` | Generate an `.m3u` from a dynamic rule (e.g. `rating >= 4 and genre == 'Jazz'`) |
 
 ---

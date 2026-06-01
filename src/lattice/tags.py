@@ -17,6 +17,45 @@ class TagBundle(NamedTuple):
     bitrate_kbps: int | None = None
 
 
+class ReplayGainStatus(NamedTuple):
+    """Whether a file carries track- and album-level ReplayGain gain tags."""
+
+    has_track_gain: bool = False
+    has_album_gain: bool = False
+
+
+# Opus stores gain as R128_*_GAIN (EBU R128, integer Q7.8) instead of the
+# replaygain_*_gain text tags MP3/FLAC use; both count as ReplayGain here, so an
+# R128-tagged Opus file is not mistaken for untagged. Matched on the key's
+# suffix so format prefixes (ID3 "TXXX:", iTunes "----:com.apple.iTunes:") fold
+# in without per-format branches.
+_RG_TRACK_SUFFIXES = ("replaygain_track_gain", "r128_track_gain")
+_RG_ALBUM_SUFFIXES = ("replaygain_album_gain", "r128_album_gain")
+
+
+def _rg_flags(keys) -> tuple[bool, bool]:
+    kl = [str(k).lower() for k in keys]
+    has_track = any(k.endswith(s) for k in kl for s in _RG_TRACK_SUFFIXES)
+    has_album = any(k.endswith(s) for k in kl for s in _RG_ALBUM_SUFFIXES)
+    return has_track, has_album
+
+
+def read_replaygain(file_path: str) -> ReplayGainStatus:
+    """Report ReplayGain coverage for a file in a single open. An unreadable or
+    untagged file reports no gain, so it surfaces as missing in the audit."""
+    if not HAVE_MUTAGEN_BASE:
+        return ReplayGainStatus()
+    try:
+        audio = MutagenFile(file_path)
+        tags = getattr(audio, "tags", None) if audio is not None else None
+        if not tags:
+            return ReplayGainStatus()
+        has_track, has_album = _rg_flags(tags.keys())
+        return ReplayGainStatus(has_track, has_album)
+    except Exception:
+        return ReplayGainStatus()
+
+
 # --- Mutagen imports ---
 # This module centralizes mutagen imports for the package; `Picture` and
 # `MUTAGEN_MP3` are unused here but re-exported for modes/artwork.py.

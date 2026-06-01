@@ -24,6 +24,7 @@ What's done, what's next, what's deferred. Sequenced for maximum utility as a st
 - [x] **WAV/WMA Integrity**: Extend the unified decode scanner to cover remaining legacy formats.
 - [x] **Art Quality Audit**: Report extracted/folder covers below a resolution threshold (e.g., < 500x500).
 - [x] **Bitrate Floor Audit**: Flag audio files falling below a configurable bitrate floor (e.g., < 192 kbps).
+- [x] **ReplayGain Audit**: Report per-album ReplayGain coverage (missing / partial / no album gain / OK), format-aware so Opus R128 gain counts as tagged. (v4.8.0)
 
 ## Phase 3: Reporting & Generation (Output Layer)
 - [x] **Library Tree Generation**: Build beautiful ASCII/Unicode trees displaying artists, albums, tracks, and ratings.

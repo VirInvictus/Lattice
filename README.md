@@ -50,6 +50,7 @@ Modern music players often hide your library behind proprietary databases. Latti
 | **Duplicate detection** | `--duplicates` | Four-section report: exact album dupes across directories, within-folder multi-format pairs, fuzzy similar-name candidates, and track-level dupes filtered by duration |
 | **Tag audit** | `--auditTags` | Reports files missing title, artist, track number, or genre to text |
 | **Bitrate audit** | `--auditBitrate` | Reports files falling below a minimum bitrate floor |
+| **ReplayGain audit** | `--auditReplayGain` | Reports per-album ReplayGain coverage (missing, partial, no album gain, OK); Opus R128 gain counts as tagged |
 | **Version** | `--version` | Prints version and exits |
 
 Running with no arguments launches an interactive TUI: a full-screen curses interface with arrow-key navigation, color-coded section groups (Library, Integrity, Artwork, Metadata), and a highlighted selection cursor. Menus, parameter prompts, and pause screens all render inside styled Unicode boxes for a consistent experience. Library tree, AI export, and genre wings live in a dedicated submenu. Falls back to typed input if curses is unavailable.
@@ -156,6 +157,9 @@ lattice --duplicates --root ~/Music --root /mnt/usb/Albums --output duplicates.t
 
 # Audit tags for missing metadata
 lattice --auditTags --output tag_audit.txt
+
+# Audit ReplayGain coverage per album (add --verbose to also list fully-tagged albums)
+lattice --auditReplayGain --output replaygain_audit.txt
 ```
 
 ## AI library export
@@ -243,7 +247,8 @@ The filesystem is the source of truth: Lattice walks the tree on every invocatio
 
 ```
 usage: lattice [-h] [--version] [--library | --ai-library | --all-wings | --ai-wings | --testFLAC | --testMP3 | --testOpus | --testWAV |
-               --testWMA | --extractArt | --missingArt | --auditArtQuality | --duplicates | --auditTags | --auditBitrate | --playlist | --stats]
+               --testWMA | --extractArt | --missingArt | --auditArtQuality | --duplicates | --auditTags | --auditBitrate | --auditReplayGain |
+               --playlist | --stats]
                [--root DIR] [--output OUTPUT] [--rule RULE] [--layout LAYOUT] [--min-art-res MIN_ART_RES] [--min-bitrate MIN_BITRATE]
                [--workers WORKERS] [--prefer {flac,ffmpeg}] [--quiet] [--genres] [--paths] [--dry-run] [--only-errors | --no-only-errors]
                [--ffmpeg FFMPEG] [--verbose]
@@ -272,6 +277,7 @@ options:
   --duplicates          Detect duplicates: exact albums, within-folder multi-format, similar names, track-level
   --auditTags           Report files with incomplete tags
   --auditBitrate        Report files below a certain bitrate floor
+  --auditReplayGain     Report per-album ReplayGain coverage (missing, partial, no album gain)
   --playlist            Generate a smart .m3u playlist based on a rule
   --stats               Library-wide statistics summary
   --root DIR            Root directory; repeat --root to scan several libraries
@@ -300,7 +306,7 @@ options:
 
 ## Companion scripts
 
-The `scripts/` directory holds five standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
+The `scripts/` directory holds six standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
 
 **Use them with caution.** Have a backup or snapshot first, always preview with `--dry-run`, and read the log before applying. Each writes an append-only timestamped log and is idempotent, so a second run on an already-clean library is a no-op.
 
@@ -311,6 +317,7 @@ The `scripts/` directory holds five standalone maintenance tools. They are **not
 | [`rerate.py`](#reratepy) | MP3 POPM rating bytes | reconcile DeaDBeeF / foobar |
 | [`cleaner.py`](#cleanerpy) | Folder names and layout (moves, merges, renames) | filesystem |
 | [`genre_foldermap.py`](#genre_foldermappy) | Restructures the tree into Genre/Artist/Album | filesystem |
+| [`replaygain.py`](#replaygainpy) | Writes ReplayGain 2.0 gain/peak tags (via `rsgain`) | album-by-album |
 
 ### `retag.py`
 
@@ -488,6 +495,36 @@ Artist-level sidecar files (e.g. an `Artist/cover.jpg` beside the album subfolde
    ./scripts/genre_foldermap.py --revert ~/foldermap.manifest.tsv
    ```
 4. Point Lattice at the new shape by setting `"layout": "{genre}/{artist}/{album}"` in `~/.config/lattice/config.json` (or pass `--layout`), then regenerate your wings.
+
+### `replaygain.py`
+
+> **Destructive: writes ReplayGain tags in place.** Preview with `--dry-run`; a real run prints the worklist and asks for confirmation before writing (skip with `--yes`). Every album scanned, and the exact values written, are logged.
+
+The companion to the [`--auditReplayGain`](#features) audit: where the audit *reports* which albums lack ReplayGain, `replaygain.py` *writes* it. It wraps [`rsgain`](https://github.com/complexlogic/rsgain) (libebur128, ReplayGain 2.0, the `-18 LUFS` / `89 dB` reference foobar2000 uses) to do what foobar's "Scan selection as album" does: compute one album gain plus album peak per album folder and a per-track gain plus peak, then write them into the files. rsgain leaves the audio stream untouched; only metadata changes. It imports `lattice` for the format-aware ReplayGain reader, so it needs the package importable (installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`).
+
+**Requires `rsgain`.** It is not bundled. On Fedora: `sudo dnf install rsgain`. Other platforms: see the [rsgain releases](https://github.com/complexlogic/rsgain/releases).
+
+**Safety contract.**
+- **Album = one folder.** The whole folder is rescanned together so album gain is correct.
+- **No half-scanned albums.** A partial album is rescanned in full; `--skip-tagged` skips an already-fully-tagged album *as a unit* (skipping only its tagged tracks would compute album gain over a subset and corrupt it).
+- **`--dry-run`** lists every album and its current coverage without invoking rsgain at all.
+- **Confirmation before writing.** A real run shows the worklist and prompts, unless `--yes` is passed or stdin is not a TTY.
+- **Read-back logging.** After each album, the tags just written are read back and logged, so the log is a record of exactly what landed on disk.
+- **Format-aware** through rsgain: MP3 (`TXXX`), FLAC/Ogg (Vorbis), Opus (the `R128_*_GAIN` convention), M4A, WMA, WAV.
+
+**The Workflow:**
+1. See what is missing (read-only, from the package):
+   ```bash
+   lattice --auditReplayGain --root /mnt/SharedData/Music --output rg_audit.txt
+   ```
+2. Preview the scan plan (writes nothing):
+   ```bash
+   ./scripts/replaygain.py /mnt/SharedData/Music --dry-run
+   ```
+3. Apply, skipping already-tagged albums and scanning 4 albums in parallel:
+   ```bash
+   ./scripts/replaygain.py /mnt/SharedData/Music --skip-tagged --threads 4
+   ```
 
 ## Credits & Acknowledgements
 

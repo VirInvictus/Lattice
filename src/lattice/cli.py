@@ -17,6 +17,7 @@ from lattice.config import (
     DEFAULT_DUPLICATES_OUTPUT,
     DEFAULT_TAG_AUDIT_OUTPUT,
     DEFAULT_BITRATE_AUDIT_OUTPUT,
+    DEFAULT_REPLAYGAIN_AUDIT_OUTPUT,
     DEFAULT_PLAYLIST_OUTPUT,
 )
 
@@ -39,7 +40,12 @@ from lattice.modes.artwork import (
     run_missing_art,
     run_art_quality_audit,
 )
-from lattice.modes.audit import run_duplicates, run_tag_audit, run_bitrate_audit
+from lattice.modes.audit import (
+    run_duplicates,
+    run_tag_audit,
+    run_bitrate_audit,
+    run_replaygain_audit,
+)
 from lattice.modes.stats import run_stats
 from lattice.tui import interactive_menu
 
@@ -104,6 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--auditBitrate",
         action="store_true",
         help="Report files below a certain bitrate floor",
+    )
+    group.add_argument(
+        "--auditReplayGain",
+        action="store_true",
+        help="Report per-album ReplayGain coverage (missing, partial, no album gain)",
     )
     group.add_argument(
         "--playlist",
@@ -348,6 +359,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.auditBitrate:
             output = args.output or DEFAULT_BITRATE_AUDIT_OUTPUT
             return run_bitrate_audit(root, output, args.min_bitrate, quiet=args.quiet)
+
+        if args.auditReplayGain:
+            output = args.output or DEFAULT_REPLAYGAIN_AUDIT_OUTPUT
+            return run_replaygain_audit(
+                root, output, verbose=args.verbose, quiet=args.quiet
+            )
 
         if args.playlist:
             output = args.output or DEFAULT_PLAYLIST_OUTPUT

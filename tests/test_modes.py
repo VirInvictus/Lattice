@@ -23,7 +23,12 @@ from lattice.modes.library import (
     write_all_wings,
 )
 from lattice.modes.stats import run_stats
-from lattice.modes.audit import run_duplicates, run_tag_audit, run_bitrate_audit
+from lattice.modes.audit import (
+    run_duplicates,
+    run_tag_audit,
+    run_bitrate_audit,
+    run_replaygain_audit,
+)
 from lattice.modes.artwork import run_missing_art
 from lattice.modes.playlists import generate_playlist
 
@@ -106,6 +111,67 @@ class AuditTests(unittest.TestCase):
     def test_bitrate_audit_flags_low_bitrate_file(self):
         text = _write_to_temp(lambda o: run_bitrate_audit(FIXTURE, o, 192, quiet=True))
         self.assertIn("The Martyr", text)
+
+
+class ReplayGainAuditTests(unittest.TestCase):
+    """Build a tmp library of FLAC albums with hand-written ReplayGain tags, one
+    per coverage bucket, and assert the audit sorts them correctly. Opus R128 is
+    covered by the _rg_flags unit tests; here we exercise the walk + classify +
+    report path on real files."""
+
+    def _album(self, root: Path, name: str, *, track: bool, album: bool) -> None:
+        from mutagen.flac import FLAC
+
+        src = Path(FIXTURE) / "Aphex Twin" / "Selected Ambient Works"
+        dst = root / name
+        dst.mkdir(parents=True)
+        for fname in ("01 - Xtal.flac", "02 - Tha.flac"):
+            target = dst / fname
+            shutil.copy(src / fname, target)
+            f = FLAC(target)
+            for k in ("replaygain_track_gain", "replaygain_album_gain"):
+                f.pop(k, None)
+            if track:
+                f["replaygain_track_gain"] = "-6.66 dB"
+            if album:
+                f["replaygain_album_gain"] = "-7.00 dB"
+            f.save()
+
+    def test_buckets(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._album(root, "Fully Tagged", track=True, album=True)
+            self._album(root, "No Album Gain", track=True, album=False)
+            self._album(root, "Missing", track=False, album=False)
+            # Partial: one track fully tagged, one bare.
+            partial = root / "Partial"
+            partial.mkdir()
+            src = Path(FIXTURE) / "Aphex Twin" / "Selected Ambient Works"
+            from mutagen.flac import FLAC
+
+            for fname, tag in (("01 - Xtal.flac", True), ("02 - Tha.flac", False)):
+                target = partial / fname
+                shutil.copy(src / fname, target)
+                f = FLAC(target)
+                f.pop("replaygain_track_gain", None)
+                f.pop("replaygain_album_gain", None)
+                if tag:
+                    f["replaygain_track_gain"] = "-6.66 dB"
+                    f["replaygain_album_gain"] = "-7.00 dB"
+                f.save()
+
+            text = _write_to_temp(
+                lambda o: run_replaygain_audit(str(root), o, verbose=True, quiet=True)
+            )
+
+        self.assertIn("OK: 1   No album gain: 1   Partial: 1   Missing: 1", text)
+        missing = text[text.find("[MISSING") : text.find("[PARTIAL")]
+        self.assertIn("Missing/", missing)
+        partial_sec = text[text.find("[PARTIAL") : text.find("[NO ALBUM")]
+        self.assertIn("Partial/    (1/2 tracks tagged)", partial_sec)
+        noalbum = text[text.find("[NO ALBUM") : text.find("[FULLY")]
+        self.assertIn("No Album Gain/    (2/2 track gain, 0/2 album gain)", noalbum)
+        self.assertIn("Fully Tagged/", text[text.find("[FULLY") :])
 
 
 class MissingArtTests(unittest.TestCase):

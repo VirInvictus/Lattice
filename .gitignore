@@ -21,3 +21,6 @@ Thumbs.db
 
 # Session scratch (handoff note, not part of the project)
 pick-it-up.md
+
+# Local test album copies for the replaygain.py companion (real audio, never committed)
+.testing/

@@ -6,6 +6,7 @@ from lattice.modes.audit import (
     _fmt_size,
     _fmt_duration,
     _cluster_by_duration,
+    _rg_bucket,
     _DirInfo,
 )
 from lattice.tags import TagBundle
@@ -110,6 +111,26 @@ class ClusterByDurationTests(unittest.TestCase):
         entries = [_entry("/A", None), _entry("/B", None)]
         clusters = _cluster_by_duration(entries, delta=2.0)
         self.assertEqual(len(clusters), 1)
+
+
+class ReplayGainBucketTests(unittest.TestCase):
+    def test_missing_when_no_track_gain(self):
+        self.assertEqual(_rg_bucket(0, 0, 5), "MISSING")
+
+    def test_partial_when_some_tracks_bare(self):
+        self.assertEqual(_rg_bucket(3, 0, 5), "PARTIAL")
+
+    def test_no_album_gain_when_all_track_but_no_album(self):
+        self.assertEqual(_rg_bucket(5, 0, 5), "NO_ALBUM_GAIN")
+
+    def test_no_album_gain_when_album_incomplete(self):
+        self.assertEqual(_rg_bucket(5, 3, 5), "NO_ALBUM_GAIN")
+
+    def test_ok_when_fully_tagged(self):
+        self.assertEqual(_rg_bucket(5, 5, 5), "OK")
+
+    def test_single_track_fully_tagged_is_ok(self):
+        self.assertEqual(_rg_bucket(1, 1, 1), "OK")
 
 
 if __name__ == "__main__":
