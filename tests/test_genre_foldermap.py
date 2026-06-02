@@ -37,10 +37,24 @@ class ClassifyTests(unittest.TestCase):
     def setUp(self):
         self.root = Path("/m")
 
-    def test_album_uses_last_two_components(self):
+    def test_depth_two_is_a_stray_album(self):
         self.assertEqual(
             gf.classify(Path("/m/Aesop Rock/Skelethon"), self.root),
             ("album", "Aesop Rock", "Skelethon"),
+        )
+
+    def test_depth_three_is_already_organized(self):
+        self.assertEqual(
+            gf.classify(Path("/m/Abstract Hip Hop/Aesop Rock/Skelethon"), self.root),
+            ("organized", "Abstract Hip Hop", "Aesop Rock", "Skelethon"),
+        )
+
+    def test_deeper_than_genre_artist_album_is_flagged(self):
+        # The wrong-root case: pointing at the parent makes every album a level
+        # too deep. It must be flagged, not collapsed to its last two parts.
+        self.assertEqual(
+            gf.classify(Path("/m/Music/Genre/Artist/Album"), self.root),
+            ("toodeep", 4),
         )
 
     def test_loose_artist_dir(self):
@@ -233,6 +247,92 @@ class BuildPlanTests(unittest.TestCase):
         moves, issues, _ = gf.build_plan([rec], self.root)
         self.assertEqual(moves, [])
         self.assertTrue(any("DEST EXISTS" in m for m in issues))
+
+    def test_stray_with_known_genre_moves_unknown_is_gated(self):
+        # An organized album seeds the genre vocabulary ({"Hip Hop"}). A stray
+        # tagged with that genre is filed; a stray tagged with a genre the
+        # library doesn't use is flagged, never given a new top-level folder.
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "a",
+                "Outkast/Stankonia/01.mp3": "b",
+                "Weird Al/Polka Party/01.mp3": "c",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop"),
+            FakeAD(str(self.root / "Outkast/Stankonia"), "Hip Hop"),
+            FakeAD(str(self.root / "Weird Al/Polka Party"), "Polka"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root)
+        dsts = {m.dst for m in moves}
+        self.assertEqual(dsts, {self.root / "Hip Hop/Outkast/Stankonia"})
+        self.assertTrue(any("UNKNOWN GENRE" in m and "Polka" in m for m in issues))
+
+    def test_allow_new_genre_bypasses_gating(self):
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "a",
+                "Weird Al/Polka Party/01.mp3": "c",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop"),
+            FakeAD(str(self.root / "Weird Al/Polka Party"), "Polka"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root, allow_new_genre=True)
+        self.assertIn(self.root / "Polka/Weird Al/Polka Party", {m.dst for m in moves})
+        self.assertFalse(any("UNKNOWN GENRE" in m for m in issues))
+
+    def test_greenfield_library_trusts_tags(self):
+        # No genre folders yet: gating is off, every stray is filed by its tag.
+        _make_tree(
+            self.root,
+            {"A/Alb1/01.opus": "x", "B/Alb2/01.opus": "y"},
+        )
+        recs = [
+            FakeAD(str(self.root / "A/Alb1"), "Trap"),
+            FakeAD(str(self.root / "B/Alb2"), "Polka"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root)
+        self.assertEqual(len(moves), 2)
+        self.assertEqual(issues, [])
+
+    def test_organized_album_in_place_is_skipped(self):
+        _make_tree(self.root, {"Hip Hop/Nas/Illmatic/01.mp3": "a"})
+        rec = FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop")
+        moves, issues, _ = gf.build_plan([rec], self.root)
+        self.assertEqual(moves, [])
+        self.assertEqual(issues, [])
+
+    def test_organized_album_mistagged_is_noted_not_moved(self):
+        # Filed under "Blues" but tags say "Jazz" (itself an existing folder):
+        # reported as a NOTE and left in place, never silently re-filed.
+        _make_tree(
+            self.root,
+            {
+                "Blues/B.B. King/Live in Cook County Jail/01.mp3": "a",
+                "Jazz/Miles Davis/Kind of Blue/01.mp3": "b",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Blues/B.B. King/Live in Cook County Jail"), "Jazz"),
+            FakeAD(str(self.root / "Jazz/Miles Davis/Kind of Blue"), "Jazz"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root)
+        self.assertEqual(moves, [])
+        self.assertTrue(
+            any("NOTE" in m and "Blues" in m and "Jazz" in m for m in issues)
+        )
+
+    def test_too_deep_is_flagged_in_plan(self):
+        _make_tree(self.root, {"Music/Genre/Artist/Album/01.mp3": "a"})
+        rec = FakeAD(str(self.root / "Music/Genre/Artist/Album"), "Genre")
+        moves, issues, _ = gf.build_plan([rec], self.root)
+        self.assertEqual(moves, [])
+        self.assertTrue(any("TOO DEEP" in m for m in issues))
 
 
 class ApplyRevertRoundTripTests(unittest.TestCase):

@@ -1,5 +1,14 @@
 # Lattice Patch Notes
 
+## genre_foldermap.py v1.2.0 (2026-06-01)
+
+Companion-script fix and hardening (no package change):
+
+- **Wrong-root guard.** `classify` collapsed any directory to its last two path components regardless of depth, and its docstring's promise to "flag" deeper directories was never implemented. Pointing the tool at the parent of an already-organized `Genre/Artist/Album` library (e.g. `/mnt/SharedData` instead of `/mnt/SharedData/Music`) therefore read every album one level too high, discarded the genre level, and planned to move and prune the entire tree. A directory deeper than `Genre/Artist/Album` is now flagged `TOO DEEP` and skipped. On a real ~1810-album library the parent-root dry-run went from 1820 planned moves plus 930 prunes to zero moves and a wall of `TOO DEEP` flags.
+- **Placement gated by the library's existing genres.** The tool now learns the genre vocabulary from the folders that already hold a `Genre/Artist/Album` tree and only files a stray into one of those. A stray whose dominant tag genre isn't already in use is flagged `UNKNOWN GENRE` and skipped instead of spawning a new top-level folder from a typo or junk tag; `--allow-new-genre` lifts the gate. A flat library with no genre folders yet has an empty vocabulary, so the gate is off and the original `Artist/Album` → `Genre/Artist/Album` conversion is unchanged. The same gate is what makes a wrong-root run inert: nothing matches the (absent) vocabulary.
+- **Organized albums are never silently re-filed.** An album already at `Genre/Artist/Album` whose folder genre disagrees with its tags is reported as a `NOTE` and left in place, rather than being moved across genre folders without warning.
+- Tested by `tests/test_genre_foldermap.py` (depth classification, gating known/unknown/greenfield/`--allow-new-genre`, in-place skip and mismatch NOTE, the too-deep flag).
+
 ## replaygain.py v1.1.1 (2026-06-01)
 
 Companion-script hardening (no package change):

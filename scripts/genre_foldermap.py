@@ -23,12 +23,26 @@ Two directory shapes are handled:
                   -> Genre/Artist/Singles/     (only the loose files move; any
                      album subfolders are separate albums with their own genre)
 
+Albums already at Genre/Artist/Album are left in place; if their folder genre
+disagrees with their tags, that is reported as a NOTE, never silently re-filed.
+
+Placement is gated by the library's own genre vocabulary: the set of top-level
+folders that already hold a Genre/Artist/Album tree. A stray whose tag genre
+isn't already one of those is flagged, not filed into a brand-new top-level
+folder (pass --allow-new-genre to permit creating one). On a flat library with
+no genre folders yet, the set is empty and gating is off, so tags are trusted;
+this is the original flat -> genre conversion. The same gate doubles as a
+wrong-root guard: aim the tool one level too high and almost nothing matches the
+(absent) vocabulary, so it flags everything instead of relocating the tree.
+
 Safety:
   - Dry-run is the DEFAULT. --apply is required to touch the filesystem.
   - Every performed move is appended to a manifest TSV (src<TAB>dst<TAB>time),
     which --revert replays in reverse. A run is therefore reversible.
   - A destination that already exists is never overwritten; that move is
     reported and skipped. Empty source artist folders are pruned afterward.
+  - A directory deeper than Genre/Artist/Album is flagged TOO DEEP and skipped
+    rather than guessed at, so a wrong root can't silently move everything.
 
 Lives in scripts/ (outside the lattice package) because it moves files, which
 the package's read-only contract (spec.md) forbids. It reads through lattice;
@@ -48,7 +62,7 @@ from collections import Counter, namedtuple
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # Path-component characters forbidden on Windows/NTFS/exFAT (the library often
 # lives on a shared NTFS volume), plus the trailing "." / " " rule. Genre names
@@ -74,12 +88,19 @@ def sanitize_component(name: str) -> str:
 
 def classify(path: Path, root: Path) -> tuple:
     """Decide how a scanned audio directory maps into the new tree, from its
-    position under root alone. Returns one of:
-        ("album", artist, album)  - an Artist/Album folder (move the whole dir)
-        ("loose", artist)         - an Artist folder with loose tracks
-        ("skip", reason)          - anything we won't place (e.g. the root)
-    The on-disk library is strictly one or two levels deep; a deeper directory
-    is mapped by its last two components and flagged so it surfaces in review."""
+    depth under root. Returns one of:
+        ("album", artist, album)             - Artist/Album (depth 2): a stray
+                                               flat album to file under a genre
+        ("organized", genre, artist, album)  - Genre/Artist/Album (depth 3):
+                                               already in the genre tree
+        ("loose", artist)                    - Artist/ with loose tracks (depth 1)
+        ("toodeep", depth)                   - deeper than Genre/Artist/Album:
+                                               not placed (usually the wrong root)
+        ("skip", reason)                     - anything we won't place (e.g. root)
+    The intended library is Genre/Artist/Album; a flat Artist/Album library is
+    the input this tool converts. Anything deeper is flagged rather than guessed
+    at, so pointing the tool one level too high can't silently relocate the
+    whole tree."""
     try:
         rel = path.relative_to(root)
     except ValueError:
@@ -89,14 +110,24 @@ def classify(path: Path, root: Path) -> tuple:
         return ("skip", "loose audio at library root")
     if len(parts) == 1:
         return ("loose", parts[0])
-    return ("album", parts[-2], parts[-1])
+    if len(parts) == 2:
+        return ("album", parts[0], parts[1])
+    if len(parts) == 3:
+        return ("organized", parts[0], parts[1], parts[2])
+    return ("toodeep", len(parts))
 
 
-def build_plan(records, root: Path, only_genres=None):
+def build_plan(records, root: Path, only_genres=None, allow_new_genre=False):
     """Turn scanner records (each with `.path` and `.genre`) into a list of
     Moves, plus a list of human-readable issues and the set of source artist
     directories that may be left empty. `only_genres` (a set of genre strings)
     restricts the plan to those genres, supporting a staged rollout.
+
+    Placement is gated by the library's existing genre vocabulary: the set of
+    top-level folders that already hold a Genre/Artist/Album tree. A stray whose
+    tag genre isn't already one of those is flagged, not filed into a new
+    top-level folder, unless `allow_new_genre` is set. When no genre folders
+    exist yet (a flat library) the set is empty and gating is off.
 
     Loose-track directories are read from disk here to enumerate the individual
     files to move; album directories move as a single unit. Artist-level
@@ -125,9 +156,29 @@ def build_plan(records, root: Path, only_genres=None):
         seen_dst[dst] = src
         moves.append(Move(src, dst, kind))
 
-    for rec in sorted(records, key=lambda r: r.path):
-        path = Path(rec.path)
-        genre = (rec.genre or "").strip()
+    # First pass: classify every record once and learn the library's existing
+    # genre vocabulary from the albums already at Genre/Artist/Album depth. That
+    # derived set gates placement below; an empty set (a flat library) disables
+    # gating so the original flat -> genre conversion still works.
+    classified = [
+        (Path(rec.path), (rec.genre or "").strip(), classify(Path(rec.path), root))
+        for rec in sorted(records, key=lambda r: r.path)
+    ]
+    allowed_genres = {info[1] for _p, _g, info in classified if info[0] == "organized"}
+    gating = bool(allowed_genres) and not allow_new_genre
+
+    for path, genre, info in classified:
+        kind = info[0]
+        if kind == "skip":
+            issues.append(f"SKIP ({info[1]}): {path}")
+            continue
+        if kind == "toodeep":
+            issues.append(
+                f"TOO DEEP (skipped): {path}\n"
+                f"    {info[1]} levels under root; expected Genre/Artist/Album. "
+                "Wrong root?"
+            )
+            continue
         if not genre:
             issues.append(f"NO GENRE (skipped): {path}")
             continue
@@ -135,12 +186,27 @@ def build_plan(records, root: Path, only_genres=None):
             continue
         safe_genre = sanitize_component(genre)
 
-        kind, *rest = classify(path, root)
-        if kind == "skip":
-            issues.append(f"SKIP ({rest[0]}): {path}")
+        if kind == "organized":
+            current_genre = info[1]
+            if safe_genre == current_genre:
+                continue  # already filed under its genre
+            issues.append(
+                f"NOTE: filed under {current_genre!r} but tags say {genre!r} "
+                f"(left in place): {path}"
+            )
             continue
+
+        # A genre the library doesn't already use: refuse to mint a new
+        # top-level folder unless explicitly allowed.
+        if gating and safe_genre not in allowed_genres:
+            issues.append(
+                f"UNKNOWN GENRE {genre!r} (skipped): {path}\n"
+                "    not an existing library genre; pass --allow-new-genre to create it."
+            )
+            continue
+
         if kind == "album":
-            artist, album = rest
+            artist, album = info[1], info[2]
             dst = root / safe_genre / artist / album
             if dst == path:
                 continue  # already in place
@@ -148,7 +214,7 @@ def build_plan(records, root: Path, only_genres=None):
             source_artist_dirs.add(path.parent)
             album_artist_genres.setdefault(path.parent, Counter())[genre] += 1
         else:  # loose
-            artist = rest[0]
+            artist = info[1]
             dst_dir = root / safe_genre / artist / SINGLES_DIR
             loose_files = sorted(p for p in _safe_iterdir(path) if p.is_file())
             for f in loose_files:
@@ -401,7 +467,9 @@ def cmd_map(args) -> int:
 
     only = set(args.only_genre) if args.only_genre else None
     records = scan_album_dirs(directory, args.quiet)
-    moves, issues, source_dirs = build_plan(records, directory, only)
+    moves, issues, source_dirs = build_plan(
+        records, directory, only, args.allow_new_genre
+    )
 
     if issues:
         print(f"--- {len(issues)} issue(s) flagged for review ---")
@@ -456,6 +524,13 @@ def main() -> int:
         help="Restrict to this genre (repeatable). Useful for a staged rollout. "
         "Note: an artist-level sidecar (e.g. cover.jpg) follows its artist's "
         "dominant genre, which may not be one you selected.",
+    )
+    parser.add_argument(
+        "--allow-new-genre",
+        action="store_true",
+        help="Permit creating a new top-level genre folder when an album's genre "
+        "isn't one the library already uses. Without it, such albums are flagged "
+        "and skipped; the library's existing genre folders gate placement.",
     )
     parser.add_argument(
         "--log",
