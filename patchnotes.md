@@ -1,5 +1,16 @@
 # Lattice Patch Notes
 
+## v4.8.1 (2026-06-10)
+
+Bugfix release from a full code review; no new features.
+
+- **Fix: the no-curses fallback menu dispatched the wrong modes.** The typed-input menu shown when curses is unavailable (or stdin is not a TTY) had a hand-maintained key map that drifted as modes were added: "6" was labelled "Test WAV files" but ran Extract cover art (which writes `cover.jpg` files if the dry-run prompt is declined), "7"–"9" were each shifted one mode group over, "10"–"13" were rejected as invalid, and the WAV/WMA tests, art-quality audit, bitrate audit, and ReplayGain audit were unreachable by number. The fallback listing and key map are now both generated from the same `_MAIN_SECTIONS`/`_LIB_SECTIONS` data the arrow-key menu renders, so they cannot drift again, and new word aliases (`wav`, `wma`, `quality`, `bitrate`, `rg`/`replaygain`) cover the previously unreachable modes. The curses menu itself was never affected. Pinned by the new `tests/test_tui.py`.
+- **Fix: smart-playlist AND/OR no longer rewrites string literals.** The SQL-style convenience was a plain substring replace, so `genre == 'Drum AND Bass'` was silently rewritten to compare against `'Drum and Bass'` and could never match. The fold is now word-bounded and applied only outside quoted segments; as a side effect, `(rating >= 4)AND(...)` without padding spaces now also works.
+- **Fix: art-quality audit no longer truncates folder covers.** Folder art was read 8 KB at a time "for the header", but a large EXIF/ICC block can push the JPEG size marker past any fixed prefix; such covers parsed as unreadable and were silently skipped instead of flagged. The whole file is read now (embedded art always was).
+- **Fix: FLAC report header now includes the Metadata tier count**, matching the other integrity reports, so the per-tier counts always sum to Scanned (previously METADATA-tier files, mostly from the ffmpeg fallback path, were invisible in the report).
+- **Hardening/cleanup:** `_parse_track_number` tolerates a malformed MP4 `trkn` atom containing `None` (previously an uncaught `TypeError` aborted the rest of that file's tag parse); the rule evaluator's comparison walk uses `zip(strict=True)`; an unreachable duplicated `return` in `run_replaygain_audit` was removed; `.gitignore` now covers the default report outputs so runs from the repo root stay out of `git status`.
+- **Known limitation (deferred):** the curses prompt accepts ASCII-only typed input, so a non-ASCII path or output name cannot be typed into the TUI (the CLI and the prompt defaults are unaffected).
+
 ## genre_foldermap.py v1.2.0 (2026-06-01)
 
 Companion-script fix and hardening (no package change):

@@ -233,6 +233,7 @@ def run_flac_mode(
         f.write(f"Root: {', '.join(roots)}\n")
         f.write(
             f"Scanned: {total}  OK: {counts[TIER_OK]}  "
+            f"Metadata: {counts[TIER_METADATA]}  "
             f"Suspect: {counts[TIER_SUSPECT]}  Corrupt: {counts[TIER_CORRUPT]}\n"
         )
         f.write("=" * 60 + "\n\n")

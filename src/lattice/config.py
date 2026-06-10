@@ -2,7 +2,7 @@ import re
 import os
 import json
 
-VERSION = "4.8.0"
+VERSION = "4.8.1"
 
 DEFAULT_LIBRARY_OUTPUT = "music_library.txt"
 DEFAULT_FLAC_OUTPUT = "flac_errors.txt"

@@ -216,7 +216,7 @@ def _tui_select(
                 _safe_addstr(stdscr, y, bx + BOX_W - 1, "\u2551", fa)
                 y += 1
 
-            for ii, label in enumerate(items):
+            for _ii, label in enumerate(items):
                 is_sel = idx == cur
                 if is_sel:
                     text = f" \u25ba {label}"
@@ -402,57 +402,6 @@ def _tui_pause() -> None:
             pass
 
 
-_MAIN_FALLBACK_MAP: dict[str, tuple | None] = {
-    "1": (0, 0),
-    "l": (0, 0),
-    "lib": (0, 0),
-    "library": (0, 0),
-    "2": (0, 1),
-    "stats": (0, 1),
-    "3": (1, 0),
-    "flac": (1, 0),
-    "4": (1, 1),
-    "mp3": (1, 1),
-    "5": (1, 2),
-    "opus": (1, 2),
-    "6": (2, 0),
-    "art": (2, 0),
-    "extract": (2, 0),
-    "7": (2, 1),
-    "missing": (2, 1),
-    "8": (3, 0),
-    "dup": (3, 0),
-    "dupes": (3, 0),
-    "9": (3, 1),
-    "audit": (3, 1),
-    "tags": (3, 1),
-    "s": (4, 0),
-    "settings": (4, 0),
-    "config": (4, 0),
-    "c": (4, 0),
-    "q": None,
-    "quit": None,
-    "exit": None,
-}
-
-_LIB_FALLBACK_MAP: dict[str, tuple | None] = {
-    "1": (0, 0),
-    "tree": (0, 0),
-    "lib": (0, 0),
-    "2": (0, 1),
-    "ai": (0, 1),
-    "3": (0, 2),
-    "wings": (0, 2),
-    "4": (0, 3),
-    "ai-wings": (0, 3),
-    "5": (0, 4),
-    "playlist": (0, 4),
-    "b": None,
-    "back": None,
-    "": None,
-}
-
-
 def _fallback_input(prompt: str, mapping: dict) -> Any:
     try:
         ch = input(prompt).strip().lower()
@@ -519,44 +468,93 @@ _LIB_SECTIONS = [
     ("", ["Back to main menu"]),
 ]
 
+# Items that get a letter key instead of a number in the fallback menu.
+# Matched on the cleaned label so the mapping follows the sections.
+_LETTER_KEYS = {
+    "Quit": ("q", None),
+    "Back to main menu": ("b", None),
+    "Change library root": ("s", "self"),  # "self": maps to its own (si, ii)
+}
+
+_MAIN_ALIASES: dict[str, tuple | None] = {
+    "l": (0, 0),
+    "lib": (0, 0),
+    "library": (0, 0),
+    "stats": (0, 1),
+    "flac": (1, 0),
+    "mp3": (1, 1),
+    "opus": (1, 2),
+    "wav": (1, 3),
+    "wma": (1, 4),
+    "art": (2, 0),
+    "extract": (2, 0),
+    "missing": (2, 1),
+    "quality": (2, 2),
+    "dup": (3, 0),
+    "dupes": (3, 0),
+    "tags": (3, 1),
+    "audit": (3, 1),
+    "bitrate": (3, 2),
+    "rg": (3, 3),
+    "replaygain": (3, 3),
+    "settings": (4, 0),
+    "config": (4, 0),
+    "c": (4, 0),
+    "quit": None,
+    "exit": None,
+}
+
+_LIB_ALIASES: dict[str, tuple | None] = {
+    "tree": (0, 0),
+    "lib": (0, 0),
+    "ai": (0, 1),
+    "wings": (0, 2),
+    "ai-wings": (0, 3),
+    "playlist": (0, 4),
+    "back": None,
+    "": None,
+}
+
+
+def _build_fallback(sections: list, extra_aliases: dict[str, tuple | None]):
+    """Derive the no-curses fallback menu rows and input map from the same
+    sections the curses menu renders, so the two can never drift apart (the
+    numbered map used to be maintained by hand and went stale)."""
+    mapping: dict[str, tuple | None] = dict(extra_aliases)
+    display: list[tuple[str, list[str]]] = []
+    n = 0
+    for si, (hdr, items) in enumerate(sections):
+        rows = []
+        for ii, label in enumerate(items):
+            clean = " ".join(label.split())
+            letter = _LETTER_KEYS.get(clean)
+            if letter is not None:
+                key, target = letter
+                rows.append(f"{key}) {clean}")
+                mapping[key] = (si, ii) if target == "self" else target
+            else:
+                n += 1
+                rows.append(f"{n}) {clean}")
+                mapping[str(n)] = (si, ii)
+        display.append((hdr, rows))
+    return display, mapping, n
+
+
+_MAIN_FALLBACK_DISPLAY, _MAIN_FALLBACK_MAP, _MAIN_FALLBACK_MAX = _build_fallback(
+    _MAIN_SECTIONS, _MAIN_ALIASES
+)
+_LIB_FALLBACK_DISPLAY, _LIB_FALLBACK_MAP, _LIB_FALLBACK_MAX = _build_fallback(
+    _LIB_SECTIONS, _LIB_ALIASES
+)
+
 
 def _select_main() -> tuple | None:
     if _USE_CURSES:
         return _tui_select(f"Lattice v{VERSION}", _MAIN_SECTIONS)
-    _box_menu(
-        f"Lattice v{VERSION}",
-        [
-            (
-                "LIBRARY",
-                ["1) Library tree & exports          \u2192", "2) Library statistics"],
-            ),
-            (
-                "INTEGRITY",
-                [
-                    "3) Test FLAC files",
-                    "4) Test MP3 files",
-                    "5) Test Opus files",
-                    "6) Test WAV files",
-                    "7) Test WMA files",
-                ],
-            ),
-            (
-                "ARTWORK",
-                [
-                    "8) Extract cover art",
-                    "9) Report missing art",
-                    "10) Audit art quality",
-                ],
-            ),
-            (
-                "METADATA",
-                ["11) Find duplicate albums", "12) Audit tags", "13) Audit bitrates"],
-            ),
-            ("SETTINGS", ["s) Change library root"]),
-            ("", ["q) Quit"]),
-        ],
+    _box_menu(f"Lattice v{VERSION}", _MAIN_FALLBACK_DISPLAY)
+    return _fallback_input(
+        f"  Select [1-{_MAIN_FALLBACK_MAX}/s/q]: ", _MAIN_FALLBACK_MAP
     )
-    return _fallback_input("  Select [1-13/s/q]: ", _MAIN_FALLBACK_MAP)
 
 
 def _select_library() -> tuple | None:
@@ -566,23 +564,8 @@ def _select_library() -> tuple | None:
             _LIB_SECTIONS,
             hints="\u2191\u2193 Navigate  \u23ce Select  Esc Back",
         )
-    _box_menu(
-        "Library Tree & Exports",
-        [
-            (
-                "",
-                [
-                    "1) Build music library tree",
-                    "2) AI-readable library export",
-                    "3) Generate all wings (per-genre)",
-                    "4) Generate AI wings (per-genre flat)",
-                    "5) Generate smart playlist (.m3u)",
-                ],
-            ),
-            ("", ["b) Back to main menu"]),
-        ],
-    )
-    return _fallback_input("  Select [1-5/b]: ", _LIB_FALLBACK_MAP)
+    _box_menu("Library Tree & Exports", _LIB_FALLBACK_DISPLAY)
+    return _fallback_input(f"  Select [1-{_LIB_FALLBACK_MAX}/b]: ", _LIB_FALLBACK_MAP)
 
 
 def _tui_page(title: str, content: str) -> None:

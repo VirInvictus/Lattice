@@ -1,6 +1,7 @@
 import ast
 import operator
 import os
+import re
 import sys
 from typing import Any, Callable
 
@@ -67,7 +68,7 @@ def _eval_node(node: ast.AST, names: dict):
         )
     if isinstance(node, ast.Compare):
         left = _eval_node(node.left, names)
-        for op, comparator in zip(node.ops, node.comparators):
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
             if type(op) not in _CMP_OPS:
                 raise RuleError(f"operator {type(op).__name__} not allowed")
             right = _eval_node(comparator, names)
@@ -82,6 +83,21 @@ def _eval_node(node: ast.AST, names: dict):
     if isinstance(node, ast.Constant):
         return node.value
     raise RuleError(f"unsupported expression: {type(node).__name__}")
+
+
+# SQL-style AND/OR are folded to Python's and/or, but only outside quoted
+# strings — a plain str.replace would corrupt a literal like 'Drum AND Bass'.
+# re.split with a capturing group keeps the quoted segments at odd indices.
+_QUOTED_SEGMENT = re.compile(r"('[^']*'|\"[^\"]*\")")
+_SQL_AND = re.compile(r"\bAND\b")
+_SQL_OR = re.compile(r"\bOR\b")
+
+
+def _pythonize_rule(rule: str) -> str:
+    parts = _QUOTED_SEGMENT.split(rule)
+    for i in range(0, len(parts), 2):
+        parts[i] = _SQL_OR.sub("or", _SQL_AND.sub("and", parts[i]))
+    return "".join(parts)
 
 
 def _evaluate_rule(rule: str, t, parsed_layout: dict) -> bool:
@@ -102,8 +118,7 @@ def _evaluate_rule(rule: str, t, parsed_layout: dict) -> bool:
 
     try:
         # Accept SQL-style AND/OR as a convenience for Python's and/or.
-        py_rule = rule.replace(" AND ", " and ").replace(" OR ", " or ")
-        return bool(_eval_node(ast.parse(py_rule, mode="eval"), names))
+        return bool(_eval_node(ast.parse(_pythonize_rule(rule), mode="eval"), names))
     except Exception as e:
         print(f"Error evaluating rule '{rule}': {e}", file=sys.stderr)
         return False

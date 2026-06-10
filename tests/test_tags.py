@@ -39,6 +39,10 @@ class ParseTrackNumberTests(unittest.TestCase):
     def test_none(self):
         self.assertIsNone(_parse_track_number(None))
 
+    def test_tuple_with_none_is_none(self):
+        # A malformed trkn atom like (None, 0) must not raise TypeError.
+        self.assertIsNone(_parse_track_number([(None, 0)]))
+
 
 class ReplayGainFlagsTests(unittest.TestCase):
     def test_mp3_txxx_both(self):

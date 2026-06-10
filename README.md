@@ -274,7 +274,7 @@ options:
   --extractArt          Extract embedded cover art to folder
   --missingArt          Report directories missing cover art
   --auditArtQuality     Report extracted/folder covers below a resolution threshold
-  --duplicates          Detect duplicates: exact albums, within-folder multi-format, similar names, track-level
+  --duplicates          Four-section dupe report: exact albums, within-folder multi-format, similar names, track-level
   --auditTags           Report files with incomplete tags
   --auditBitrate        Report files below a certain bitrate floor
   --auditReplayGain     Report per-album ReplayGain coverage (missing, partial, no album gain)
@@ -284,7 +284,8 @@ options:
                         together (default: read from config or current dir)
   --output OUTPUT       Output path
   --rule RULE           Smart playlist rule (e.g. "rating >= 4 and genre == 'Jazz'")
-  --layout LAYOUT       Directory structure pattern for extracting tags from path (default: {artist}/{album})
+  --layout LAYOUT       Directory structure pattern for extracting tags from path (default: the `layout` config key,
+                        or {artist}/{album}). Use {genre}/{artist}/{album} for a genre-first library.
   --min-art-res MIN_ART_RES
                         Minimum resolution in pixels for --auditArtQuality (default: 500)
   --min-bitrate MIN_BITRATE
@@ -450,6 +451,8 @@ Same album, no track overlap, scattered between two folders by filesystem accide
 
 **Two passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder. The order matters: collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory.
 
+**Layout note.** The passes are depth-fixed: the given root's children are treated as artists, and their children as albums. On a genre-first library (`Genre/Artist/Album`, the shape `genre_foldermap.py` builds), point `cleaner.py` at each genre folder rather than the library root; run against the root it would consolidate at the genre and artist levels but never reach the album folders.
+
 **Normalizing lone folders (`--normalize-names`).** The merge passes only touch *duplicate* folders. Libraries often also carry lone, non-duplicate folders whose names use non-standard characters (e.g. `At the Drive‐In` with a unicode hyphen, or a curly apostrophe). With `--normalize-names`, a third pass renames every folder whose name differs from its normalized form, folding the same classes as the survivor rename (broken hyphens, curly quotes/apostrophes; en/em dashes and the ellipsis preserved). It is off by default and can touch many folders at once, so preview with `--dry-run` first.
 
 **What it does not do.** `cleaner.py` is intentionally narrow. It does not:
@@ -528,7 +531,7 @@ The companion to the [`--auditReplayGain`](#features) audit: where the audit *re
    ```bash
    ./scripts/replaygain.py /mnt/SharedData/Music --dry-run
    ```
-3. Apply, skipping already-tagged albums and scanning 4 albums in parallel:
+3. Apply, skipping already-tagged albums and giving rsgain 4 scan threads per album:
    ```bash
    ./scripts/replaygain.py /mnt/SharedData/Music --skip-tagged --threads 4
    ```

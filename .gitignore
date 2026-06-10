@@ -24,3 +24,22 @@ pick-it-up.md
 
 # Local test album copies for the replaygain.py companion (real audio, never committed)
 .testing/
+
+# Default report outputs (modes write to the cwd; keep runs out of git)
+music_library.txt
+library_ai.txt
+flac_errors.txt
+mp3_scan_results.txt
+opus_scan_results.txt
+wav_scan_results.txt
+wma_scan_results.txt
+missing_art.txt
+art_quality_audit.txt
+duplicates.txt
+tag_audit.txt
+bitrate_audit.txt
+replaygain_audit.txt
+library_stats.txt
+smart_playlist.m3u
+wings/
+wings_ai/

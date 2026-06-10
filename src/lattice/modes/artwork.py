@@ -373,8 +373,11 @@ def run_art_quality_audit(
 
         if folder_art_path:
             try:
+                # Whole file, not just a header window: a large EXIF/ICC block
+                # can push the JPEG SOF marker past any fixed prefix, and a
+                # truncated read made such covers silently unparseable.
                 with open(folder_art_path, "rb") as f:
-                    art_data = f.read(8192)  # read header
+                    art_data = f.read()
                 source = "folder"
             except Exception:
                 pass

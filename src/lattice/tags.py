@@ -118,7 +118,7 @@ def _parse_track_number(val) -> int | None:
             try:
                 num = int(val[0][0])
                 return num if num > 0 else None
-            except ValueError, IndexError:
+            except ValueError, IndexError, TypeError:
                 return None
     s = _first_text(val)
     if not s:

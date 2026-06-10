@@ -725,5 +725,3 @@ def run_replaygain_audit(
         print(f"Results written to: {out_path}")
 
     return 0
-
-    return 0

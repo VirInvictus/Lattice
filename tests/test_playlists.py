@@ -48,6 +48,25 @@ class RuleEvalTests(unittest.TestCase):
         self.assertTrue(_evaluate_rule("rating >= 4 AND genre == 'Jazz'", t, {}))
         self.assertTrue(_evaluate_rule("rating < 2 OR genre == 'Jazz'", t, {}))
 
+    def test_sql_keywords_inside_string_literals_survive(self):
+        # The old str.replace rewrote ' AND ' inside quoted strings too, so
+        # this genre could never match.
+        t = tag(genre="Drum AND Bass")
+        self.assertTrue(_evaluate_rule("genre == 'Drum AND Bass'", t, {}))
+        self.assertTrue(_evaluate_rule('genre == "Drum AND Bass"', t, {}))
+        t2 = tag(rating=5.0, genre="Drum AND Bass")
+        self.assertTrue(
+            _evaluate_rule("rating >= 4 AND genre == 'Drum AND Bass'", t2, {})
+        )
+        self.assertFalse(
+            _evaluate_rule("rating < 2 AND genre == 'Drum AND Bass'", t2, {})
+        )
+
+    def test_sql_keywords_without_surrounding_spaces(self):
+        # Word-bounded matching folds AND/OR even without padding spaces.
+        t = tag(rating=5.0, genre="Jazz")
+        self.assertTrue(_evaluate_rule("(rating >= 4)AND(genre == 'Jazz')", t, {}))
+
     def test_chained_comparison(self):
         self.assertTrue(_evaluate_rule("2 <= rating <= 4", tag(rating=3.0), {}))
         self.assertFalse(_evaluate_rule("2 <= rating <= 4", tag(rating=5.0), {}))

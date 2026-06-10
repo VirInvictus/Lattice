@@ -1,6 +1,6 @@
 # Lattice Roadmap
 
-What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.5.0.
+What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.8.0.
 
 ---
 
@@ -52,4 +52,5 @@ What's done, what's next, what's deferred. Sequenced for maximum utility as a st
 
 ## Found Bugs
 
+- [x] **FOUND BUG (2026-06-10): TUI fallback menu desync.** The no-curses typed-input menu's hand-maintained key map went stale as modes were added: "6" was labelled "Test WAV files" but dispatched Extract cover art (a library-writing mode), "7"–"9" were each shifted one mode group over, "10"–"13" were rejected as invalid, and the WAV/WMA tests, art-quality audit, bitrate audit, and ReplayGain audit were unreachable from the fallback. The curses menu was unaffected. **Fixed (v4.8.1):** the fallback listing and its key map are now both generated from the same sections the arrow-key menu renders (`_build_fallback` in `tui.py`), so they cannot drift again; `tests/test_tui.py` pins the alignment.
 - [x] **FOUND BUG (2026-05-25): `cleaner.py` apostrophe normalization gap.** A fragmented album survived the initial consolidation pass: JPEGMAFIA's *I LAY DOWN MY LIFE FOR YOU (Director's Cut)* was split across two sibling folders, `I LAY DOWN MY LIFE FOR YOU (DIRECTOR's CUT)/` (12 tracks, mp3+opus) and `I LAY DOWN MY LIFE FOR YOU (DIRECTORS CUT)/` (4 unique tracks, mp3). `cleaner.py` did not merge them because its normalization folded curly to straight quotes but did not equate apostrophe-present vs apostrophe-absent: `director's cut` and `directors cut` hashed to different keys. **Fixed (v4.6.0):** `normalize_name` now strips apostrophes and collapses whitespace after the NFKC/dash/quote/case folding, so `X's` and `Xs` collapse to the same key. Confirmed on the real library (it also caught a Damian "Jr. Gong" Marley quote variant).
