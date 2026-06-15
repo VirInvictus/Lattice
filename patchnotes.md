@@ -1,5 +1,15 @@
 # Lattice Patch Notes
 
+## apestrip.py v1.0.0 (2026-06-15)
+
+New companion script (no package change): a lossless stripper for stray **APEv2 tags on MP3s**.
+
+- **The problem.** Some MP3s (commonly torrent rips) carry a hidden APEv2 tag alongside their ID3 tags. Players that read APEv2 on MP3 (foobar2000, DeaDBeeF) merge the APE values over the ID3 ones, so a stray APE genre such as `Trash Metal` keeps showing up as `Trash Metal, Metal` no matter how often the ID3 genre is corrected, and ordinary tag editors never touch the APEv2 block. `retag.py` already deletes APEv2 as a side effect of rewriting the genre, but only the genre; `apestrip.py` is the general fix.
+- **Lossless by design.** Before deleting the APEv2 tag, every APE field whose value is not already in ID3 is migrated into the correct frame: core text to its native frame (`Year`→`TDRC`, `Title`/`Artist`/`Album`→`TIT2`/`TPE1`/`TALB`, `Album Artist`→`TPE2`, etc.), `Comment`→`COMM`, `Cover Art (Front)`→`APIC`, `Unsynced lyrics`→`USLT`, sort orders to `TSO*`, and anything else (MusicBrainz IDs, ISRC, barcode, ReplayGain, ...) to a `TXXX:<key>` passthrough.
+- **Two deliberate exceptions.** Genre is never migrated (ID3 stays authoritative; the APE genre is the value being removed; a file with no ID3 genre is reported, not invented). Rating is never written, because APE and `POPM` use different scales and an auto-conversion would corrupt star counts (the hazard `rerate.py` exists for); APE ratings are reported instead.
+- **Guarded like the other companions.** `--dry-run` previews the full worklist and writes nothing; the real run prints the worklist and asks for confirmation (`--yes` to bypass, auto-bypassed when stdin is not a TTY); an append-only timestamped log is written (default `<directory>/apestrip.log`); the operation is idempotent. Recursive over the given directory, so it handles one album or a whole library. MP3-only (the APEv2-over-ID3 conflict is specific to MP3). Migrations are saved as ID3v2.3 + refreshed ID3v1, matching `retag.py`. Tested by `tests/test_apestrip.py`.
+- **Malformed-tag handling (`--repair-malformed`).** Some rips carry a structurally broken APEv2 tag (footer with the `IS_HEADER` bit wrongly set, junk bytes before a trailing ID3v1) that mutagen refuses to load. By default these are **reported, not silently skipped**, so the run is honest about what it could not touch. `--repair-malformed` opts into fixing them: the tag is parsed straight from the bytes, but only after proving the footer sits exactly where the header's size field points (so the excision boundary is a real tag edge, not a chance signature in the audio); sole-source fields are migrated first, then the APE block is cut out via direct byte surgery, written to a temp file, verified (still decodes, no APE signature left), and atomically swapped in. Audio frames and the trailing ID3v1 are preserved byte for byte; any failed check leaves the original untouched.
+
 ## v4.8.1 (2026-06-10)
 
 Bugfix release from a full code review; no new features.

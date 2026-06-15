@@ -22,7 +22,7 @@ A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice h
 - Modes: [AI library export](#ai-library-export) · [Genre wings](#genre-wings) · [Multi-root scanning](#multi-root-scanning) · [Integrity checks](#integrity-checks) · [Library statistics](#library-statistics) · [Cover art extraction](#cover-art-extraction) · [Color output](#color-output) · [Supported formats](#supported-formats)
 - [Architecture](#architecture)
 - [Full help output](#full-help-output)
-- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy) · [`genre_foldermap.py`](#genre_foldermappy)
+- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy) · [`genre_foldermap.py`](#genre_foldermappy) · [`replaygain.py`](#replaygainpy) · [`apestrip.py`](#apestrippy)
 - [Credits & Acknowledgements](#credits--acknowledgements) · [Support](#support)
 
 ## Why this exists
@@ -307,7 +307,7 @@ options:
 
 ## Companion scripts
 
-The `scripts/` directory holds six standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
+The `scripts/` directory holds seven standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
 
 **Use them with caution.** Have a backup or snapshot first, always preview with `--dry-run`, and read the log before applying. Each writes an append-only timestamped log and is idempotent, so a second run on an already-clean library is a no-op.
 
@@ -319,6 +319,7 @@ The `scripts/` directory holds six standalone maintenance tools. They are **not*
 | [`cleaner.py`](#cleanerpy) | Folder names and layout (moves, merges, renames) | filesystem |
 | [`genre_foldermap.py`](#genre_foldermappy) | Restructures the tree into Genre/Artist/Album | filesystem |
 | [`replaygain.py`](#replaygainpy) | Writes ReplayGain 2.0 gain/peak tags (via `rsgain`) | album-by-album |
+| [`apestrip.py`](#apestrippy) | Removes stray APEv2 tags from MP3s (migrates first) | recursive, MP3-only |
 
 ### `retag.py`
 
@@ -549,6 +550,47 @@ The companion to the [`--auditReplayGain`](#features) audit: where the audit *re
 ```
 
 This switches rsgain to custom mode and writes standard `replaygain_*` tags for every format, Opus included (the `R128` convention is fixed at -23 LUFS and cannot carry a custom target, so it is not used here). Two caveats: keep **one** target across the whole library or albums will not be evenly normalized, and a louder target gives some tracks positive gain (clip protection stays on, but there is less headroom). For a louder result on one device only (e.g. weak laptop speakers), prefer your player's ReplayGain **pre-amp** instead: it is non-destructive, per-device, and leaves the portable 89 dB tags intact.
+
+### `apestrip.py`
+
+> **Destructive: removes APEv2 tags from MP3s in place.** Always preview with `--dry-run`; a confirmation prompt guards the real run, and a `--log` is written by default.
+
+Some MP3s (commonly torrent rips) carry a hidden **APEv2 tag** in addition to their ID3 tags. Players that read APEv2 on MP3, including foobar2000 and DeaDBeeF, merge the APE values over the ID3 ones. So a stray APE `Genre` like `Trash Metal` keeps reappearing as `Trash Metal, Metal` no matter how many times you fix the ID3 genre, and ordinary tag editors never touch the APEv2 block, so it looks unkillable. `retag.py` removes APEv2 only as a side effect of rewriting the genre; `apestrip.py` is the general, metadata-safe stripper.
+
+**It never loses metadata.** Before deleting the APEv2 tag, every APE field whose value is *not already present in ID3* is migrated into the correct ID3 frame:
+
+| APE field | Migrates to |
+|---|---|
+| `Year` / `Date` | `TDRC` |
+| `Title` / `Artist` / `Album` | `TIT2` / `TPE1` / `TALB` |
+| `Album Artist` / `Band` | `TPE2` |
+| `Track` / `Disc` | `TRCK` / `TPOS` |
+| `Composer` / `Publisher` | `TCOM` / `TPUB` |
+| `Comment` | `COMM` |
+| `Cover Art (Front)` | `APIC` (front) |
+| `Unsynced lyrics` | `USLT` |
+| sort orders | `TSOP` / `TSO2` / `TSOT` / `TSOA` |
+| anything else (MusicBrainz IDs, ISRC, barcode, ReplayGain, ...) | `TXXX:<key>` passthrough |
+
+Two fields are handled deliberately, not migrated:
+
+- **Genre is never migrated.** ID3 stays authoritative; the APE genre is exactly the value you want gone. If a file has no ID3 genre at all, it is reported (left blank), never invented from the APE value.
+- **Rating is never written.** APE and ID3 (`POPM`) use different rating scales, so an auto-conversion would corrupt star counts (the same hazard [`rerate.py`](#reratepy) exists to fix). Any APE `Rating` is reported so you can apply it deliberately.
+
+**The Workflow:**
+1. Preview the whole library first (writes nothing):
+   ```bash
+   ./scripts/apestrip.py "/mnt/SharedData/Music" --dry-run
+   ```
+   The worklist shows, per file, which APE fields are redundant, which will be migrated and to where, plus any reported ratings and genre warnings.
+2. When it looks right, drop `--dry-run` and confirm at the prompt:
+   ```bash
+   ./scripts/apestrip.py "/mnt/SharedData/Music"
+   ```
+
+Migrations are saved as ID3v2.3 with a refreshed ID3v1 (the same player-compatible save `retag.py` uses). The run writes an append-only timestamped log (default `<directory>/apestrip.log`) and is idempotent: a file with no APEv2 tag is left untouched, so a second run on a clean library is a no-op. MP3-only, since the APEv2-over-ID3 conflict is specific to MP3; other formats carry their own authoritative tags and are skipped. Pass `--yes` to skip the prompt (it is auto-skipped when stdin is not a TTY).
+
+**Malformed tags (`--repair-malformed`).** Some rips carry an APEv2 tag that is structurally broken (for example a footer with the `IS_HEADER` bit wrongly set, or junk bytes between the footer and a trailing ID3v1). `mutagen` refuses to load these, so the normal path cannot strip them. By default apestrip **reports** such files (`malformed APEv2 tag (mutagen cannot parse)`) and leaves them alone rather than silently calling them clean. Pass `--repair-malformed` to fix them: apestrip parses the tag straight from the bytes, **but only after proving the footer sits exactly where the header's size field points** (so the cut boundary is a real tag edge, not a chance signature in the audio), migrates sole-source fields into ID3 exactly as above (genre still never migrated, ratings still report-only), then excises the APE block. The result is written to a temp file, verified (it still decodes and no APE signature survives), and atomically swapped in. The audio frames and the trailing ID3v1 are preserved byte for byte; if any check fails the original is left untouched.
 
 ## Credits & Acknowledgements
 
