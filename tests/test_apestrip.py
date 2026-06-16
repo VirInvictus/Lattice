@@ -105,7 +105,7 @@ class ApeStripTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def _run(self):
-        return apestrip.process_file(self.path, dry_run=False)
+        return apestrip.process_file(self.path, dry_run=False, keep_metadata=True)
 
     def test_ape_tag_removed(self):
         r = self._run()
@@ -167,17 +167,75 @@ class ApeStripTests(unittest.TestCase):
 
     def test_idempotent(self):
         self._run()
-        second = apestrip.process_file(self.path, dry_run=False)
+        second = apestrip.process_file(self.path, dry_run=False, keep_metadata=True)
         self.assertFalse(second.had_ape)
         self.assertFalse(second.stripped)
 
     def test_dry_run_writes_nothing(self):
-        r = apestrip.process_file(self.path, dry_run=True)
+        r = apestrip.process_file(self.path, dry_run=True, keep_metadata=True)
         self.assertTrue(r.had_ape)
         self.assertTrue(any(k == "Year" for k, _ in r.migrated))
         # APE tag and original ID3 genre are untouched.
         self.assertIsNotNone(APEv2(self.path))
         self.assertEqual(ID3(self.path)["TCON"].text, ["Rock"])
+
+
+class StripOnlyDefaultTests(unittest.TestCase):
+    """Default behavior (no --keep-metadata): delete the APE block, leave ID3
+    byte-for-byte. Nothing is migrated; genre/rating are still reported."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._tmp.name, "track.mp3")
+        shutil.copy(MP3_SRC, self.path)
+        ape = APEv2()
+        ape["Year"] = APEValue("1986", TEXT)  # sole-source, but NOT migrated
+        ape["Genre"] = APEValue("Trash Metal", TEXT)  # stray, reported
+        ape["Barcode"] = APEValue("075992413114", TEXT)  # unknown, NOT migrated
+        ape["Rating"] = APEValue("4", TEXT)  # reported
+        ape["Cover Art (Front)"] = APEValue(b"cover.jpg\x00" + JPEG, BINARY)
+        ape.save(self.path)
+        self._id3_before = ID3(self.path)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run(self):
+        return apestrip.process_file(self.path, dry_run=False)
+
+    def test_ape_tag_removed(self):
+        r = self._run()
+        self.assertTrue(r.stripped)
+        self.assertIsNone(r.error)
+        with self.assertRaises(APENoHeaderError):
+            APEv2(self.path)
+
+    def test_nothing_migrated(self):
+        r = self._run()
+        self.assertEqual(r.migrated, [])
+        id3 = ID3(self.path)
+        self.assertNotIn("TXXX:Barcode", id3)  # unknown field dropped, not kept
+        self.assertEqual(id3["TCON"].text, ["Rock"])  # genre untouched
+        self.assertFalse([k for k in id3 if k.startswith("APIC")])  # cover dropped
+
+    def test_id3_untouched(self):
+        # A pure strip rewrites no ID3 frames: every frame present before is
+        # present after, unchanged, and no new frame appears.
+        self._run()
+        id3 = ID3(self.path)
+        self.assertEqual(set(id3.keys()), set(self._id3_before.keys()))
+
+    def test_genre_and_rating_still_reported(self):
+        r = self._run()
+        self.assertTrue(r.genre_warning is False)  # ID3 has a genre, so no warning
+        self.assertEqual(r.ratings, ["4"])
+
+    def test_dry_run_lists_no_migrations(self):
+        r = apestrip.process_file(self.path, dry_run=True)
+        self.assertTrue(r.had_ape)
+        self.assertEqual(r.migrated, [])
+        self.assertEqual(r.ratings, ["4"])
+        self.assertIsNotNone(APEv2(self.path))  # untouched
 
 
 class PlanGuardTests(unittest.TestCase):
@@ -261,7 +319,9 @@ class RepairMalformedTests(unittest.TestCase):
         self.assertIn("repair-malformed", r.error)
 
     def test_repair_excises_and_migrates_sole_source(self):
-        r = apestrip.process_file(self.path, dry_run=False, repair=True)
+        r = apestrip.process_file(
+            self.path, dry_run=False, repair=True, keep_metadata=True
+        )
         self.assertTrue(r.repaired)
         self.assertTrue(r.stripped)
         self.assertIsNone(r.error)
@@ -275,9 +335,24 @@ class RepairMalformedTests(unittest.TestCase):
         # audio still decodes
         self.assertGreater(getattr(MP3(self.path).info, "length", 0), 0)
 
+    def test_repair_default_excises_without_migrating(self):
+        # Without --keep-metadata the malformed block is still excised, but the
+        # sole-source YEAR is dropped rather than copied into ID3.
+        r = apestrip.process_file(self.path, dry_run=False, repair=True)
+        self.assertTrue(r.repaired)
+        self.assertTrue(r.stripped)
+        self.assertEqual(r.migrated, [])
+        self.assertFalse(apestrip._has_raw_ape_signature(self.path))
+        id3 = ID3(self.path)
+        self.assertIsNone(id3.get("TDRC") or id3.get("TYER"))
+        self.assertEqual(id3["TCON"].text, ["Rock"])
+        self.assertGreater(getattr(MP3(self.path).info, "length", 0), 0)
+
     def test_repair_dry_run_writes_nothing(self):
         before = Path(self.path).read_bytes()
-        r = apestrip.process_file(self.path, dry_run=True, repair=True)
+        r = apestrip.process_file(
+            self.path, dry_run=True, repair=True, keep_metadata=True
+        )
         self.assertTrue(r.malformed)
         self.assertTrue(any(k == "YEAR" for k, _ in r.migrated))
         self.assertEqual(Path(self.path).read_bytes(), before)

@@ -6,10 +6,16 @@ tags. Players that read APEv2 on MP3 (foobar2000, DeaDBeeF) merge the APE values
 over the ID3 ones, so a stray APE genre like "Trash Metal" keeps reappearing no
 matter how many times you fix the ID3 genre — standard tag editors never touch
 the APEv2 block. retag.py removes APEv2 only as a side effect of rewriting the
-genre; this is the general, metadata-safe stripper.
+genre; this is the general stripper.
 
-Before deleting the APEv2 tag, every APE field whose data is **not already in
-ID3** is migrated into the right ID3 frame, so nothing is lost:
+By default apestrip simply **deletes** the APEv2 block and leaves ID3 untouched.
+The whole point is to drop the stray APE values (the genre being the usual
+culprit), so absorbing them back into ID3 would defeat the tool — it is exactly
+how a bad APE genre ends up baked into ID3.
+
+Pass --keep-metadata to opt in to migration: before deleting the APEv2 tag,
+every APE field whose data is **not already in ID3** is copied into the right
+ID3 frame, so nothing is lost:
 
     Year/Date          -> TDRC        Title/Artist/Album    -> TIT2/TPE1/TALB
     Album Artist/Band  -> TPE2        Track/Disc            -> TRCK/TPOS
@@ -18,13 +24,16 @@ ID3** is migrated into the right ID3 frame, so nothing is lost:
     sort orders        -> TSOP/TSO2/TSOT/TSOA
     anything else (MusicBrainz IDs, ISRC, barcode, ReplayGain, ...) -> TXXX:<key>
 
-Two deliberate exceptions:
+Two deliberate exceptions hold even under --keep-metadata:
   * Genre is NEVER migrated. ID3 stays authoritative; the APE genre is exactly the
     value we distrust. (If a file has no ID3 genre at all, it is reported, not
     invented.)
   * Rating is NEVER written. APE and POPM use different rating scales, so an
     auto-conversion would corrupt star counts (see rerate.py). APE ratings are
     reported so you can apply them deliberately.
+
+APE genre and ratings are always reported (even without --keep-metadata) so you
+can see what is being dropped.
 
 Destructive: it rewrites tags in place. Preview with --dry-run first. MP3-only;
 other formats carry their own authoritative tags and are skipped. Recursive over
@@ -34,7 +43,7 @@ file with no APEv2 tag is left untouched.
 Usage:
     ./apestrip.py /path/to/album --dry-run
     ./apestrip.py "/mnt/SharedData/Music"
-    ./apestrip.py /path/to/album --yes --log ~/apestrip.log
+    ./apestrip.py /path/to/album --keep-metadata --yes --log ~/apestrip.log
 """
 
 from __future__ import annotations
@@ -81,7 +90,7 @@ from mutagen.id3 import (
     TDRC,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # APE key (lowercased) -> simple ID3 text frame class. Genre/Rating/Comment/cover/
 # lyrics are handled out of band; everything not listed here is preserved via a
@@ -333,13 +342,14 @@ def _parse_raw_ape(data: bytes):
     return h, id3v1_start, items
 
 
-def repair_file(path: str, dry_run: bool) -> FileResult:
+def repair_file(path: str, dry_run: bool, keep_metadata: bool = False) -> FileResult:
     """Repair a malformed APEv2 tag mutagen cannot parse by excising it.
 
-    Same contract as the normal path: sole-source fields are migrated into ID3
-    first, genre is never migrated, ratings are reported. The APE region is then
-    cut out of the file bytes directly; the result is written to a temp file,
-    verified (decodes, no APE signature survives), and atomically swapped in.
+    Same contract as the normal path: with keep_metadata, sole-source fields are
+    migrated into ID3 first (genre is never migrated, ratings are reported);
+    without it the block is simply excised. The APE region is then cut out of the
+    file bytes directly; the result is written to a temp file, verified (decodes,
+    no APE signature survives), and atomically swapped in.
     """
     with open(path, "rb") as fh:
         data = fh.read()
@@ -359,7 +369,7 @@ def repair_file(path: str, dry_run: bool) -> FileResult:
     except Exception as e:
         return FileResult(path, had_ape=True, error=str(e))
 
-    migrations, redundant, ratings, genre_warning = plan_file(id3, items)
+    migrations, redundant, ratings, genre_warning = plan_file(id3, items, keep_metadata)
     result = FileResult(
         path,
         had_ape=True,
@@ -406,9 +416,11 @@ def repair_file(path: str, dry_run: bool) -> FileResult:
     return result
 
 
-def _handle_malformed(path: str, dry_run: bool, repair: bool) -> FileResult:
+def _handle_malformed(
+    path: str, dry_run: bool, repair: bool, keep_metadata: bool = False
+) -> FileResult:
     if repair:
-        return repair_file(path, dry_run)
+        return repair_file(path, dry_run, keep_metadata)
     return FileResult(
         path,
         had_ape=True,
@@ -417,11 +429,15 @@ def _handle_malformed(path: str, dry_run: bool, repair: bool) -> FileResult:
     )
 
 
-def plan_file(id3: ID3, ape: APEv2):
+def plan_file(id3: ID3, ape: APEv2, keep_metadata: bool = False):
     """Decide, for one file's parsed tags, what to migrate / drop / report.
 
     Pure: inspects but does not mutate. Returns (migrations, redundant, ratings,
     genre_warning), where migrations is a list of (key, action, payload, value).
+
+    Without keep_metadata the default is a pure strip: nothing is migrated, so
+    migrations and redundant come back empty. Genre and rating are still scanned
+    so they can be reported (the values being dropped).
     """
     migrations = []
     redundant: list[str] = []
@@ -436,6 +452,8 @@ def plan_file(id3: ID3, ape: APEv2):
         if action == "rating":
             ratings.append(_ape_text(value))
             continue
+        if not keep_metadata:
+            continue  # strip-only: drop every other field with the tag
         if id3_has_equivalent(id3, action, payload):
             redundant.append(key)
             continue
@@ -444,7 +462,9 @@ def plan_file(id3: ID3, ape: APEv2):
     return migrations, redundant, ratings, genre_warning
 
 
-def process_file(path: str, dry_run: bool, repair: bool = False) -> FileResult:
+def process_file(
+    path: str, dry_run: bool, repair: bool = False, keep_metadata: bool = False
+) -> FileResult:
     """Plan and (unless dry_run) execute the strip for one MP3."""
     try:
         ape = APEv2(path)
@@ -454,11 +474,11 @@ def process_file(path: str, dry_run: bool, repair: bool = False) -> FileResult:
         # wrongly set). Repair it if asked, otherwise report it rather than
         # silently leaving it behind.
         if _has_raw_ape_signature(path):
-            return _handle_malformed(path, dry_run, repair)
+            return _handle_malformed(path, dry_run, repair, keep_metadata)
         return FileResult(path, had_ape=False)
     except Exception:  # malformed tag mutagen chokes on
         if _has_raw_ape_signature(path):
-            return _handle_malformed(path, dry_run, repair)
+            return _handle_malformed(path, dry_run, repair, keep_metadata)
         return FileResult(path, had_ape=True, error="unreadable APEv2 tag")
 
     try:
@@ -468,7 +488,7 @@ def process_file(path: str, dry_run: bool, repair: bool = False) -> FileResult:
     except Exception as e:
         return FileResult(path, had_ape=True, error=str(e))
 
-    migrations, redundant, ratings, genre_warning = plan_file(id3, ape)
+    migrations, redundant, ratings, genre_warning = plan_file(id3, ape, keep_metadata)
     result = FileResult(
         path,
         had_ape=True,
@@ -488,10 +508,10 @@ def process_file(path: str, dry_run: bool, repair: bool = False) -> FileResult:
         for key, action, payload, value in migrations:
             label = apply_migration(id3, action, payload, value)
             result.migrated.append((key, label))
-        # Delete the APE tag first (retag.py ordering), then persist the ID3
-        # migrations as ID3v2.3 + refreshed ID3v1 for broad player compatibility.
+        # Delete the APE tag first (retag.py ordering). Re-save ID3 only when we
+        # actually migrated something; a pure strip leaves ID3 byte-for-byte.
         APEv2(path).delete()
-        if migrations or len(id3) or _id3_has_genre(id3):
+        if migrations:
             id3.save(path, v2_version=3, v1=2)
         # Verify the APE tag is gone.
         try:
@@ -530,6 +550,13 @@ def main() -> int:
         help="Skip the confirmation prompt (auto-skipped when stdin is not a TTY)",
     )
     parser.add_argument(
+        "--keep-metadata",
+        action="store_true",
+        help="Before stripping, migrate APE fields not already in ID3 into the "
+        "matching ID3 frame (genre is never migrated, ratings never written). "
+        "Off by default: the default is a pure strip that leaves ID3 untouched.",
+    )
+    parser.add_argument(
         "--repair-malformed",
         action="store_true",
         help="Also repair malformed APE tags mutagen cannot parse, by excising "
@@ -566,7 +593,12 @@ def main() -> int:
         # Planning pass: build the worklist without writing.
         worklist: list[FileResult] = []
         for path in _iter_mp3s(root):
-            r = process_file(path, dry_run=True, repair=args.repair_malformed)
+            r = process_file(
+                path,
+                dry_run=True,
+                repair=args.repair_malformed,
+                keep_metadata=args.keep_metadata,
+            )
             if r.had_ape:
                 worklist.append(r)
 
@@ -587,7 +619,10 @@ def main() -> int:
             for key, label in r.migrated:
                 print(f"      migrate {key!r} -> {label}")
             if not r.migrated:
-                print("      (APE fully redundant with ID3; strip only)")
+                if args.keep_metadata:
+                    print("      (APE fully redundant with ID3; strip only)")
+                else:
+                    print("      (strip only; --keep-metadata to migrate into ID3)")
             for val in r.ratings:
                 rating_files += 1
                 print(f"      [rating] APE Rating={val!r} (reported, not written)")
@@ -620,7 +655,12 @@ def main() -> int:
         repaired = 0
         errors = 0
         for r0 in worklist:
-            r = process_file(r0.path, dry_run=False, repair=args.repair_malformed)
+            r = process_file(
+                r0.path,
+                dry_run=False,
+                repair=args.repair_malformed,
+                keep_metadata=args.keep_metadata,
+            )
             rel = os.path.relpath(r.path, root)
             if r.error:
                 errors += 1

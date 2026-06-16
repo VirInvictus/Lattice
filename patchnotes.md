@@ -1,5 +1,15 @@
 # Lattice Patch Notes
 
+## apestrip.py v1.1.0 (2026-06-15)
+
+Behavior change (no package change): **the default is now a pure strip.** apestrip deletes the APEv2 block and leaves ID3 byte for byte; it no longer absorbs APE fields into ID3 unless you ask.
+
+- **Why.** Migrating APE values into ID3 by default was backwards. The whole reason to run apestrip is to drop stray APE values (the genre above all), so copying them into ID3 is exactly how a bad APE genre ends up baked into the real tags. The old default forced manual genre cleanup afterward.
+- **`--keep-metadata` restores the old behavior.** With the flag, every APE field whose value is not already in ID3 is migrated into the correct frame before the strip, exactly as before (genre still never migrated, ratings still report-only). Without it, nothing is migrated.
+- **Always reported.** APE `Genre` and `Rating` are scanned and reported in both modes, so the worklist still shows what is being dropped (and still warns when stripping an APE genre would leave a file with no genre at all).
+- **Repair too.** `--repair-malformed` follows the same rule: the malformed block is always excised, but sole-source fields are migrated into ID3 only when `--keep-metadata` is also given.
+- Tests extended for both modes (`tests/test_apestrip.py`).
+
 ## apestrip.py v1.0.0 (2026-06-15)
 
 New companion script (no package change): a lossless stripper for stray **APEv2 tags on MP3s**.
