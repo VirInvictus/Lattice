@@ -1,5 +1,15 @@
 # Lattice Patch Notes
 
+## cleaner.py v1.2.0 (2026-06-20)
+
+New feature (no package change): **`--normalize-tags`** teaches `cleaner.py` to rewrite embedded artist/albumartist tags so they match the surviving folder name after a merge or rename.
+
+- **The problem.** The merge passes consolidate variant artist folders (`Bonnie 'Prince' Billy` / `Bonnie Prince Billy` / a CP1252-mojibake `Bonnie \x93Prince\x94 Billy`) into one folder, but the tags inside still carry the old spellings. Players that show the artist tag, not the folder, still see three artists.
+- **What it does.** With `--normalize-tags`, a fourth pass rewrites the MP3 `artist`/`albumartist` tags under every merged or `--normalize-names`-renamed artist folder to the survivor's name, which is the naming authority. CP1252 mojibake and curly punctuation fold to straight ASCII; a trailing guest credit is preserved (`... feat. Tim O'Brien`). A file already correct is left untouched.
+- **Artist level from `--layout`.** A new `--layout` option (default `{artist}/{album}`) tells the pass which path depth names an artist, so a genre or album folder is never restamped as one. On a genre-first library, pass `--layout '{genre}/{artist}/{album}'`.
+- **MP3-only, same guarantees as the other companions.** Non-MP3 audio is reported and left alone (its tags are already authoritative); writes are ID3v2.3 + refreshed ID3v1, matching `retag.py`. Off by default, `--dry-run` previews every change, and the run is idempotent. Run `apestrip.py` first if a stray APEv2 tag is in play (APEv2 overrides ID3 on the players that read it).
+- Tests extended (`tests/test_cleaner.py`): the fold/feat helpers directly, plus merge restamping, dry-run fidelity, the clean-file no-op count, and the artist-depth gate.
+
 ## apestrip.py v1.1.0 (2026-06-15)
 
 Behavior change (no package change): **the default is now a pure strip.** apestrip deletes the APEv2 block and leaves ID3 byte for byte; it no longer absorbs APE fields into ID3 unless you ask.

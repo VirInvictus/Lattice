@@ -329,5 +329,156 @@ class NormalizeTreeTests(_TreeCase):
         self.assertEqual(run.stats["renamed"], 0)
 
 
+from mutagen.id3 import ID3  # noqa: E402
+
+FIXTURES = Path(__file__).parent / "fixtures" / "library"
+MP3_SRC = FIXTURES / "Cursive" / "Domestica" / "01 - The Casualty.mp3"
+
+
+class TagFoldTests(unittest.TestCase):
+    def test_cp1252_mojibake_to_ascii(self):
+        # \x93/\x94/\x92 are CP1252 bytes read back as Latin-1 C1 controls.
+        self.assertEqual(
+            cleaner.tag_fold("Bonnie \x93Prince\x94 Billy"), 'Bonnie "Prince" Billy'
+        )
+        self.assertEqual(cleaner.tag_fold("Tim O\x92Brien"), "Tim O'Brien")
+
+    def test_curly_quotes_to_ascii(self):
+        self.assertEqual(cleaner.tag_fold("Singer’s Grave"), "Singer's Grave")
+
+    def test_whitespace_collapsed(self):
+        self.assertEqual(cleaner.tag_fold("  A   B "), "A B")
+
+
+class CanonTrackArtistTests(unittest.TestCase):
+    def test_plain_collapses_to_canonical(self):
+        self.assertEqual(
+            cleaner.canon_track_artist("Bonnie Prince Billy", "Bonnie 'Prince' Billy"),
+            "Bonnie 'Prince' Billy",
+        )
+
+    def test_doubled_junk_collapses(self):
+        self.assertEqual(
+            cleaner.canon_track_artist(
+                "Bonnie Prince Billy / Bonnie 'Prince' Billy", "Bonnie 'Prince' Billy"
+            ),
+            "Bonnie 'Prince' Billy",
+        )
+
+    def test_feat_preserved_and_folded(self):
+        self.assertEqual(
+            cleaner.canon_track_artist(
+                "Bonnie \x93Prince\x94 Billy feat. Tim O\x92Brien",
+                "Bonnie 'Prince' Billy",
+            ),
+            "Bonnie 'Prince' Billy feat. Tim O'Brien",
+        )
+
+
+def _mp3(path: Path, artist: str, albumartist: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(MP3_SRC, path)
+    tags = ID3(path)
+    tags.add(cleaner.TPE1(encoding=3, text=[artist]))
+    tags.add(cleaner.TPE2(encoding=3, text=[albumartist]))
+    tags.save(path, v2_version=3)
+
+
+class NormalizeTagsTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.log = self.root / "cleanup.log"
+        self.genre = self.root / "Alt Country"
+        # Survivor wins by file count (2 > 1), so its quoted name is authority.
+        self.surv = self.genre / "Bonnie 'Prince' Billy"
+        _mp3(
+            self.surv / "I See a Darkness" / "01.mp3",
+            "Bonnie Prince Billy / Bonnie 'Prince' Billy",
+            "Bonnie 'Prince' Billy",
+        )
+        _mp3(
+            self.surv / "I See a Darkness" / "02.mp3",
+            "Bonnie 'Prince' Billy",
+            "Bonnie 'Prince' Billy",
+        )
+        # Variant folders merged in: no-quotes, and CP1252-mojibake with a guest.
+        _mp3(
+            self.genre / "Bonnie Prince Billy" / "Beware" / "01.mp3",
+            "Bonnie Prince Billy",
+            "Bonnie Prince Billy",
+        )
+        _mp3(
+            self.genre / "Bonnie “Prince” Billy" / "Purple Bird" / "01.mp3",
+            "Bonnie \x93Prince\x94 Billy feat. Tim O\x92Brien",
+            "Bonnie \x93Prince\x94 Billy",
+        )
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run(self, dry_run=False):
+        return cleaner.Run(
+            self.root, self.log, dry_run=dry_run, normalize_tags=True, artist_depth=2
+        )
+
+    def _consolidate(self, run):
+        cleaner.consolidate_group(
+            cleaner.find_groups(self.genre, run)[0], "Alt Country", run
+        )
+
+    def test_merge_restamps_all_tags_to_survivor(self):
+        run = self._run()
+        self._consolidate(run)
+        cleaner.normalize_tags(run)
+        run.close()
+        beware = self.surv / "Beware" / "01.mp3"
+        purple = self.surv / "Purple Bird" / "01.mp3"
+        self.assertEqual(ID3(beware)["TPE1"].text[0], "Bonnie 'Prince' Billy")
+        self.assertEqual(ID3(beware)["TPE2"].text[0], "Bonnie 'Prince' Billy")
+        # Guest credit preserved, band name + mojibake normalized.
+        self.assertEqual(
+            ID3(purple)["TPE1"].text[0], "Bonnie 'Prince' Billy feat. Tim O'Brien"
+        )
+        self.assertEqual(ID3(purple)["TPE2"].text[0], "Bonnie 'Prince' Billy")
+        # The doubled-junk artist on the survivor's own track is fixed too.
+        darkness = self.surv / "I See a Darkness" / "01.mp3"
+        self.assertEqual(ID3(darkness)["TPE1"].text[0], "Bonnie 'Prince' Billy")
+
+    def test_dry_run_reports_but_does_not_write(self):
+        run = self._run(dry_run=True)
+        self._consolidate(run)
+        cleaner.normalize_tags(run)
+        run.close()
+        # Nothing moved or written in dry-run.
+        self.assertEqual(
+            ID3(self.genre / "Bonnie Prince Billy" / "Beware" / "01.mp3")["TPE1"].text[
+                0
+            ],
+            "Bonnie Prince Billy",
+        )
+        self.assertGreater(run.stats["tags_rewritten"], 0)
+
+    def test_clean_files_not_counted_as_rewrites(self):
+        run = self._run()
+        self._consolidate(run)
+        cleaner.normalize_tags(run)
+        run.close()
+        # Survivor track 02 was already correct: 4 tracks total, 3 needed changes.
+        self.assertEqual(run.stats["tags_rewritten"], 3)
+        self.assertEqual(run.stats["tag_files_scanned"], 4)
+
+    def test_non_artist_depth_not_retagged(self):
+        # With artist_depth=1 the depth-2 survivor is not an artist folder, so no
+        # tag target is seeded and nothing is rewritten.
+        run = cleaner.Run(
+            self.root, self.log, dry_run=False, normalize_tags=True, artist_depth=1
+        )
+        self._consolidate(run)
+        cleaner.normalize_tags(run)
+        run.close()
+        self.assertEqual(run.stats["tags_rewritten"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
