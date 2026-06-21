@@ -1,5 +1,16 @@
 # Lattice Patch Notes
 
+## cleaner.py v1.3.0 (2026-06-21)
+
+Extends the v1.2.0 tag work into a general, library-wide typographic normalizer covering names at every depth and the title/album/artist tags across all formats.
+
+- **`--normalize-tags` is now library-wide and multi-format.** It walks every audio file, not just merged/renamed artist folders. **Title and album** get a pure typographic fold (CP1252 mojibake, curly quotes, and broken hyphens cleaned; the words never change, so the folder is never an authority for them). **Artist and albumartist** fold the same way everywhere, except under a merged or renamed artist folder, where they are still restamped to the surviving folder name (guest credits preserved). All formats are handled (MP3/FLAC/Ogg/Opus/m4a/WMA), each written in its native fields; ID3 stays v2.3 + refreshed v1. Only changed fields are touched, so a clean file is a no-op and the pass is idempotent.
+- **Correct typography is preserved.** The tag fold now matches the folder rename's philosophy: en/em dashes and the ellipsis are kept (`Selected Ambient Works 85–92` keeps its en dash), and a CP1252-mojibake dash is repaired to the real dash rather than flattened to a hyphen. Genuinely broken hyphens (U+2010-2012/2015) are still folded to ASCII.
+- **`--normalize-names` now recurses to every folder depth** (it was capped at two), so album folders under a `Genre/Artist/Album` library are reached.
+- **New `--normalize-filenames`** renames audio track files the same way (extension kept verbatim). It is separate from `--normalize-names` because renaming files is a distinct change (filenames are referenced by playlists and cue sheets); the two compose.
+- **Behavior-change note.** `--normalize-names` reaching all depths and `--normalize-tags` sweeping the whole library are both broader than v1.2.0. Both remain off by default and dry-run-previewable; the v1.2.0 single-folder behavior is a subset of the new one.
+- Tests extended (`tests/test_cleaner.py`): multi-format writer (FLAC + MP3, case-insensitive Vorbis keys, authority vs plain fold, no-op, absent-field), library-wide folding with and without a merge, deep folder + filename renames with collision/illegal guards, dry-run fidelity, and a run-twice idempotency check.
+
 ## cleaner.py v1.2.0 (2026-06-20)
 
 New feature (no package change): **`--normalize-tags`** teaches `cleaner.py` to rewrite embedded artist/albumartist tags so they match the surviving folder name after a merge or rename.

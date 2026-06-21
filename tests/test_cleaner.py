@@ -294,7 +294,7 @@ class NormalizeTreeTests(_TreeCase):
     def test_renames_lone_unicode_hyphen_artist(self):
         _make_dir(self.root, "Jay‐Z", {"a.flac": b"1"})
         run = self._run()
-        cleaner.normalize_tree(self.root, run)
+        cleaner.normalize_tree(self.root, run, True, False)
         run.close()
         self.assertTrue((self.root / "Jay-Z").is_dir())
         self.assertFalse((self.root / "Jay‐Z").exists())
@@ -304,14 +304,14 @@ class NormalizeTreeTests(_TreeCase):
         album.mkdir(parents=True)
         (album / "t.flac").write_bytes(b"1")
         run = self._run()
-        cleaner.normalize_tree(self.root, run)
+        cleaner.normalize_tree(self.root, run, True, False)
         run.close()
         self.assertTrue((self.root / "Artist" / "4-44").is_dir())
 
     def test_dry_run_counts_but_does_not_rename(self):
         _make_dir(self.root, "Jay‐Z", {"a.flac": b"1"})
         run = self._run(dry_run=True)
-        cleaner.normalize_tree(self.root, run)
+        cleaner.normalize_tree(self.root, run, True, False)
         run.close()
         self.assertTrue((self.root / "Jay‐Z").exists())
         self.assertEqual(run.stats["renamed"], 1)
@@ -323,16 +323,18 @@ class NormalizeTreeTests(_TreeCase):
         album.mkdir(parents=True)
         (album / "t.flac").write_bytes(b"1")
         run = self._run()
-        cleaner.normalize_tree(self.root, run)
+        cleaner.normalize_tree(self.root, run, True, False)
         run.close()
         self.assertTrue((self.root / "Artist" / "Rooms…").is_dir())
         self.assertEqual(run.stats["renamed"], 0)
 
 
+from mutagen.flac import FLAC  # noqa: E402
 from mutagen.id3 import ID3  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures" / "library"
 MP3_SRC = FIXTURES / "Cursive" / "Domestica" / "01 - The Casualty.mp3"
+FLAC_SRC = FIXTURES / "Aphex Twin" / "Selected Ambient Works" / "01 - Xtal.flac"
 
 
 class TagFoldTests(unittest.TestCase):
@@ -348,6 +350,20 @@ class TagFoldTests(unittest.TestCase):
 
     def test_whitespace_collapsed(self):
         self.assertEqual(cleaner.tag_fold("  A   B "), "A B")
+
+    def test_en_em_dash_and_ellipsis_preserved(self):
+        # Correct typography (e.g. numeric ranges) must survive the fold.
+        self.assertEqual(cleaner.tag_fold("Works 85–92"), "Works 85–92")
+        self.assertEqual(cleaner.tag_fold("A — B"), "A — B")
+        self.assertEqual(cleaner.tag_fold("Rooms…"), "Rooms…")
+
+    def test_mojibake_dash_repaired_to_real_dash(self):
+        # CP1252 0x96/0x97 are broken en/em dashes -> repaired, not hyphenated.
+        self.assertEqual(cleaner.tag_fold("1975\x961985"), "1975–1985")
+        self.assertEqual(cleaner.tag_fold("A\x97B"), "A—B")
+
+    def test_broken_hyphen_folded(self):
+        self.assertEqual(cleaner.tag_fold("Jay‐Z"), "Jay-Z")
 
 
 class CanonTrackArtistTests(unittest.TestCase):
@@ -375,60 +391,167 @@ class CanonTrackArtistTests(unittest.TestCase):
         )
 
 
-def _mp3(path: Path, artist: str, albumartist: str) -> None:
+def _mp3(path, artist=None, albumartist=None, title=None, album=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(MP3_SRC, path)
     tags = ID3(path)
-    tags.add(cleaner.TPE1(encoding=3, text=[artist]))
-    tags.add(cleaner.TPE2(encoding=3, text=[albumartist]))
+    for fid, cls, val in (
+        ("TIT2", cleaner.TIT2, title),
+        ("TALB", cleaner.TALB, album),
+        ("TPE1", cleaner.TPE1, artist),
+        ("TPE2", cleaner.TPE2, albumartist),
+    ):
+        if val is not None:
+            tags.setall(fid, [cls(encoding=3, text=[val])])
     tags.save(path, v2_version=3)
 
 
-class NormalizeTagsTests(unittest.TestCase):
+def _flac(path, clear=True, **fields):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(FLAC_SRC, path)
+    f = FLAC(path)
+    if clear:
+        f.delete()
+    for key, val in fields.items():
+        for existing in [k for k in list(f.keys()) if k.lower() == key.lower()]:
+            del f[existing]
+        f[key] = [val]
+    f.save()
+
+
+class _RunCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.log = self.root / "cleanup.log"
-        self.genre = self.root / "Alt Country"
-        # Survivor wins by file count (2 > 1), so its quoted name is authority.
-        self.surv = self.genre / "Bonnie 'Prince' Billy"
-        _mp3(
-            self.surv / "I See a Darkness" / "01.mp3",
-            "Bonnie Prince Billy / Bonnie 'Prince' Billy",
-            "Bonnie 'Prince' Billy",
-        )
-        _mp3(
-            self.surv / "I See a Darkness" / "02.mp3",
-            "Bonnie 'Prince' Billy",
-            "Bonnie 'Prince' Billy",
-        )
-        # Variant folders merged in: no-quotes, and CP1252-mojibake with a guest.
-        _mp3(
-            self.genre / "Bonnie Prince Billy" / "Beware" / "01.mp3",
-            "Bonnie Prince Billy",
-            "Bonnie Prince Billy",
-        )
-        _mp3(
-            self.genre / "Bonnie “Prince” Billy" / "Purple Bird" / "01.mp3",
-            "Bonnie \x93Prince\x94 Billy feat. Tim O\x92Brien",
-            "Bonnie \x93Prince\x94 Billy",
-        )
 
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _run(self, dry_run=False):
+    def _run(self, dry_run=False, normalize_tags=True, artist_depth=1):
         return cleaner.Run(
-            self.root, self.log, dry_run=dry_run, normalize_tags=True, artist_depth=2
+            self.root,
+            self.log,
+            dry_run=dry_run,
+            normalize_tags=normalize_tags,
+            artist_depth=artist_depth,
         )
+
+
+class TagWriterTests(_RunCase):
+    """normalize_file_tags() per-format and per-policy."""
+
+    def test_mp3_typographic_fold_keeps_v23(self):
+        p = self.root / "t.mp3"
+        _mp3(p, artist="A", albumartist="A", title="Cur’ly", album="Da\x92sh")
+        run = self._run()
+        cleaner.normalize_file_tags(p, None, run)
+        run.close()
+        t = ID3(p)
+        self.assertEqual(t["TIT2"].text[0], "Cur'ly")
+        self.assertEqual(t["TALB"].text[0], "Da'sh")
+        self.assertEqual(t.version, (2, 3, 0))  # ID3v2.3 contract preserved
+
+    def test_mp3_noop_not_counted(self):
+        p = self.root / "t.mp3"
+        _mp3(p, artist="A", albumartist="A", title="Clean", album="Clean")
+        run = self._run()
+        cleaner.normalize_file_tags(p, None, run)
+        run.close()
+        self.assertEqual(run.stats["tags_rewritten"], 0)
+
+    def test_flac_typographic_fold(self):
+        p = self.root / "t.flac"
+        _flac(
+            p,
+            title="O’Hare",
+            album="Da\x92y",
+            artist="Bj\x94rk",
+            albumartist="Bj\x94rk",
+        )
+        run = self._run()
+        cleaner.normalize_file_tags(p, None, run)
+        run.close()
+        f = FLAC(p)
+        self.assertEqual(f["title"][0], "O'Hare")
+        self.assertEqual(f["album"][0], "Da'y")  # \x92 is the curly apostrophe
+        self.assertEqual(f["artist"][0], 'Bj"rk')  # \x94 is the curly double quote
+
+    def test_flac_uppercase_key_resolved(self):
+        p = self.root / "t.flac"
+        _flac(p, TITLE="Cur’ly")  # case-variant Vorbis key
+        run = self._run()
+        cleaner.normalize_file_tags(p, None, run)
+        run.close()
+        f = FLAC(p)
+        self.assertEqual([k for k in f.keys() if k.lower() == "title"], ["title"])
+        self.assertEqual(f["title"][0], "Cur'ly")  # no duplicate key left
+
+    def test_flac_authority_restamp_preserves_feat(self):
+        p = self.root / "t.flac"
+        _flac(
+            p,
+            title="So’ng",
+            album="Al’bum",
+            artist="Bonnie \x93Prince\x94 Billy feat. Tim O\x92Brien",
+            albumartist="Bonnie \x93Prince\x94 Billy",
+        )
+        run = self._run()
+        cleaner.normalize_file_tags(p, "Bonnie 'Prince' Billy", run)
+        run.close()
+        f = FLAC(p)
+        self.assertEqual(f["artist"][0], "Bonnie 'Prince' Billy feat. Tim O'Brien")
+        self.assertEqual(f["albumartist"][0], "Bonnie 'Prince' Billy")
+        self.assertEqual(f["title"][0], "So'ng")  # title is fold-only, never authority
+        self.assertEqual(f["album"][0], "Al'bum")
+
+    def test_absent_field_not_synthesized(self):
+        p = self.root / "t.flac"
+        _flac(p, title="Cur’ly")  # no album key at all
+        run = self._run()
+        cleaner.normalize_file_tags(p, None, run)
+        run.close()
+        self.assertNotIn("album", [k.lower() for k in FLAC(p).keys()])
+
+
+class NormalizeTagsMergeTests(_RunCase):
+    """Library-wide Pass 4 composed with an artist-folder merge (authority)."""
+
+    def setUp(self):
+        super().setUp()
+        self.genre = self.root / "Alt Country"
+        self.surv = self.genre / "Bonnie 'Prince' Billy"  # wins by file count (2 > 1)
+        _mp3(
+            self.surv / "I See a Darkness" / "01.mp3",
+            artist="Bonnie Prince Billy / Bonnie 'Prince' Billy",
+            albumartist="Bonnie 'Prince' Billy",
+        )
+        _mp3(
+            self.surv / "I See a Darkness" / "02.mp3",
+            artist="Bonnie 'Prince' Billy",
+            albumartist="Bonnie 'Prince' Billy",
+        )
+        _mp3(
+            self.genre / "Bonnie Prince Billy" / "Beware" / "01.mp3",
+            artist="Bonnie Prince Billy",
+            albumartist="Bonnie Prince Billy",
+        )
+        _mp3(
+            self.genre / "Bonnie “Prince” Billy" / "Purple Bird" / "01.mp3",
+            artist="Bonnie \x93Prince\x94 Billy feat. Tim O\x92Brien",
+            albumartist="Bonnie \x93Prince\x94 Billy",
+        )
+
+    def _run2(self, dry_run=False):
+        return self._run(dry_run=dry_run, artist_depth=2)
 
     def _consolidate(self, run):
         cleaner.consolidate_group(
             cleaner.find_groups(self.genre, run)[0], "Alt Country", run
         )
 
-    def test_merge_restamps_all_tags_to_survivor(self):
-        run = self._run()
+    def test_merge_restamps_all_to_survivor(self):
+        run = self._run2()
         self._consolidate(run)
         cleaner.normalize_tags(run)
         run.close()
@@ -436,21 +559,19 @@ class NormalizeTagsTests(unittest.TestCase):
         purple = self.surv / "Purple Bird" / "01.mp3"
         self.assertEqual(ID3(beware)["TPE1"].text[0], "Bonnie 'Prince' Billy")
         self.assertEqual(ID3(beware)["TPE2"].text[0], "Bonnie 'Prince' Billy")
-        # Guest credit preserved, band name + mojibake normalized.
         self.assertEqual(
             ID3(purple)["TPE1"].text[0], "Bonnie 'Prince' Billy feat. Tim O'Brien"
         )
-        self.assertEqual(ID3(purple)["TPE2"].text[0], "Bonnie 'Prince' Billy")
-        # The doubled-junk artist on the survivor's own track is fixed too.
-        darkness = self.surv / "I See a Darkness" / "01.mp3"
-        self.assertEqual(ID3(darkness)["TPE1"].text[0], "Bonnie 'Prince' Billy")
+        self.assertEqual(
+            ID3(self.surv / "I See a Darkness" / "01.mp3")["TPE1"].text[0],
+            "Bonnie 'Prince' Billy",
+        )
 
     def test_dry_run_reports_but_does_not_write(self):
-        run = self._run(dry_run=True)
+        run = self._run2(dry_run=True)
         self._consolidate(run)
         cleaner.normalize_tags(run)
         run.close()
-        # Nothing moved or written in dry-run.
         self.assertEqual(
             ID3(self.genre / "Bonnie Prince Billy" / "Beware" / "01.mp3")["TPE1"].text[
                 0
@@ -459,25 +580,144 @@ class NormalizeTagsTests(unittest.TestCase):
         )
         self.assertGreater(run.stats["tags_rewritten"], 0)
 
-    def test_clean_files_not_counted_as_rewrites(self):
-        run = self._run()
+    def test_clean_file_not_rewritten(self):
+        run = self._run2()
         self._consolidate(run)
         cleaner.normalize_tags(run)
         run.close()
-        # Survivor track 02 was already correct: 4 tracks total, 3 needed changes.
-        self.assertEqual(run.stats["tags_rewritten"], 3)
+        # 4 tracks scanned; survivor track 02 was already correct.
         self.assertEqual(run.stats["tag_files_scanned"], 4)
+        self.assertEqual(run.stats["tags_rewritten"], 3)
 
-    def test_non_artist_depth_not_retagged(self):
-        # With artist_depth=1 the depth-2 survivor is not an artist folder, so no
-        # tag target is seeded and nothing is rewritten.
-        run = cleaner.Run(
-            self.root, self.log, dry_run=False, normalize_tags=True, artist_depth=1
-        )
+    def test_wrong_depth_skips_authority_but_still_folds(self):
+        # artist_depth=1: the depth-2 survivor is NOT an artist folder, so no
+        # authority is recorded. The no-quotes name is therefore NOT forced to the
+        # quoted survivor, but mojibake is still typographically folded everywhere.
+        run = self._run(artist_depth=1)
         self._consolidate(run)
         cleaner.normalize_tags(run)
         run.close()
-        self.assertEqual(run.stats["tags_rewritten"], 0)
+        self.assertEqual(
+            ID3(self.surv / "Beware" / "01.mp3")["TPE1"].text[0], "Bonnie Prince Billy"
+        )  # not restamped
+        self.assertEqual(
+            ID3(self.surv / "Purple Bird" / "01.mp3")["TPE1"].text[0],
+            'Bonnie "Prince" Billy feat. Tim O\'Brien',
+        )  # plain fold
+
+
+class LibraryWideTagTests(_RunCase):
+    def test_folds_without_any_merge(self):
+        # No merge, no authority: title/album/artist still get a typographic fold.
+        p = self.root / "Artist" / "Album" / "01.mp3"
+        _mp3(
+            p,
+            artist="Bj\x94rk",
+            albumartist="Bj\x94rk",
+            title="O’Hare",
+            album="Da\x92y",
+        )
+        run = self._run(artist_depth=2)
+        cleaner.normalize_tags(run)
+        run.close()
+        t = ID3(p)
+        self.assertEqual(t["TIT2"].text[0], "O'Hare")
+        self.assertEqual(t["TALB"].text[0], "Da'y")
+        self.assertEqual(t["TPE1"].text[0], 'Bj"rk')  # plain fold (no authority)
+        self.assertEqual(run.stats["tags_rewritten"], 1)
+
+    def test_unsupported_format_reported_not_touched(self):
+        (self.root / "A").mkdir()
+        (self.root / "A" / "x.wav").write_bytes(b"RIFFxxxx")
+        run = self._run()
+        cleaner.normalize_tags(run)
+        run.close()
+        self.assertEqual(run.stats["tag_unsupported_skipped"], 1)
+        self.assertEqual(run.stats["tag_files_scanned"], 0)
+
+
+class NameRecursionTests(_RunCase):
+    def test_deep_folder_rename_all_levels(self):
+        deep = self.root / "Rock" / "Artist‐X" / "Album’s Best"  # U+2010 + curly '
+        deep.mkdir(parents=True)
+        (deep / "t.mp3").write_bytes(b"x")
+        run = self._run(normalize_tags=False)
+        cleaner.normalize_tree(self.root, run, True, False)
+        run.close()
+        self.assertTrue((self.root / "Rock" / "Artist-X" / "Album's Best").is_dir())
+
+    def test_filename_rename(self):
+        d = self.root / "A" / "B"
+        d.mkdir(parents=True)
+        (d / "01 - Re‐do.flac").write_bytes(b"x")  # U+2010 in stem
+        run = self._run(normalize_tags=False)
+        cleaner.normalize_tree(self.root, run, False, True)
+        run.close()
+        self.assertTrue((d / "01 - Re-do.flac").exists())
+        self.assertEqual(run.stats["files_renamed"], 1)
+
+    def test_filename_collision_retained(self):
+        d = self.root / "A"
+        d.mkdir()
+        (d / "Re‐do.flac").write_bytes(b"x")  # folds onto the existing name
+        (d / "Re-do.flac").write_bytes(b"y")
+        run = self._run(normalize_tags=False)
+        cleaner.normalize_tree(self.root, run, False, True)
+        run.close()
+        self.assertTrue((d / "Re‐do.flac").exists())  # not clobbered
+        self.assertEqual((d / "Re-do.flac").read_bytes(), b"y")
+
+    def test_folders_flag_leaves_files_alone(self):
+        d = self.root / "Artist‐X"
+        d.mkdir()
+        (d / "01 - Re‐do.flac").write_bytes(b"x")
+        run = self._run(normalize_tags=False)
+        cleaner.normalize_tree(self.root, run, True, False)  # folders only
+        run.close()
+        self.assertTrue((self.root / "Artist-X" / "01 - Re‐do.flac").exists())
+        self.assertEqual(run.stats["files_renamed"], 0)
+
+    def test_dry_run_changes_nothing(self):
+        d = self.root / "Artist‐X"
+        d.mkdir()
+        (d / "01 - Re‐do.flac").write_bytes(b"x")
+        run = self._run(dry_run=True, normalize_tags=False)
+        cleaner.normalize_tree(self.root, run, True, True)
+        run.close()
+        self.assertTrue((self.root / "Artist‐X").is_dir())
+        self.assertTrue((d / "01 - Re‐do.flac").exists())
+        self.assertGreater(run.stats["renamed"] + run.stats["files_renamed"], 0)
+
+
+class IdempotencyTests(_RunCase):
+    def test_full_pipeline_idempotent(self):
+        artist = self.root / "Folk" / "Sinéad O’Connor" / "Album"  # curly ' in folder
+        _mp3(
+            artist / "01 - So’ng.mp3",
+            artist="Sinéad O\x92Connor",
+            albumartist="Sinéad O\x92Connor",
+            title="So’ng",
+            album="Al\x92bum",
+        )
+
+        run1 = self._run(artist_depth=2)
+        cleaner.normalize_tree(self.root, run1, True, True)
+        cleaner.normalize_tags(run1)
+        run1.close()
+        self.assertGreater(
+            run1.stats["renamed"]
+            + run1.stats["files_renamed"]
+            + run1.stats["tags_rewritten"],
+            0,
+        )
+
+        run2 = self._run(artist_depth=2)
+        cleaner.normalize_tree(self.root, run2, True, True)
+        cleaner.normalize_tags(run2)
+        run2.close()
+        self.assertEqual(run2.stats["renamed"], 0)
+        self.assertEqual(run2.stats["files_renamed"], 0)
+        self.assertEqual(run2.stats["tags_rewritten"], 0)
 
 
 if __name__ == "__main__":

@@ -316,7 +316,7 @@ The `scripts/` directory holds seven standalone maintenance tools. They are **no
 | [`retag.py`](#retagpy) | Genre tags on one album directory | manual, per-album |
 | [`genre_tidy.py`](#genre_tidypy) | Genre tags library-wide (through `retag.py`) | policy map, then apply |
 | [`rerate.py`](#reratepy) | MP3 POPM rating bytes | reconcile DeaDBeeF / foobar |
-| [`cleaner.py`](#cleanerpy) | Folder names and layout (moves, merges, renames); MP3 artist tags with `--normalize-tags` | filesystem (opt-in tags) |
+| [`cleaner.py`](#cleanerpy) | Folder names and layout (moves, merges, renames); file names with `--normalize-filenames`; title/album/artist tags (all formats) with `--normalize-tags` | filesystem (opt-in names + tags) |
 | [`genre_foldermap.py`](#genre_foldermappy) | Restructures the tree into Genre/Artist/Album | filesystem |
 | [`replaygain.py`](#replaygainpy) | Writes ReplayGain 2.0 gain/peak tags (via `rsgain`) | album-by-album |
 | [`apestrip.py`](#apestrippy) | Removes stray APEv2 tags from MP3s (`--keep-metadata` to migrate first) | recursive, MP3-only |
@@ -450,25 +450,32 @@ Same album, no track overlap, scattered between two folders by filesystem accide
    ```
 4. Re-run `lattice --duplicates` afterward to confirm the consolidated state.
 
-**Two passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder. The order matters: collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory.
+**The passes.** Pass 1 collapses artist-folder duplicates (e.g., merges `JAY‐Z & Kanye West/` into `Jay-Z & Kanye West/`). Pass 2 then runs album-level consolidation inside each artist folder; collapsing the artist split first means album-level matching can find pairs that would otherwise be hidden under the duplicate artist directory. Pass 3 (`--normalize-names` / `--normalize-filenames`) renames folders and/or files, and Pass 4 (`--normalize-tags`) normalizes tags; both are opt-in and described below.
 
-**Layout note.** The passes are depth-fixed: the given root's children are treated as artists, and their children as albums. On a genre-first library (`Genre/Artist/Album`, the shape `genre_foldermap.py` builds), point `cleaner.py` at each genre folder rather than the library root; run against the root it would consolidate at the genre and artist levels but never reach the album folders.
+**Layout note.** The *merge* passes (1-2) are depth-fixed: the given root's children are treated as artists, and their children as albums. On a genre-first library (`Genre/Artist/Album`, the shape `genre_foldermap.py` builds), a variant artist split is caught one level down (as an album-level group within each genre); merging at the album-folder level there is not reached, so point `cleaner.py` at a genre folder if you need album-level merges. The Pass-3 name sweep, by contrast, recurses to every depth, and Pass 4 reads the artist level from `--layout`.
 
-**Normalizing lone folders (`--normalize-names`).** The merge passes only touch *duplicate* folders. Libraries often also carry lone, non-duplicate folders whose names use non-standard characters (e.g. `At the Drive‐In` with a unicode hyphen, or a curly apostrophe). With `--normalize-names`, a third pass renames every folder whose name differs from its normalized form, folding the same classes as the survivor rename (broken hyphens, curly quotes/apostrophes; en/em dashes and the ellipsis preserved). It is off by default and can touch many folders at once, so preview with `--dry-run` first.
+**Normalizing folder and file names (`--normalize-names`, `--normalize-filenames`).** The merge passes only touch *duplicate* folders. Libraries often also carry lone, non-duplicate folders (and track files) whose names use non-standard characters (e.g. `At the Drive‐In` with a unicode hyphen, or a curly apostrophe). With `--normalize-names`, Pass 3 renames every folder at **any depth** whose name differs from its normalized form, folding the same classes as the survivor rename (broken hyphens, curly quotes/apostrophes; en/em dashes and the ellipsis preserved so names stay legal on NTFS). `--normalize-filenames` does the same for audio **track files** (the extension is kept verbatim). They are independent: renaming files is a distinct change (filenames are referenced by playlists and cue sheets), so it is its own opt-in rather than folded into `--normalize-names`. Both are off by default and can touch many names at once, so preview with `--dry-run` first.
 
-**Restamping tags to match the folder (`--normalize-tags`).** When a variant artist folder is merged (or renamed by `--normalize-names`), the *embedded* artist/albumartist tags can still hold the old spelling, including CP1252 mojibake from a torrent rip (`Bonnie \x93Prince\x94 Billy`). With `--normalize-tags`, a fourth pass rewrites the MP3 `artist`/`albumartist` tags under every such artist folder so the metadata matches the surviving folder name, which is treated as the naming authority: a merged-in `Bonnie Prince Billy` (no quotes) and a mojibake `Bonnie \x93Prince\x94 Billy` both become the survivor's `Bonnie 'Prince' Billy`. The punctuation is folded to straight ASCII and a trailing guest credit is preserved (`... feat. Tim O'Brien`). It is **MP3-only** (the same scope as `apestrip.py`/`rerate.py`; non-MP3 audio is reported and left untouched) and saves ID3v2.3 + a refreshed ID3v1, matching `retag.py`. Two players read APEv2 over ID3, so if a stray APE tag is in play, run [`apestrip.py`](#apestrippy) first. Off by default; preview with `--dry-run`.
+**Normalizing tags (`--normalize-tags`).** Pass 4 is a **library-wide** typographic pass over every audio file (`.mp3/.flac/.ogg/.opus/.m4a/.mp4/.wma`; other formats are reported and skipped):
 
-The artist *level* is read from `--layout` (default `{artist}/{album}`): only folders at the artist depth seed the tag pass, so a genre or album folder is never mistaken for an artist. On a genre-first library pass `--layout '{genre}/{artist}/{album}'`:
+- **Title and album** get a pure typographic fold: CP1252 mojibake (`Doesn\x92t` from a torrent rip), curly quotes, and broken hyphens become their clean form, while correct typography is preserved (`Selected Ambient Works 85–92` keeps its en dash, an ellipsis stays an ellipsis). The words are never changed, so the folder/filename is never used as an authority for them.
+- **Artist and albumartist** get the same fold everywhere, *except* under a merged or `--normalize-names`-renamed artist folder, where they are restamped to the surviving folder name (the naming authority): a merged-in `Bonnie Prince Billy` (no quotes) and a mojibake `Bonnie \x93Prince\x94 Billy` both become the survivor's `Bonnie 'Prince' Billy`, with a trailing guest credit preserved (`... feat. Tim O'Brien`).
+
+Writes are per-container (ID3 saved as ID3v2.3 + refreshed ID3v1, matching `retag.py`; Vorbis/MP4/ASF in their native fields), only changed fields are touched, and an already-clean file is a no-op (so the pass is idempotent). Two players read APEv2 over ID3, so if a stray APE tag is in play, run [`apestrip.py`](#apestrippy) first. Off by default; preview with `--dry-run`.
+
+The artist *level* (for the authority restamp) is read from `--layout` (default `{artist}/{album}`); a genre or album folder is never mistaken for an artist. On a genre-first library pass `--layout '{genre}/{artist}/{album}'`:
 
 ```bash
 ./scripts/cleaner.py /mnt/SharedData/Music --dry-run \
-    --normalize-tags --normalize-names --layout '{genre}/{artist}/{album}'
+    --normalize-names --normalize-filenames --normalize-tags \
+    --layout '{genre}/{artist}/{album}'
 ```
 
 **What it does not do.** `cleaner.py` is intentionally narrow. It does not:
-- Rewrite tags **by default** (folder operations only; opt into artist/albumartist normalization with `--normalize-tags`, or use `retag.py` for genre)
+- Touch tags or filenames **by default** (folder operations only; opt into the name/tag passes explicitly, or use `retag.py` for genre)
 - Re-encode or transcode audio (filesystem operations only)
-- Match albums by tag content for *merging* (folders are merged by name only, by design, so the merge is auditable from the log alone; `--normalize-tags` reads tags but only to rewrite them under an already-chosen folder)
+- Match albums by tag content for *merging* (folders are merged by name only, by design, so the merge is auditable from the log alone; `--normalize-tags` reads tags but only to rewrite them, never to decide a merge)
+- Use the folder or filename as an authority for **title or album** tags (those are typographic-fold-only; only artist/albumartist follow the folder)
 - Touch the source-of-truth import pipeline. If the same fragmentation pattern keeps reappearing, the upstream tagger or downloader needs a curly-quote normalization rule.
 
 ### `genre_foldermap.py`

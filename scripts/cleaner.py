@@ -20,8 +20,12 @@ renamed to its normalized form (ASCII hyphen, straight quotes).
 Passes:
   1. Artist-folder level (e.g. 'Jay-Z & Kanye West' vs 'JAY‐Z & Kanye West')
   2. Album-folder level within each artist directory
-  3. (only with --normalize-names) rename every remaining folder whose name
-     uses non-standard characters to its normalized form
+  3. (--normalize-names / --normalize-filenames) rename every remaining folder
+     (any depth) and/or audio file whose name uses non-standard characters to
+     its normalized form
+  4. (--normalize-tags) library-wide tag normalization: typographically fold the
+     title/album tags on every file, and restamp artist/albumartist to the
+     surviving folder name under merged/renamed artist folders (all formats)
   4. (only with --normalize-tags) rewrite the artist/albumartist tags of the
      MP3s under every merged or renamed artist folder so the embedded metadata
      matches the surviving folder name. Folder depth of the artist component is
@@ -57,13 +61,23 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from mutagen.id3 import ID3, ID3NoHeaderError, TPE1, TPE2
+    from mutagen.asf import ASF
+    from mutagen.flac import FLAC
+    from mutagen.id3 import ID3, ID3NoHeaderError, TALB, TIT2, TPE1, TPE2
+    from mutagen.mp4 import MP4
+    from mutagen.oggopus import OggOpus
+    from mutagen.oggvorbis import OggVorbis
 
     MUTAGEN_OK = True
 except ImportError:  # tag normalization (--normalize-tags) needs mutagen
     MUTAGEN_OK = False
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
+
+# Containers whose title/album/artist/albumartist the tag pass can rewrite. Other
+# AUDIO_EXT members (.wav/.aac/.alac/.ape/.wv/.aiff) carry no handled tag layout
+# and are reported + skipped rather than silently no-oped.
+TAGGABLE_EXT = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".mp4", ".wma"}
 
 AUDIO_EXT = {
     ".mp3",
@@ -147,32 +161,43 @@ def canonical_render(s: str) -> str:
 
 
 # CP1252 bytes read back as Latin-1 land on these C1 code points; together with
-# the genuine Unicode curly punctuation they fold to ASCII so a tag like
+# the genuine Unicode curly punctuation they fold so a tag like
 # "Bonnie \x93Prince\x94 Billy" or "Tim O\x92Brien" comes out clean.
+#
+# Deliberately narrow, matching canonical_render's philosophy: only the genuinely
+# wrong glyphs go to ASCII. En/em dashes and the ellipsis are CORRECT typography
+# (e.g. the range "85–92") and are preserved; a CP1252-mojibake dash/ellipsis is
+# repaired to the real glyph, not flattened to a hyphen. Tags are not path
+# components, so curly double quotes do fold to straight " (legal in a tag).
 _TAG_FOLD = {
+    # CP1252 C1 bytes (read back as Latin-1) -> intended glyph.
     0x91: "'",
     0x92: "'",
     0x93: '"',
     0x94: '"',
-    0x96: "-",
-    0x97: "-",
-    0x85: "...",
+    0x96: "–",  # en dash (kept as a real en dash, not a hyphen)
+    0x97: "—",  # em dash
+    0x85: "…",  # ellipsis
+    # Curly quotes/apostrophes -> straight ASCII.
     0x2018: "'",
     0x2019: "'",
+    0x02BC: "'",  # modifier letter apostrophe
     0x201C: '"',
     0x201D: '"',
-    0x2013: "-",
-    0x2014: "-",
-    0x2026: "...",
+    # Genuinely broken hyphens -> ASCII hyphen. En/em dashes + ellipsis preserved.
+    0x2010: "-",
+    0x2011: "-",
+    0x2012: "-",
+    0x2015: "-",
 }
 _FEAT_RE = re.compile(r"\s*(?:feat\.?|ft\.?|featuring)\s+(.*)$", re.I)
 
 
 def tag_fold(s: str) -> str:
-    """Fold CP1252 mojibake and curly punctuation in a tag value to ASCII and
-    collapse whitespace. Unlike canonical_render (which preserves curly double
-    quotes because straight " is illegal on NTFS), tags are not path components,
-    so everything goes to straight ASCII."""
+    """Fold CP1252 mojibake, curly quotes, and broken hyphens in a tag value to
+    their clean form, collapsing whitespace. En/em dashes, ellipsis, and primes
+    are preserved (correct typography), matching canonical_render's narrow fold;
+    unlike it, curly double quotes go to straight " since tags are not paths."""
     return " ".join(s.translate(_TAG_FOLD).split())
 
 
@@ -266,9 +291,10 @@ class Run:
             "exact_dupes_dropped": 0,
             "renamed": 0,
             "rmdirs": 0,
+            "files_renamed": 0,
             "tags_rewritten": 0,
             "tag_files_scanned": 0,
-            "tag_non_mp3_skipped": 0,
+            "tag_unsupported_skipped": 0,
         }
 
     def _is_artist_level(self, p: Path) -> bool:
@@ -500,99 +526,267 @@ def consolidate_group(folders: list[Path], context: str, run: Run) -> None:
         run._record_tag_target(survivor.name, [survivor, canonical, *sources])
 
 
-def normalize_tree(root: Path, run: Run) -> None:
-    """Rename every artist/album folder whose name is not its canonical_render.
-    Albums first, then the artist folder, so child paths stay valid. Rename-only:
-    merging duplicates is Passes 1-2' job."""
-    artists = sorted(
-        (p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")),
-        key=lambda p: p.name.lower(),
-    )
-    for artist_dir in artists:
-        try:
-            albums = [
-                a
-                for a in artist_dir.iterdir()
-                if a.is_dir() and not a.name.startswith(".")
-            ]
-        except OSError as e:
-            run.log(f"  WARN scan {artist_dir}: {e}")
-            albums = []
-        for album_dir in sorted(albums, key=lambda p: p.name.lower()):
-            _normalize_folder_name(album_dir, run)
-        _normalize_folder_name(artist_dir, run)
-
-
-def _retag_mp3(path: Path, canonical: str, run: Run) -> None:
-    """Rewrite TPE1/TPE2 on a single MP3 to match `canonical`, preserving guest
-    credits on the track artist. No-op when already correct. ID3v2.3 + refreshed
-    ID3v1, matching retag.py."""
+def _normalize_file_name(path: Path, run: Run) -> None:
+    """Rename a track file to canonical_render(stem) + suffix when they differ,
+    with the same legality + collision guards as the folder rename. The extension
+    is preserved verbatim."""
+    new_name = canonical_render(path.stem) + path.suffix
+    if new_name == path.name:
+        return
+    if not is_legal_name(new_name):
+        run.log(f"    SKIP RENAME FILE (illegal target name): {path.name}")
+        return
+    dst = path.parent / new_name
+    if dst.exists() and dst != path:
+        run.log(f"    RETAIN FILE NAME (normalized target exists): {path.name}")
+        return
     try:
-        tags = ID3(path)
-    except ID3NoHeaderError:
+        run._rename(path, dst)
+    except OSError as e:
+        run.log(f"    ERROR rename file {path.name} -> {new_name}: {e}")
         return
-    except Exception as e:  # a corrupt header must not abort the whole run
-        run.log(f"    TAG ERROR (read {path.name}): {e}")
-        return
+    run.stats["files_renamed"] += 1
+    run.log(f"    RENAME FILE: {path.name}  ->  {new_name}")
 
-    cur_artist = tags["TPE1"].text[0] if "TPE1" in tags else ""
-    cur_aa = tags["TPE2"].text[0] if "TPE2" in tags else ""
-    new_artist = canon_track_artist(cur_artist, canonical) if cur_artist else canonical
-    new_aa = canonical
-    if cur_artist == new_artist and cur_aa == new_aa:
+
+def normalize_tree(root: Path, run: Run, do_folders: bool, do_files: bool) -> None:
+    """Bottom-up rename of folder names (every depth) and/or audio file names to
+    their canonical_render form. Files in a directory are renamed before the
+    directory itself, and directories before their parents (os.walk topdown=False),
+    so captured paths stay valid through an apply run. Rename-only: merging is
+    Passes 1-2' job. `--normalize-names` drives folders, `--normalize-filenames`
+    drives files; either may run alone."""
+    for dirpath, _dirnames, filenames in list(os.walk(root, topdown=False)):
+        d = Path(dirpath)
+        if do_files:
+            for fn in sorted(filenames):
+                if fn.startswith("."):
+                    continue
+                fp = d / fn
+                if fp.suffix.lower() in AUDIO_EXT:
+                    _normalize_file_name(fp, run)
+        if do_folders and d != root and not d.name.startswith("."):
+            _normalize_folder_name(d, run)
+
+
+def _planned_tag_values(
+    cur: dict[str, str | None], authority: str | None
+) -> dict[str, str]:
+    """Given the current title/album/artist/albumartist (None = field absent),
+    return only the fields whose value should change. Title and album get a pure
+    typographic fold and are never synthesized when absent. Artist/albumartist
+    follow the surviving folder name when `authority` is set (and are created if
+    absent, as the artist restamp did before), else a typographic fold."""
+    out: dict[str, str] = {}
+    for field in ("title", "album"):
+        v = cur.get(field)
+        if v is None:
+            continue
+        folded = tag_fold(v)
+        if folded != v:
+            out[field] = folded
+
+    artist = cur.get("artist")
+    albumartist = cur.get("albumartist")
+    if authority:
+        new_artist = canon_track_artist(artist or "", authority)
+        if artist is None or new_artist != artist:
+            out["artist"] = new_artist
+        if albumartist is None or authority != albumartist:
+            out["albumartist"] = authority
+    else:
+        for field, v in (("artist", artist), ("albumartist", albumartist)):
+            if v is None:
+                continue
+            folded = tag_fold(v)
+            if folded != v:
+                out[field] = folded
+    return out
+
+
+def _first(values) -> str | None:
+    """First non-empty value of a mutagen list, unwrapping ASF attributes."""
+    if not values:
+        return None
+    v = values[0]
+    v = getattr(v, "value", v)  # ASFUnicodeAttribute -> str
+    return v if v else None
+
+
+def _open_for_tags(path: Path, ext: str):
+    """Return (current_fields, apply_fn) for a taggable file, or None if it has no
+    readable tag block (e.g. an MP3 with no ID3 header). apply_fn(out) writes only
+    the fields in `out`. Raw per-container mutagen, mirroring retag.py."""
+    if ext == ".mp3":
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            return None
+        id3map = {
+            "title": ("TIT2", TIT2),
+            "album": ("TALB", TALB),
+            "artist": ("TPE1", TPE1),
+            "albumartist": ("TPE2", TPE2),
+        }
+        cur = {}
+        for field, (fid, _cls) in id3map.items():
+            frame = tags.get(fid)
+            cur[field] = frame.text[0] if frame is not None and frame.text else None
+
+        def apply(out):
+            for field, val in out.items():
+                fid, cls = id3map[field]
+                tags.setall(fid, [cls(encoding=3, text=[val])])
+            tags.save(path, v2_version=3, v1=2)
+
+        return cur, apply
+
+    vorbis_cls = {".flac": FLAC, ".ogg": OggVorbis, ".opus": OggOpus}.get(ext)
+    if vorbis_cls is not None:
+        tags = vorbis_cls(path)
+        keymap = {k.lower(): k for k in tags.keys()}
+
+        def get(name):
+            key = keymap.get(name)
+            return _first(tags[key]) if key is not None else None
+
+        cur = {f: get(f) for f in ("title", "album", "artist", "albumartist")}
+
+        def apply(out):
+            for field, val in out.items():
+                for existing in [k for k in list(tags.keys()) if k.lower() == field]:
+                    del tags[existing]
+                tags[field] = [val]
+            tags.save()
+
+        return cur, apply
+
+    if ext in (".m4a", ".mp4"):
+        tags = MP4(path)
+        atom = {
+            "title": "\xa9nam",
+            "album": "\xa9alb",
+            "artist": "\xa9ART",
+            "albumartist": "aART",
+        }
+        cur = {f: _first(tags.get(a)) for f, a in atom.items()}
+
+        def apply(out):
+            for field, val in out.items():
+                tags[atom[field]] = [val]
+            tags.save()
+
+        return cur, apply
+
+    if ext == ".wma":
+        tags = ASF(path)
+        keymap = {k.lower(): k for k in tags.keys()}
+        asf = {
+            "title": "Title",
+            "album": "WM/AlbumTitle",
+            "artist": "Author",
+            "albumartist": "WM/AlbumArtist",
+        }
+        cur = {f: _first(tags.get(keymap.get(k.lower(), k))) for f, k in asf.items()}
+
+        def apply(out):
+            for field, val in out.items():
+                tags[asf[field]] = [val]
+            tags.save()
+
+        return cur, apply
+
+    return None
+
+
+def normalize_file_tags(path: Path, authority: str | None, run: Run) -> None:
+    """Typographically normalize title/album (and artist/albumartist, restamped to
+    `authority` when set) on one file. No-op when nothing changes. Multi-format."""
+    ext = path.suffix.lower()
+    rel = path.relative_to(run.root)
+    try:
+        opened = _open_for_tags(path, ext)
+    except Exception as e:  # a corrupt tag block must not abort the whole run
+        run.log(f"    TAG ERROR (read {rel}): {e}")
+        return
+    if opened is None:
+        return
+    cur, apply = opened
+    out = _planned_tag_values(cur, authority)
+    if not out:
         return
 
     run.stats["tags_rewritten"] += 1
-    rel = path.relative_to(run.root)
     run.log(f"    TAG: {rel}")
-    if cur_artist != new_artist:
-        run.log(f"      artist:  {cur_artist!r} -> {new_artist!r}")
-    if cur_aa != new_aa:
-        run.log(f"      aartist: {cur_aa!r} -> {new_aa!r}")
+    for field in ("title", "album", "artist", "albumartist"):
+        if field in out:
+            run.log(f"      {field}: {cur.get(field)!r} -> {out[field]!r}")
     if run.dry_run:
         return
-    tags.setall("TPE1", [TPE1(encoding=3, text=[new_artist])])
-    tags.setall("TPE2", [TPE2(encoding=3, text=[new_aa])])
     try:
-        tags.save(path, v2_version=3, v1=2)
+        apply(out)
     except Exception as e:
         run.stats["tags_rewritten"] -= 1
-        run.log(f"    TAG ERROR (save {path.name}): {e}")
+        run.log(f"    TAG ERROR (save {rel}): {e}")
 
 
 def normalize_tags(run: Run) -> None:
-    """Pass 4: rewrite artist/albumartist tags under every recorded artist
-    folder so the embedded metadata matches the surviving folder name. MP3-only;
-    non-MP3 audio is counted and skipped. Each physical file is visited once even
-    when several recorded folders overlap (survivor + sources of the same group)."""
-    run.log("\n--- PASS 4: normalize artist tags ---")
+    """Pass 4: library-wide tag normalization. Title and album get a typographic
+    fold everywhere; artist/albumartist are restamped to the surviving folder name
+    under merged/renamed artist folders (the authority map) and folded elsewhere.
+    Every taggable file is visited once; unsupported audio is reported and skipped."""
+    run.log("\n--- PASS 4: normalize tags (library-wide) ---")
     if not MUTAGEN_OK:
         run.log("  SKIP: mutagen not importable; cannot read/write tags")
         return
-    if not run.tag_targets:
-        run.log("  (no merged or renamed artist folders to retag)")
-        return
 
+    # Artist-depth folders recorded by merges/renames map to their canonical name.
+    # Sources are recorded alongside survivors, so a dry-run file under a not-yet-
+    # moved source resolves to the same authority an apply run would give it.
+    authority_map = {
+        os.path.realpath(folder): canonical
+        for canonical, folders in run.tag_targets
+        for folder in folders
+    }
+
+    def resolve_authority(p: Path) -> str | None:
+        for parent in p.parents:
+            name = authority_map.get(os.path.realpath(parent))
+            if name is not None:
+                return name
+        return None
+
+    show_progress = sys.stderr.isatty()
     seen: set[str] = set()
-    for canonical, folders in run.tag_targets:
-        for folder in folders:
-            if not folder.is_dir():
-                continue
-            for f in sorted(folder.rglob("*")):
-                if not f.is_file():
-                    continue
-                real = os.path.realpath(f)
-                if real in seen:
-                    continue
-                ext = f.suffix.lower()
-                if ext == ".mp3":
-                    seen.add(real)
-                    run.stats["tag_files_scanned"] += 1
-                    _retag_mp3(f, canonical, run)
-                elif ext in AUDIO_EXT:
-                    seen.add(real)
-                    run.stats["tag_non_mp3_skipped"] += 1
-                    run.log(f"    SKIP NON-MP3 ({ext}): {f.relative_to(run.root)}")
+    scanned = 0
+    for f in sorted(run.root.rglob("*")):
+        if not f.is_file():
+            continue
+        ext = f.suffix.lower()
+        if ext not in AUDIO_EXT and ext not in TAGGABLE_EXT:
+            continue
+        real = os.path.realpath(f)
+        if real in seen:
+            continue
+        seen.add(real)
+        if ext not in TAGGABLE_EXT:
+            run.stats["tag_unsupported_skipped"] += 1
+            run.log(f"    SKIP (no tag layout, {ext}): {f.relative_to(run.root)}")
+            continue
+        run.stats["tag_files_scanned"] += 1
+        scanned += 1
+        normalize_file_tags(f, resolve_authority(f), run)
+        if show_progress and scanned % 250 == 0:
+            print(
+                f"\r  tags: {scanned} scanned, {run.stats['tags_rewritten']} changed",
+                end="",
+                file=sys.stderr,
+            )
+    if show_progress and scanned:
+        print(
+            f"\r  tags: {scanned} scanned, {run.stats['tags_rewritten']} changed",
+            file=sys.stderr,
+        )
 
 
 def main() -> int:
@@ -617,14 +811,21 @@ def main() -> int:
     parser.add_argument(
         "--normalize-names",
         action="store_true",
-        help="Also rename non-duplicate folders with non-standard characters "
-        "(unicode dashes, curly quotes) to their normalized ASCII/straight form",
+        help="Also rename non-duplicate folders at every depth with non-standard "
+        "characters (unicode dashes, curly quotes) to their normalized form",
+    )
+    parser.add_argument(
+        "--normalize-filenames",
+        action="store_true",
+        help="Also rename audio track files the same way (separate from "
+        "--normalize-names since renaming files is a distinct change)",
     )
     parser.add_argument(
         "--normalize-tags",
         action="store_true",
-        help="Also rewrite the MP3 artist/albumartist tags under every merged or "
-        "renamed artist folder to match the surviving folder name (Pass 4)",
+        help="Library-wide: typographically normalize title/album tags on every "
+        "file and restamp artist/albumartist to the surviving folder name under "
+        "merged/renamed artist folders (all formats; Pass 4)",
     )
     parser.add_argument(
         "--layout",
@@ -704,9 +905,17 @@ def main() -> int:
                 consolidate_group(group, context=artist_dir.name, run=run)
         run.log(f"album-level consolidation touched {scanned} artist(s)")
 
-        if args.normalize_names:
-            run.log("\n--- PASS 3: normalize folder names ---")
-            normalize_tree(root, run)
+        if args.normalize_names or args.normalize_filenames:
+            what = " + ".join(
+                w
+                for w, on in (
+                    ("folders", args.normalize_names),
+                    ("filenames", args.normalize_filenames),
+                )
+                if on
+            )
+            run.log(f"\n--- PASS 3: normalize names ({what}) ---")
+            normalize_tree(root, run, args.normalize_names, args.normalize_filenames)
 
         if args.normalize_tags:
             normalize_tags(run)
