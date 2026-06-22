@@ -66,6 +66,30 @@ class ClassifyTests(unittest.TestCase):
         kind, _reason = gf.classify(self.root, self.root)
         self.assertEqual(kind, "skip")
 
+    def test_staging_prefix_is_stripped_to_a_stray_album(self):
+        # An album dumped in the staging inbox classifies as a flat stray, so it
+        # is filed into the real taxonomy rather than read as a "Unfiltered" genre.
+        self.assertEqual(
+            gf.classify(
+                Path("/m/Unfiltered/Kanye West/BULLY"), self.root, staging="Unfiltered"
+            ),
+            ("album", "Kanye West", "BULLY"),
+        )
+
+    def test_staging_prefix_strips_for_loose_artist(self):
+        self.assertEqual(
+            gf.classify(Path("/m/Unfiltered/J. Cole"), self.root, staging="Unfiltered"),
+            ("loose", "J. Cole"),
+        )
+
+    def test_without_staging_the_inbox_looks_organized(self):
+        # The bug being fixed: with no staging set, Unfiltered/Artist/Album reads
+        # as an already-organized album under a genre named "Unfiltered".
+        self.assertEqual(
+            gf.classify(Path("/m/Unfiltered/Kanye West/BULLY"), self.root),
+            ("organized", "Unfiltered", "Kanye West", "BULLY"),
+        )
+
 
 def _make_tree(root: Path, layout: dict) -> None:
     """layout maps a relative path -> file contents (str). Parent dirs are made."""
@@ -212,6 +236,73 @@ class BuildPlanTests(unittest.TestCase):
         self.assertEqual(
             (self.root / "Post-Hardcore/AFI/Sing the Sorrow/01.mp3").read_text(), "a"
         )
+
+    def test_staging_album_files_into_real_taxonomy(self):
+        # An organized album seeds the genre vocabulary ({"Hip Hop"}); an album
+        # in the Unfiltered inbox tagged with that genre is filed into the real
+        # tree at the root, not left under "Unfiltered".
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "a",
+                "Unfiltered/Kanye West/BULLY/01.mp3": "b",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop"),
+            FakeAD(str(self.root / "Unfiltered/Kanye West/BULLY"), "Hip Hop"),
+        ]
+        moves, issues, sources = gf.build_plan(recs, self.root, staging="Unfiltered")
+        self.assertEqual(issues, [])
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].dst, self.root / "Hip Hop/Kanye West/BULLY")
+        self.assertIn(self.root / "Unfiltered/Kanye West", sources)
+
+    def test_staging_apply_moves_cover_and_keeps_inbox(self):
+        # End-to-end: the album (incl. its cover) moves out of the inbox, the
+        # per-artist source dir is pruned, but the Unfiltered inbox is left intact.
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "a",
+                "Unfiltered/Kanye West/BULLY/01.mp3": "b",
+                "Unfiltered/Kanye West/BULLY/cover.jpg": "art",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop"),
+            FakeAD(str(self.root / "Unfiltered/Kanye West/BULLY"), "Hip Hop"),
+        ]
+        moves, issues, sources = gf.build_plan(recs, self.root, staging="Unfiltered")
+        self.assertEqual(issues, [])
+        with gf.Runner(self.root / "m.tsv", dry_run=False, quiet=True) as runner:
+            gf.execute(moves, sources, runner)
+        self.assertEqual(
+            (self.root / "Hip Hop/Kanye West/BULLY/01.mp3").read_text(), "b"
+        )
+        self.assertEqual(
+            (self.root / "Hip Hop/Kanye West/BULLY/cover.jpg").read_text(), "art"
+        )
+        self.assertFalse((self.root / "Unfiltered/Kanye West").exists())
+        self.assertTrue((self.root / "Unfiltered").is_dir())  # inbox kept
+
+    def test_staging_unknown_genre_is_gated(self):
+        # The vocabulary gate still applies to inbox albums: a genre the library
+        # doesn't use is flagged, not filed, even from the inbox.
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "a",
+                "Unfiltered/Weird Al/Polka Party/01.mp3": "b",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop"),
+            FakeAD(str(self.root / "Unfiltered/Weird Al/Polka Party"), "Polka"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root, staging="Unfiltered")
+        self.assertEqual(moves, [])
+        self.assertTrue(any("UNKNOWN GENRE" in m and "Polka" in m for m in issues))
 
     def test_missing_genre_is_flagged_not_moved(self):
         _make_tree(self.root, {"Mystery/Album/01.opus": "x"})

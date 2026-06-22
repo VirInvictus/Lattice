@@ -26,6 +26,14 @@ Two directory shapes are handled:
 Albums already at Genre/Artist/Album are left in place; if their folder genre
 disagrees with their tags, that is reported as a NOTE, never silently re-filed.
 
+A staging folder (default "Unfiltered") is transparent: its leading component is
+stripped before classification, so Unfiltered/Artist/Album is filed into the real
+taxonomy at the library root exactly like a flat Artist/Album stray, rather than
+mistaking "Unfiltered" for a genre. This is for an inbox where a tagger (e.g.
+Picard) dumps Artist folders so they stay out of the organized root. The staging
+folder itself is left in place after its contents move out. Pass --staging "" to
+disable, or --staging NAME to use a different inbox name.
+
 Placement is gated by the library's own genre vocabulary: the set of top-level
 folders that already hold a Genre/Artist/Album tree. A stray whose tag genre
 isn't already one of those is flagged, not filed into a brand-new top-level
@@ -62,7 +70,7 @@ from collections import Counter, namedtuple
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 # Path-component characters forbidden on Windows/NTFS/exFAT (the library often
 # lives on a shared NTFS volume), plus the trailing "." / " " rule. Genre names
@@ -70,6 +78,11 @@ __version__ = "1.2.0"
 _ILLEGAL_NAME_CHARS = '<>:"/\\|?*'
 
 SINGLES_DIR = "Singles"
+
+# Default name of the staging inbox at the library root. Artist folders dumped
+# here (e.g. by Picard) are filed into the real taxonomy instead of being read
+# as a genre folder. Overridable via --staging; pass "" to disable.
+STAGING_DIR = "Unfiltered"
 
 # A single planned filesystem move. `kind` is "dir" (a whole album folder) or
 # "file" (one loose track/sidecar destined for a Singles folder); it only
@@ -86,9 +99,12 @@ def sanitize_component(name: str) -> str:
     return cleaned.rstrip(". ") or "Unknown"
 
 
-def classify(path: Path, root: Path) -> tuple:
+def classify(path: Path, root: Path, staging: str | None = None) -> tuple:
     """Decide how a scanned audio directory maps into the new tree, from its
-    depth under root. Returns one of:
+    depth under root. A `staging` folder name (e.g. "Unfiltered") is stripped
+    from the front of the path first, so an album dumped at staging/Artist/Album
+    classifies as the flat-stray ("album", Artist, Album) and is filed into the
+    real taxonomy, not read as a genre folder. Returns one of:
         ("album", artist, album)             - Artist/Album (depth 2): a stray
                                                flat album to file under a genre
         ("organized", genre, artist, album)  - Genre/Artist/Album (depth 3):
@@ -106,6 +122,8 @@ def classify(path: Path, root: Path) -> tuple:
     except ValueError:
         return ("skip", "outside root")
     parts = rel.parts
+    if staging and parts and parts[0] == staging:
+        parts = parts[1:]
     if len(parts) == 0:
         return ("skip", "loose audio at library root")
     if len(parts) == 1:
@@ -117,7 +135,9 @@ def classify(path: Path, root: Path) -> tuple:
     return ("toodeep", len(parts))
 
 
-def build_plan(records, root: Path, only_genres=None, allow_new_genre=False):
+def build_plan(
+    records, root: Path, only_genres=None, allow_new_genre=False, staging=None
+):
     """Turn scanner records (each with `.path` and `.genre`) into a list of
     Moves, plus a list of human-readable issues and the set of source artist
     directories that may be left empty. `only_genres` (a set of genre strings)
@@ -128,6 +148,11 @@ def build_plan(records, root: Path, only_genres=None, allow_new_genre=False):
     tag genre isn't already one of those is flagged, not filed into a new
     top-level folder, unless `allow_new_genre` is set. When no genre folders
     exist yet (a flat library) the set is empty and gating is off.
+
+    `staging` (a folder name like "Unfiltered") is passed through to classify so
+    albums dumped in that inbox are filed into the real taxonomy at the root, not
+    read as a genre. The inbox's per-artist source dirs are pruned when emptied,
+    but the inbox folder itself is never a source dir, so it is left in place.
 
     Loose-track directories are read from disk here to enumerate the individual
     files to move; album directories move as a single unit. Artist-level
@@ -161,7 +186,11 @@ def build_plan(records, root: Path, only_genres=None, allow_new_genre=False):
     # derived set gates placement below; an empty set (a flat library) disables
     # gating so the original flat -> genre conversion still works.
     classified = [
-        (Path(rec.path), (rec.genre or "").strip(), classify(Path(rec.path), root))
+        (
+            Path(rec.path),
+            (rec.genre or "").strip(),
+            classify(Path(rec.path), root, staging),
+        )
         for rec in sorted(records, key=lambda r: r.path)
     ]
     allowed_genres = {info[1] for _p, _g, info in classified if info[0] == "organized"}
@@ -466,9 +495,10 @@ def cmd_map(args) -> int:
         return 1
 
     only = set(args.only_genre) if args.only_genre else None
+    staging = args.staging or None
     records = scan_album_dirs(directory, args.quiet)
     moves, issues, source_dirs = build_plan(
-        records, directory, only, args.allow_new_genre
+        records, directory, only, args.allow_new_genre, staging
     )
 
     if issues:
@@ -524,6 +554,15 @@ def main() -> int:
         help="Restrict to this genre (repeatable). Useful for a staged rollout. "
         "Note: an artist-level sidecar (e.g. cover.jpg) follows its artist's "
         "dominant genre, which may not be one you selected.",
+    )
+    parser.add_argument(
+        "--staging",
+        metavar="DIR",
+        default=STAGING_DIR,
+        help=f"Name of a top-level staging inbox (default: {STAGING_DIR!r}) whose "
+        "Artist/Album contents are filed into the real taxonomy instead of being "
+        "read as a genre. The inbox folder itself is left in place. Pass an empty "
+        "string to disable.",
     )
     parser.add_argument(
         "--allow-new-genre",

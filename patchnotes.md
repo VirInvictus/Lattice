@@ -1,5 +1,15 @@
 # Lattice Patch Notes
 
+## genre_foldermap.py v1.3.0 (2026-06-21)
+
+New feature (no package change): a **staging inbox**, so albums dumped outside the organized tree can be filed without being mistaken for a genre.
+
+- **The problem.** A tagger such as MusicBrainz Picard drops fresh `Artist/Album` folders into a holding area to keep them out of the organized root. If that holding folder lives at the library root (e.g. `Music/Unfiltered/`), the old depth logic read `Unfiltered/Artist/Album` as an already-organized album under a genre literally named "Unfiltered" and refused to move it out.
+- **What it does.** A staging folder name (default `Unfiltered`) is stripped from the front of a path before classification, so `Unfiltered/Artist/Album` classifies as a flat stray and is filed into the real taxonomy at the root, exactly like `Artist/Album`. The genre vocabulary gate still applies, so a staged album only lands in a genre the library already uses (or pass `--allow-new-genre`).
+- **The inbox is kept.** Each staged album's per-artist source folder is pruned once emptied, but the `Unfiltered/` inbox itself is never treated as a source dir, so it survives the run for next time.
+- **New `--staging DIR`** sets the inbox name (default `Unfiltered`); pass `--staging ""` to disable the behavior entirely. The wrong-root `TOO DEEP` guard is unaffected.
+- Tests extended (`tests/test_genre_foldermap.py`): classify stripping for album and loose shapes, the unchanged no-staging behavior, end-to-end filing into the taxonomy with the cover carried along and the inbox kept, and the vocabulary gate still applying to staged albums.
+
 ## cleaner.py v1.3.0 (2026-06-21)
 
 Extends the v1.2.0 tag work into a general, library-wide typographic normalizer covering names at every depth and the title/album/artist tags across all formats.
