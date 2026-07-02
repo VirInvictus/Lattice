@@ -107,6 +107,18 @@ class ConsolidateTests(unittest.TestCase):
         self.assertEqual((canon / "01.from-fragment.flac").read_bytes(), b"x" * 200)
         self.assertFalse(src.exists())
 
+    def test_wma_collision_different_size_kept_as_fragment(self):
+        # H2: .wma is audio; a differing-size collision must keep both copies,
+        # never fall into the DROP NON-AUDIO branch.
+        canon = _make_dir(self.root, "Album", {"01.wma": b"x" * 100, "02.flac": b"y"})
+        src = _make_dir(self.root, "album", {"01.wma": b"x" * 200})
+        run = self._run()
+        cleaner.consolidate_group([canon, src], "test", run)
+        run.close()
+        self.assertEqual((canon / "01.wma").read_bytes(), b"x" * 100)
+        self.assertTrue((canon / "01.from-fragment.wma").exists())
+        self.assertEqual((canon / "01.from-fragment.wma").read_bytes(), b"x" * 200)
+
     def test_audio_collision_identical_size_dropped(self):
         canon = _make_dir(self.root, "Album", {"01.flac": b"x" * 100, "02.flac": b"y"})
         src = _make_dir(self.root, "album", {"01.flac": b"x" * 100})
@@ -115,6 +127,18 @@ class ConsolidateTests(unittest.TestCase):
         run.close()
         self.assertFalse((canon / "01.from-fragment.flac").exists())
         self.assertFalse(src.exists())
+
+    def test_audio_collision_same_size_different_bytes_kept(self):
+        # C1: "identical" means size + sampled bytes, not size alone; a
+        # same-size re-encode must survive as a fragment, never be dropped.
+        canon = _make_dir(self.root, "Album", {"01.flac": b"x" * 100, "02.flac": b"y"})
+        src = _make_dir(self.root, "album", {"01.flac": b"z" * 100})
+        run = self._run()
+        cleaner.consolidate_group([canon, src], "test", run)
+        run.close()
+        self.assertEqual((canon / "01.flac").read_bytes(), b"x" * 100)
+        self.assertTrue((canon / "01.from-fragment.flac").exists())
+        self.assertEqual((canon / "01.from-fragment.flac").read_bytes(), b"z" * 100)
 
     def test_non_audio_non_image_collision_dropped(self):
         # Non-image non-audio (.nfo) keeps canonical's copy, drops the source.
@@ -258,6 +282,27 @@ class SurvivorRenameTests(_TreeCase):
         run.close()
         self.assertEqual(run.stats["renamed"], 0)
 
+    def _rename_scenario(self, dry):
+        base = self.root / ("dry" if dry else "apply")
+        canon = _make_dir(base, "Drive‐By Truckers", {"a.flac": b"1", "b.flac": b"2"})
+        src = _make_dir(base, "Drive-By Truckers", {"c.flac": b"3"})
+        run = cleaner.Run(
+            base, base / "log", dry_run=dry, normalize_tags=True, artist_depth=1
+        )
+        cleaner.consolidate_group([canon, src], "artists", run)
+        run.close()
+        return dict(run.stats), {name for name, _ in run.tag_targets}
+
+    def test_dry_run_predicts_survivor_rename_and_tag_targets(self):
+        # H3: in a dry-run the merged-away ASCII source still exists on disk, so
+        # the rename guard must consult run.removed or the preview misses the
+        # survivor rename (and records the wrong tag-authority name).
+        dry_stats, dry_targets = self._rename_scenario(dry=True)
+        apply_stats, apply_targets = self._rename_scenario(dry=False)
+        self.assertEqual(apply_stats["renamed"], 1)
+        self.assertEqual(dry_stats, apply_stats)
+        self.assertEqual(dry_targets, apply_targets)
+
 
 class CoverResolutionTests(_TreeCase):
     def test_higher_res_replaces_even_if_smaller_bytes(self):
@@ -390,6 +435,22 @@ class CanonTrackArtistTests(unittest.TestCase):
             "Bonnie 'Prince' Billy feat. Tim O'Brien",
         )
 
+    def test_mid_word_ft_not_a_feat_marker(self):
+        # H1: bare \s* before the marker was zero-width, so the "ft" ending
+        # "Left"/"Swift"/"Croft" matched and corrupted clean tags.
+        self.assertEqual(cleaner.canon_track_artist("Left Boy", "Left Boy"), "Left Boy")
+        self.assertEqual(
+            cleaner.canon_track_artist("Left Lane Cruiser", "Left Lane Cruiser"),
+            "Left Lane Cruiser",
+        )
+
+    def test_parenthesised_feat_drops_stray_paren(self):
+        self.assertEqual(cleaner.canon_track_artist("A (feat. B)", "A"), "A feat. B")
+
+    def test_idempotent_on_feat_case(self):
+        once = cleaner.canon_track_artist("X (feat. Tim O\x92Brien)", "X")
+        self.assertEqual(once, cleaner.canon_track_artist(once, "X"))
+
 
 def _mp3(path, artist=None, albumartist=None, title=None, album=None):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -512,6 +573,93 @@ class TagWriterTests(_RunCase):
         cleaner.normalize_file_tags(p, None, run)
         run.close()
         self.assertNotIn("album", [k.lower() for k in FLAC(p).keys()])
+
+
+class MultiValueTagTests(_RunCase):
+    """M18: a multi-valued tag whose first value needs folding must keep every
+    value; the authority restamp deliberately collapses to the survivor."""
+
+    def test_fold_preserves_all_artist_values(self):
+        p = self.root / "t.flac"
+        shutil.copy(FLAC_SRC, p)
+        f = FLAC(p)
+        f.delete()
+        f["artist"] = ["Artist A’s Band", "Artist B"]
+        f["title"] = ["Song"]
+        f.save()
+        run = self._run()
+        cleaner.normalize_file_tags(p, None, run)
+        run.close()
+        self.assertEqual(FLAC(p)["artist"], ["Artist A's Band", "Artist B"])
+
+    def test_restamp_still_collapses_to_authority(self):
+        p = self.root / "t.flac"
+        shutil.copy(FLAC_SRC, p)
+        f = FLAC(p)
+        f.delete()
+        f["artist"] = ["Artist A", "Artist B"]
+        f.save()
+        run = self._run()
+        cleaner.normalize_file_tags(p, "Artist A", run)
+        run.close()
+        self.assertEqual(FLAC(p)["artist"], ["Artist A"])
+
+
+class DryRunCreationModelTests(unittest.TestCase):
+    """M19: the dry-run must model what apply would have CREATED so far, not
+    just what it removed; these fixtures diverged before the fix."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _three_way_merge(self, dry):
+        root = self.base / ("dry" if dry else "apply") / "3way"
+        canon = _make_dir(root, "Album", {"01.flac": b"x" * 10, "02.flac": b"y"})
+        s1 = _make_dir(root, "ALBUM", {"03.flac": b"a" * 5})
+        s2 = _make_dir(root, "album", {"03.flac": b"b" * 9})
+        run = cleaner.Run(root, root / "log", dry_run=dry)
+        cleaner.consolidate_group([canon, s1, s2], "t", run)
+        run.close()
+        return dict(run.stats)
+
+    def test_three_way_merge_same_extra_track_parity(self):
+        # Both sources carry 03.flac (different sizes): apply moves the first
+        # and keeps the second as a .from-fragment; the preview must agree.
+        dry, apply = self._three_way_merge(True), self._three_way_merge(False)
+        self.assertEqual(apply["moves"], 1)
+        self.assertEqual(apply["collisions_kept"], 1)
+        self.assertEqual(dry, apply)
+
+    def _same_render_siblings(self, dry):
+        root = self.base / ("dry" if dry else "apply") / "render"
+        _make_dir(root, "A‐B", {"a.flac": b"1"})  # U+2010 hyphen
+        _make_dir(root, "A‑B", {"b.flac": b"2"})  # U+2011 non-breaking
+        run = cleaner.Run(root, root / "log", dry_run=dry)
+        cleaner.normalize_tree(root, run, True, False)
+        run.close()
+        return dict(run.stats)
+
+    def test_same_render_siblings_parity(self):
+        # Both fold to "A-B"; only one rename can land. (The two names
+        # normalize to the same key, so Pass 1 would normally merge them
+        # first; this pins the --normalize-names-only shape.)
+        dry, apply = self._same_render_siblings(True), self._same_render_siblings(False)
+        self.assertEqual(apply["renamed"], 1)
+        self.assertEqual(dry, apply)
+
+    def test_find_groups_skips_virtually_removed(self):
+        root = self.base / "walkskip"
+        a = _make_dir(root, "Album", {"01.flac": b"x"})
+        _make_dir(root, "album", {"02.flac": b"y"})
+        run = cleaner.Run(root, root / "log", dry_run=True)
+        run._move(a, root / "elsewhere")  # virtually gone
+        groups = cleaner.find_groups(root, run)
+        run.close()
+        self.assertEqual(groups, [])  # its variant no longer forms a group
 
 
 class NormalizeTagsMergeTests(_RunCase):
@@ -656,6 +804,17 @@ class NameRecursionTests(_RunCase):
         self.assertTrue((d / "01 - Re-do.flac").exists())
         self.assertEqual(run.stats["files_renamed"], 1)
 
+    def test_wma_filename_rename(self):
+        # H2: --normalize-filenames must reach .wma tracks too.
+        d = self.root / "A"
+        d.mkdir()
+        (d / "Re‐do.wma").write_bytes(b"x")  # U+2010 in stem
+        run = self._run(normalize_tags=False)
+        cleaner.normalize_tree(self.root, run, False, True)
+        run.close()
+        self.assertTrue((d / "Re-do.wma").exists())
+        self.assertEqual(run.stats["files_renamed"], 1)
+
     def test_filename_collision_retained(self):
         d = self.root / "A"
         d.mkdir()
@@ -718,6 +877,111 @@ class IdempotencyTests(_RunCase):
         self.assertEqual(run2.stats["renamed"], 0)
         self.assertEqual(run2.stats["files_renamed"], 0)
         self.assertEqual(run2.stats["tags_rewritten"], 0)
+
+
+class HeadTailEqualTests(unittest.TestCase):
+    def _pair(self, a: bytes, b: bytes):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        pa, pb = Path(self.tmp.name, "a"), Path(self.tmp.name, "b")
+        pa.write_bytes(a)
+        pb.write_bytes(b)
+        return pa, pb
+
+    def test_equal_files_match(self):
+        pa, pb = self._pair(b"x" * 200_000, b"x" * 200_000)
+        self.assertTrue(cleaner.head_tail_equal(pa, pb))
+
+    def test_difference_in_head_detected(self):
+        pa, pb = self._pair(b"a" + b"x" * 199_999, b"b" + b"x" * 199_999)
+        self.assertFalse(cleaner.head_tail_equal(pa, pb))
+
+    def test_difference_in_tail_detected(self):
+        pa, pb = self._pair(b"x" * 199_999 + b"a", b"x" * 199_999 + b"b")
+        self.assertFalse(cleaner.head_tail_equal(pa, pb))
+
+    def test_unreadable_is_not_identical(self):
+        pa, pb = self._pair(b"x", b"x")
+        self.assertFalse(cleaner.head_tail_equal(pa / "nope", pb))
+
+
+class LogFormatTests(_TreeCase):
+    def test_pass_header_newline_precedes_timestamp(self):
+        # C7: run.log("\n--- PASS ---") used to orphan the timestamp prefix
+        # onto its own line; the blank line is emitted separately now.
+        run = self._run()
+        run.log("\n--- PASS test ---")
+        run.close()
+        lines = self.log.read_text(encoding="utf-8").split("\n")
+        self.assertEqual(lines[0], "")
+        self.assertRegex(lines[1], r"^\[\d{4}-\d{2}-\d{2}T[\d:]+\] --- PASS test ---$")
+
+
+class TagTargetDedupeTests(_RunCase):
+    def test_survivor_rename_records_one_tag_target(self):
+        # C8: a merge whose survivor also gets renamed used to record the
+        # artist twice (once from the rename hook, once from the group).
+        canon = _make_dir(
+            self.root, "Drive‐By Truckers", {"01.mp3": b"a", "02.mp3": b"b"}
+        )
+        src = _make_dir(self.root, "Drive-By Truckers", {"03.mp3": b"c"})
+        run = self._run()
+        cleaner.consolidate_group([canon, src], "test", run)
+        run.close()
+        self.assertEqual(run.stats["renamed"], 1)  # survivor rename happened
+        self.assertEqual(len(run.tag_targets), 1)
+        name, folders = run.tag_targets[0]
+        self.assertEqual(name, "Drive-By Truckers")
+        # The group record carries the sources, so the tag pass still walks
+        # every folder involved.
+        self.assertIn(src, folders)
+
+    def test_pass3_sweep_rename_still_records(self):
+        _make_dir(self.root, "Drive‐By Truckers", {"01.mp3": b"a"})
+        run = self._run()
+        cleaner.normalize_tree(self.root, run, True, False)
+        run.close()
+        self.assertEqual(len(run.tag_targets), 1)
+        self.assertEqual(run.tag_targets[0][0], "Drive-By Truckers")
+
+
+class HeaderlessMp3Tests(_RunCase):
+    def test_no_id3_header_is_reported_and_counted(self):
+        # C2: an MP3 whose tags live only in APEv2/ID3v1 was silently skipped;
+        # the contract is "reported and skipped" (the .wav path is the model).
+        p = self.root / "Artist" / "x.mp3"
+        p.parent.mkdir()
+        p.write_bytes(b"\xff\xfb" + b"\x00" * 200)  # bare MPEG frame, no ID3
+        run = self._run()
+        cleaner.normalize_file_tags(p, None, run)
+        run.close()
+        self.assertEqual(run.stats["tag_no_id3_skipped"], 1)
+        self.assertIn("no ID3 header", self.log.read_text(encoding="utf-8"))
+
+
+class AsfCaseVariantTests(unittest.TestCase):
+    def test_wma_case_variant_key_deleted_on_write(self):
+        # C3: the ASF branch read keys case-insensitively but wrote canonical
+        # case without deleting a case-variant original, leaving two keys.
+        from unittest import mock
+
+        class FakeASF(dict):
+            saved = False
+
+            def save(self):
+                self.saved = True
+
+        fake = FakeASF()
+        fake["wm/albumtitle"] = ["Old’s"]
+        with mock.patch.object(cleaner, "ASF", return_value=fake):
+            opened = cleaner._open_for_tags(Path("/x.wma"), ".wma")
+        self.assertIsNotNone(opened)
+        cur, apply = opened
+        self.assertEqual(cur["album"], ["Old’s"])
+        apply({"album": ["Old's"]})
+        self.assertNotIn("wm/albumtitle", fake)
+        self.assertEqual(fake["WM/AlbumTitle"], ["Old's"])
+        self.assertTrue(fake.saved)
 
 
 if __name__ == "__main__":

@@ -11,11 +11,13 @@ others straight) and produce album fragments scattered across two folders.
 
 For each detected group, picks the folder with the most files as the
 canonical target and merges siblings into it. mp3, opus, flac, etc.
-are never overwritten or deleted: audio collisions where sizes differ
-keep both copies (source renamed with a `.from-fragment` suffix). On a
-cover-image collision the higher-resolution file is kept; other non-audio
-collisions (.nfo, .cue) drop the source. The surviving merged folder is
-renamed to its normalized form (ASCII hyphen, straight quotes).
+are never overwritten or deleted: a colliding file is dropped as a
+duplicate only when size AND sampled bytes (first/last 64 KiB) match;
+any other audio collision keeps both copies (source renamed with a
+`.from-fragment` suffix). On a cover-image collision the higher-resolution
+file is kept; other non-audio collisions (.nfo, .cue) drop the source. The
+surviving merged folder is renamed to its normalized form (ASCII hyphen,
+straight quotes).
 
 Passes:
   1. Artist-folder level (e.g. 'Jay-Z & Kanye West' vs 'JAY‐Z & Kanye West')
@@ -23,26 +25,32 @@ Passes:
   3. (--normalize-names / --normalize-filenames) rename every remaining folder
      (any depth) and/or audio file whose name uses non-standard characters to
      its normalized form
-  4. (--normalize-tags) library-wide tag normalization: typographically fold the
-     title/album tags on every file, and restamp artist/albumartist to the
-     surviving folder name under merged/renamed artist folders (all formats)
-  4. (only with --normalize-tags) rewrite the artist/albumartist tags of the
-     MP3s under every merged or renamed artist folder so the embedded metadata
-     matches the surviving folder name. Folder depth of the artist component is
-     read from --layout (default {artist}/{album}); files shallower/deeper than
-     that aren't artist folders and are left alone. The surviving folder name is
-     the naming authority, so a merged-in variant like 'Bonnie Prince Billy'
-     (no quotes) and a CP1252-mojibake 'Bonnie \x93Prince\x94 Billy' both become
-     the survivor's "Bonnie 'Prince' Billy" in the tags. Guest credits are kept
-     ("... feat. X"); the punctuation is folded to straight ASCII. MP3-only
-     (same scope as apestrip.py / rerate.py); non-MP3 audio is reported, not
-     touched. Two players read APEv2 over ID3, so run apestrip.py first if a
-     stray APE tag is in play.
+  4. (--normalize-tags) library-wide tag normalization, all formats
+     (MP3/FLAC/Ogg/Opus/m4a/WMA; other audio is reported and skipped).
+     Title/album get a pure typographic fold everywhere (the words never
+     change, so the folder is never an authority for them). Artist/albumartist
+     fold the same way, except under a merged or renamed artist folder, where
+     they are restamped to the surviving folder name: the folder depth of the
+     artist component is read from --layout (default {artist}/{album}), and
+     the survivor is the naming authority, so a merged-in variant like
+     'Bonnie Prince Billy' (no quotes) and a CP1252-mojibake
+     'Bonnie \x93Prince\x94 Billy' both become the survivor's
+     "Bonnie 'Prince' Billy" in the tags. Guest credits are kept
+     ("... feat. X"); the punctuation is folded to straight ASCII. Two players
+     read APEv2 over ID3, so run apestrip.py first if a stray APE tag is in
+     play.
 
 Conservative by design — folders whose normalized names don't match are
 never touched, even if they're "obviously" the same album. Cases like
 'Domestica' vs 'Cursive's Domestica (Deluxe Edition)' require manual
 intervention.
+
+Dry-run fidelity: existence/size checks go through virtual-aware views of the
+filesystem (removals AND creations this run would have made), so the preview's
+decisions and stats match the apply run. Residual limitation: the *contents*
+of a folder that only virtually moved are not modeled recursively, so a
+pathological chain of merges-into-merged-folders may still preview
+imperfectly; every normal fragment/rename shape is exact.
 
 Usage:
     ./cleaner.py /mnt/SharedData/Music
@@ -72,13 +80,17 @@ try:
 except ImportError:  # tag normalization (--normalize-tags) needs mutagen
     MUTAGEN_OK = False
 
-__version__ = "1.3.0"
+__version__ = "1.3.3"
 
 # Containers whose title/album/artist/albumartist the tag pass can rewrite. Other
 # AUDIO_EXT members (.wav/.aac/.alac/.ape/.wv/.aiff) carry no handled tag layout
 # and are reported + skipped rather than silently no-oped.
 TAGGABLE_EXT = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".mp4", ".wma"}
 
+# Superset of the package's config.AUDIO_EXTENSIONS plus rarer lossless
+# containers (.alac/.ape/.wv/.aiff) — a collision on any of these must keep both
+# copies. ".mp4" is deliberately absent (ambiguous with video, so a colliding
+# .mp4 is treated as non-audio) while staying taggable above.
 AUDIO_EXT = {
     ".mp3",
     ".opus",
@@ -91,6 +103,7 @@ AUDIO_EXT = {
     ".ape",
     ".wv",
     ".aiff",
+    ".wma",
 }
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png"}
@@ -190,7 +203,9 @@ _TAG_FOLD = {
     0x2012: "-",
     0x2015: "-",
 }
-_FEAT_RE = re.compile(r"\s*(?:feat\.?|ft\.?|featuring)\s+(.*)$", re.I)
+# The marker needs a real token boundary on its left: a bare \s* is zero-width,
+# which let the "ft" ending "Left"/"Swift"/"Croft" match and corrupt clean tags.
+_FEAT_RE = re.compile(r"(?<!\w)(?:feat\.?|ft\.?|featuring)\s+(.*)$", re.I)
 
 
 def tag_fold(s: str) -> str:
@@ -207,9 +222,13 @@ def canon_track_artist(raw: str, canonical: str) -> str:
     ("... feat. X"), folding the guest's punctuation."""
     folded = tag_fold(raw)
     m = _FEAT_RE.search(folded)
-    if m:
-        return f"{canonical} feat. {m.group(1).strip()}"
-    return canonical
+    if m is None:
+        return canonical
+    guest = m.group(1).strip()
+    # A "(feat. X)" credit leaves its closing paren on the guest; drop it.
+    if guest.endswith(")") and guest.count(")") > guest.count("("):
+        guest = guest[:-1].rstrip()
+    return f"{canonical} feat. {guest}"
 
 
 def _get_image_size(data: bytes) -> tuple[int, int] | None:
@@ -274,9 +293,13 @@ class Run:
         # derived from --layout. Only folders at this depth seed the tag pass.
         self.artist_depth = artist_depth
         self.log_file = log_path.open("a", encoding="utf-8")
-        # Paths (virtually) removed this run; lets dry-run emptiness checks
-        # predict the real outcome instead of seeing the unchanged filesystem.
+        # Paths (virtually) removed/created this run; lets dry-run existence
+        # and emptiness checks predict the real outcome instead of seeing the
+        # unchanged filesystem. `created` maps each virtual destination to the
+        # real on-disk path currently holding its bytes, so size/kind checks
+        # against a not-yet-moved file still read real data.
         self.removed: set[Path] = set()
+        self.created: dict[Path, Path] = {}
         # (canonical_artist_name, [folders to walk]) seeded by merges/renames;
         # consumed by the Pass-4 tag pass. Folders are filtered for existence at
         # walk time, so dry-run (sources still present) and apply (sources gone,
@@ -295,6 +318,7 @@ class Run:
             "tags_rewritten": 0,
             "tag_files_scanned": 0,
             "tag_unsupported_skipped": 0,
+            "tag_no_id3_skipped": 0,
         }
 
     def _is_artist_level(self, p: Path) -> bool:
@@ -310,6 +334,11 @@ class Run:
     def log(self, msg: str = "") -> None:
         ts = datetime.now().isoformat(timespec="seconds")
         prefix = "[DRY] " if self.dry_run else ""
+        # A leading newline (the pass headers) becomes its own blank line, so
+        # the timestamp prefix is never orphaned onto an empty line.
+        if msg.startswith("\n"):
+            self.log_file.write("\n")
+            msg = msg.lstrip("\n")
         line = f"[{ts}] {prefix}{msg}" if msg else ""
         self.log_file.write(line + "\n")
         self.log_file.flush()
@@ -320,22 +349,55 @@ class Run:
     # ------- filesystem ops with dry-run guards -------
 
     def _effective_children(self, p: Path) -> list[Path]:
-        """Children of p minus anything (virtually) removed this run, so a
-        dry-run predicts whether p would really be empty."""
+        """Children of p adjusted for this run's virtual removals/creations,
+        so a dry-run predicts whether p would really be empty."""
         try:
-            return [c for c in p.iterdir() if c not in self.removed]
+            kids = [c for c in p.iterdir() if c not in self.removed]
         except OSError:
             return []
+        kids += [c for c in self.created if c.parent == p and c not in kids]
+        return kids
+
+    # Virtual-aware filesystem views: identical to the plain calls during an
+    # apply run (removed/created stay empty), but a dry-run sees the state the
+    # apply run would have produced so far, which keeps collision and rename
+    # decisions (and therefore the stats) identical between the two.
+
+    def _real(self, p: Path) -> Path:
+        """The on-disk path currently holding p's bytes (p itself unless p is
+        a virtual destination of this dry-run)."""
+        return self.created.get(p, p)
+
+    def _exists(self, p: Path) -> bool:
+        return p in self.created or (p.exists() and p not in self.removed)
+
+    def _is_file(self, p: Path) -> bool:
+        real = self.created.get(p)
+        if real is not None:
+            return real.is_file()
+        return p.is_file() and p not in self.removed
+
+    def _is_dir(self, p: Path) -> bool:
+        real = self.created.get(p)
+        if real is not None:
+            return real.is_dir()
+        return p.is_dir() and p not in self.removed
+
+    def _size(self, p: Path) -> int:
+        return self._real(p).stat().st_size
 
     def _move(self, src: Path, dst: Path) -> None:
         if self.dry_run:
+            origin = self.created.pop(src, src)
             self.removed.add(src)
+            self.created[dst] = origin
             return
         shutil.move(str(src), str(dst))
 
     def _unlink(self, p: Path) -> None:
         if self.dry_run:
             self.removed.add(p)
+            self.created.pop(p, None)
             return
         p.unlink()
 
@@ -353,7 +415,9 @@ class Run:
 
     def _rename(self, src: Path, dst: Path) -> None:
         if self.dry_run:
+            origin = self.created.pop(src, src)
             self.removed.add(src)
+            self.created[dst] = origin
             return
         src.rename(dst)
 
@@ -365,6 +429,8 @@ def find_groups(directory: Path, run: Run) -> list[list[Path]]:
     groups: dict[str, list[Path]] = {}
     try:
         for child in directory.iterdir():
+            if child in run.removed:
+                continue  # dry-run: merged away by an earlier pass
             if child.is_dir() and not child.name.startswith("."):
                 key = normalize_name(child.name)
                 groups.setdefault(key, []).append(child)
@@ -376,29 +442,55 @@ def find_groups(directory: Path, run: Run) -> list[list[Path]]:
 
 def file_count(p: Path) -> int:
     try:
-        return sum(1 for _ in p.rglob("*") if _.is_file())
+        return sum(1 for f in p.rglob("*") if f.is_file())
     except OSError:  # PermissionError is an OSError subclass
         return 0
 
 
+def head_tail_equal(a: Path, b: Path, chunk: int = 65536) -> bool:
+    """Cheap content check for same-size files: equal first and last `chunk`
+    bytes. Not a full compare — a difference confined to the middle of two
+    same-size files slips through — but it catches re-encodes, retags, and
+    truncation-with-padding that a size-only check calls "identical"."""
+    try:
+        size = a.stat().st_size
+        with a.open("rb") as fa, b.open("rb") as fb:
+            if fa.read(chunk) != fb.read(chunk):
+                return False
+            if size > chunk:
+                fa.seek(max(0, size - chunk))
+                fb.seek(max(0, size - chunk))
+                return fa.read(chunk) == fb.read(chunk)
+        return True
+    except OSError:
+        return False
+
+
 def merge_dir(source: Path, target: Path, run: Run) -> None:
-    """Merge source contents into target, recursing into subdirs."""
+    """Merge source contents into target, recursing into subdirs. Existence
+    and size checks go through the Run's virtual-aware views so a dry-run
+    makes the same decisions the apply run will."""
     for item in list(source.iterdir()):
         target_item = target / item.name
-        if target_item.exists():
-            if item.is_dir() and target_item.is_dir():
+        if run._exists(target_item):
+            if item.is_dir() and run._is_dir(target_item):
                 merge_dir(item, target_item, run)
                 if run._rmdir(item):
                     run.stats["rmdirs"] += 1
                     run.log(f"    RMDIR (after recursive merge): {item}")
                 else:
                     run.log(f"    RETAIN (subdir not empty): {item}")
-            elif item.is_file() and target_item.is_file():
+            elif item.is_file() and run._is_file(target_item):
                 src_size = item.stat().st_size
-                tgt_size = target_item.stat().st_size
-                same_size = src_size == tgt_size
-                if same_size:
-                    run.log(f"    DROP DUPE (identical size, {src_size}B): {item}")
+                tgt_size = run._size(target_item)
+                identical = src_size == tgt_size and head_tail_equal(
+                    item, run._real(target_item)
+                )
+                if identical:
+                    run.log(
+                        f"    DROP DUPE (identical size + sampled bytes, "
+                        f"{src_size}B): {item}"
+                    )
                     run._unlink(item)
                     run.stats["exact_dupes_dropped"] += 1
                 else:
@@ -407,7 +499,7 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
                         suffix = item.suffix
                         new_target = target / f"{stem}.from-fragment{suffix}"
                         counter = 1
-                        while new_target.exists():
+                        while run._exists(new_target):
                             counter += 1
                             new_target = (
                                 target / f"{stem}.from-fragment-{counter}{suffix}"
@@ -424,7 +516,7 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
                         # canonical's: more pixels wins, ties (or unparseable)
                         # fall back to larger bytes.
                         src_px = image_pixels(item)
-                        tgt_px = image_pixels(target_item)
+                        tgt_px = image_pixels(run._real(target_item))
                         if src_px is not None and tgt_px is not None:
                             source_wins = (src_px, src_size) > (tgt_px, tgt_size)
                         else:
@@ -461,44 +553,68 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
             run.log(f"    MV: {item.name}")
 
 
-def _normalize_folder_name(folder: Path, run: Run) -> Path:
-    """Rename `folder` to its canonical_render when they differ, guarding a
-    collision with an existing different folder. Returns the (possibly new)
-    path. Used for both merge survivors and the --normalize-names sweep."""
-    target_name = canonical_render(folder.name)
-    if target_name == folder.name:
-        return folder
+def _rename_to(path: Path, target_name: str, run: Run, *, kind: str) -> Path:
+    """Shared rename-with-guards for folder and file normalization: legality
+    check, virtual-aware collision guard (in a dry-run a merged-away source
+    still exists on disk, and an earlier virtual rename may already occupy the
+    target), error containment (a filesystem-rejected name logs and is skipped,
+    never aborting the run), stats and logging. Returns the (possibly
+    unchanged) path."""
+    folder_kind = kind == "folder"
+    if target_name == path.name:
+        return path
     if not is_legal_name(target_name):
-        run.log(f"    SKIP RENAME (illegal target name): {folder.name}")
-        return folder
-    dst = folder.parent / target_name
-    if dst.exists() and dst != folder:
-        run.log(f"    RETAIN NAME (normalized target exists): {folder.name}")
-        return folder
+        label = "RENAME" if folder_kind else "RENAME FILE"
+        run.log(f"    SKIP {label} (illegal target name): {path.name}")
+        return path
+    dst = path.parent / target_name
+    if run._exists(dst) and dst != path:
+        retain = "RETAIN NAME" if folder_kind else "RETAIN FILE NAME"
+        run.log(f"    {retain} (normalized target exists): {path.name}")
+        return path
     try:
-        run._rename(folder, dst)
+        run._rename(path, dst)
     except OSError as e:
-        # A bad rename (e.g. a filesystem-rejected name) logs and is skipped;
-        # it must never abort the whole run mid-way.
-        run.log(f"    ERROR rename {folder.name} -> {target_name}: {e}")
-        return folder
-    run.stats["renamed"] += 1
-    run.log(f"    RENAME: {folder.name}  ->  {target_name}")
-    # A renamed artist folder (Pass 3) is also a tag target: dst exists after an
-    # apply rename, the original after a dry-run one; both are offered to walk.
-    if run.normalize_tags and run._is_artist_level(dst):
+        noun = "" if folder_kind else "file "
+        run.log(f"    ERROR rename {noun}{path.name} -> {target_name}: {e}")
+        return path
+    if folder_kind:
+        run.stats["renamed"] += 1
+        run.log(f"    RENAME: {path.name}  ->  {target_name}")
+    else:
+        run.stats["files_renamed"] += 1
+        run.log(f"    RENAME FILE: {path.name}  ->  {target_name}")
+    return dst
+
+
+def _normalize_folder_name(folder: Path, run: Run, record_tags: bool = True) -> Path:
+    """Rename `folder` to its canonical_render when they differ. Used for both
+    merge survivors and the --normalize-names sweep. A renamed artist folder is
+    also a tag target for Pass 3 sweeps; Pass 1/2 survivor renames pass
+    record_tags=False because consolidate_group records its own entry (which
+    also includes the merged sources), so the survivor isn't recorded twice."""
+    dst = _rename_to(folder, canonical_render(folder.name), run, kind="folder")
+    if (
+        record_tags
+        and dst != folder
+        and run.normalize_tags
+        and run._is_artist_level(dst)
+    ):
+        # dst exists after an apply rename, the original after a dry-run one;
+        # both are offered to walk.
         run._record_tag_target(dst.name, [dst, folder])
     return dst
 
 
 def consolidate_group(folders: list[Path], context: str, run: Run) -> None:
-    folders_sorted = sorted(folders, key=lambda p: (-file_count(p), p.name))
+    counts = {p: file_count(p) for p in folders}  # one rglob walk per folder
+    folders_sorted = sorted(folders, key=lambda p: (-counts[p], p.name))
     canonical = folders_sorted[0]
     sources = folders_sorted[1:]
     run.log(f"  GROUP @ {context}")
-    run.log(f"    canonical: {canonical.name}  ({file_count(canonical)} files)")
+    run.log(f"    canonical: {canonical.name}  ({counts[canonical]} files)")
     for s in sources:
-        run.log(f"    source:    {s.name}  ({file_count(s)} files)")
+        run.log(f"    source:    {s.name}  ({counts[s]} files)")
     run.stats["groups"] += 1
 
     for source in sources:
@@ -515,8 +631,10 @@ def consolidate_group(folders: list[Path], context: str, run: Run) -> None:
             )
 
     # The folder with the most files won as canonical, but its name may be the
-    # less-standard variant (unicode hyphen, curly quote); normalize the survivor.
-    survivor = _normalize_folder_name(canonical, run)
+    # less-standard variant (unicode hyphen, curly quote); normalize the
+    # survivor. record_tags=False: the recording below covers the rename case
+    # too and also carries the sources.
+    survivor = _normalize_folder_name(canonical, run, record_tags=False)
 
     # Seed the tag pass when the survivor is an artist folder: its name is the
     # naming authority for every track merged under it. Include the survivor's
@@ -530,23 +648,7 @@ def _normalize_file_name(path: Path, run: Run) -> None:
     """Rename a track file to canonical_render(stem) + suffix when they differ,
     with the same legality + collision guards as the folder rename. The extension
     is preserved verbatim."""
-    new_name = canonical_render(path.stem) + path.suffix
-    if new_name == path.name:
-        return
-    if not is_legal_name(new_name):
-        run.log(f"    SKIP RENAME FILE (illegal target name): {path.name}")
-        return
-    dst = path.parent / new_name
-    if dst.exists() and dst != path:
-        run.log(f"    RETAIN FILE NAME (normalized target exists): {path.name}")
-        return
-    try:
-        run._rename(path, dst)
-    except OSError as e:
-        run.log(f"    ERROR rename file {path.name} -> {new_name}: {e}")
-        return
-    run.stats["files_renamed"] += 1
-    run.log(f"    RENAME FILE: {path.name}  ->  {new_name}")
+    _rename_to(path, canonical_render(path.stem) + path.suffix, run, kind="file")
 
 
 def normalize_tree(root: Path, run: Run, do_folders: bool, do_files: bool) -> None:
@@ -558,6 +660,10 @@ def normalize_tree(root: Path, run: Run, do_folders: bool, do_files: bool) -> No
     drives files; either may run alone."""
     for dirpath, _dirnames, filenames in list(os.walk(root, topdown=False)):
         d = Path(dirpath)
+        # Dry-run: skip folders (and their contents) an earlier pass merged
+        # away; the apply run would not find them here.
+        if d in run.removed or any(parent in run.removed for parent in d.parents):
+            continue
         if do_files:
             for fn in sorted(filenames):
                 if fn.startswith("."):
@@ -570,47 +676,52 @@ def normalize_tree(root: Path, run: Run, do_folders: bool, do_files: bool) -> No
 
 
 def _planned_tag_values(
-    cur: dict[str, str | None], authority: str | None
-) -> dict[str, str]:
-    """Given the current title/album/artist/albumartist (None = field absent),
-    return only the fields whose value should change. Title and album get a pure
-    typographic fold and are never synthesized when absent. Artist/albumartist
-    follow the surviving folder name when `authority` is set (and are created if
-    absent, as the artist restamp did before), else a typographic fold."""
-    out: dict[str, str] = {}
+    cur: dict[str, list[str] | None], authority: str | None
+) -> dict[str, list[str]]:
+    """Given the current title/album/artist/albumartist value lists (None =
+    field absent), return only the fields whose values should change. Title and
+    album get a pure typographic fold of every value (multi-valued tags keep
+    all their values) and are never synthesized when absent. Artist/albumartist
+    follow the surviving folder name when `authority` is set (and are created
+    if absent, as the artist restamp did before), else a typographic fold."""
+    out: dict[str, list[str]] = {}
     for field in ("title", "album"):
-        v = cur.get(field)
-        if v is None:
+        vals = cur.get(field)
+        if vals is None:
             continue
-        folded = tag_fold(v)
-        if folded != v:
+        folded = [tag_fold(v) for v in vals]
+        if folded != vals:
             out[field] = folded
 
     artist = cur.get("artist")
     albumartist = cur.get("albumartist")
     if authority:
-        new_artist = canon_track_artist(artist or "", authority)
+        # Deliberate collapse: under a merged/renamed artist folder the
+        # surviving folder name IS the artist, so a multi-valued artist tag
+        # becomes the single canonical value (guest credit preserved).
+        new_artist = [canon_track_artist(artist[0] if artist else "", authority)]
         if artist is None or new_artist != artist:
             out["artist"] = new_artist
-        if albumartist is None or authority != albumartist:
-            out["albumartist"] = authority
+        if albumartist is None or [authority] != albumartist:
+            out["albumartist"] = [authority]
     else:
-        for field, v in (("artist", artist), ("albumartist", albumartist)):
-            if v is None:
+        for field, vals in (("artist", artist), ("albumartist", albumartist)):
+            if vals is None:
                 continue
-            folded = tag_fold(v)
-            if folded != v:
+            folded = [tag_fold(v) for v in vals]
+            if folded != vals:
                 out[field] = folded
     return out
 
 
-def _first(values) -> str | None:
-    """First non-empty value of a mutagen list, unwrapping ASF attributes."""
+def _values(values) -> list[str] | None:
+    """Non-empty values of a mutagen list as plain strings, unwrapping ASF
+    attributes; None when the field is absent or entirely empty."""
     if not values:
         return None
-    v = values[0]
-    v = getattr(v, "value", v)  # ASFUnicodeAttribute -> str
-    return v if v else None
+    out = [str(getattr(v, "value", v)) for v in values]  # ASFUnicodeAttribute
+    out = [v for v in out if v]
+    return out or None
 
 
 def _open_for_tags(path: Path, ext: str):
@@ -631,12 +742,14 @@ def _open_for_tags(path: Path, ext: str):
         cur = {}
         for field, (fid, _cls) in id3map.items():
             frame = tags.get(fid)
-            cur[field] = frame.text[0] if frame is not None and frame.text else None
+            cur[field] = (
+                _values([str(t) for t in frame.text]) if frame is not None else None
+            )
 
         def apply(out):
-            for field, val in out.items():
+            for field, vals in out.items():
                 fid, cls = id3map[field]
-                tags.setall(fid, [cls(encoding=3, text=[val])])
+                tags.setall(fid, [cls(encoding=3, text=list(vals))])
             tags.save(path, v2_version=3, v1=2)
 
         return cur, apply
@@ -648,15 +761,15 @@ def _open_for_tags(path: Path, ext: str):
 
         def get(name):
             key = keymap.get(name)
-            return _first(tags[key]) if key is not None else None
+            return _values(tags[key]) if key is not None else None
 
         cur = {f: get(f) for f in ("title", "album", "artist", "albumartist")}
 
         def apply(out):
-            for field, val in out.items():
+            for field, vals in out.items():
                 for existing in [k for k in list(tags.keys()) if k.lower() == field]:
                     del tags[existing]
-                tags[field] = [val]
+                tags[field] = list(vals)
             tags.save()
 
         return cur, apply
@@ -669,11 +782,11 @@ def _open_for_tags(path: Path, ext: str):
             "artist": "\xa9ART",
             "albumartist": "aART",
         }
-        cur = {f: _first(tags.get(a)) for f, a in atom.items()}
+        cur = {f: _values(tags.get(a)) for f, a in atom.items()}
 
         def apply(out):
-            for field, val in out.items():
-                tags[atom[field]] = [val]
+            for field, vals in out.items():
+                tags[atom[field]] = list(vals)
             tags.save()
 
         return cur, apply
@@ -687,11 +800,20 @@ def _open_for_tags(path: Path, ext: str):
             "artist": "Author",
             "albumartist": "WM/AlbumArtist",
         }
-        cur = {f: _first(tags.get(keymap.get(k.lower(), k))) for f, k in asf.items()}
+        cur = {f: _values(tags.get(keymap.get(k.lower(), k))) for f, k in asf.items()}
 
         def apply(out):
-            for field, val in out.items():
-                tags[asf[field]] = [val]
+            for field, vals in out.items():
+                key = asf[field]
+                # Delete case-variant originals first (like the Vorbis branch):
+                # writing canonical case beside a variant would leave two keys.
+                for existing in [
+                    k
+                    for k in list(tags.keys())
+                    if k.lower() == key.lower() and k != key
+                ]:
+                    del tags[existing]
+                tags[key] = list(vals)
             tags.save()
 
         return cur, apply
@@ -710,17 +832,25 @@ def normalize_file_tags(path: Path, authority: str | None, run: Run) -> None:
         run.log(f"    TAG ERROR (read {rel}): {e}")
         return
     if opened is None:
+        # An MP3 whose tags live only in APEv2/ID3v1: reported and skipped,
+        # like the unsupported-format path (the contract is never a silent skip).
+        run.stats["tag_no_id3_skipped"] += 1
+        run.log(f"    SKIP (no ID3 header; tags in APEv2/ID3v1 only?): {rel}")
         return
     cur, apply = opened
     out = _planned_tag_values(cur, authority)
     if not out:
         return
 
+    def disp(v):
+        # Single-valued fields (the norm) log as the bare string.
+        return v[0] if isinstance(v, list) and len(v) == 1 else v
+
     run.stats["tags_rewritten"] += 1
     run.log(f"    TAG: {rel}")
     for field in ("title", "album", "artist", "albumartist"):
         if field in out:
-            run.log(f"      {field}: {cur.get(field)!r} -> {out[field]!r}")
+            run.log(f"      {field}: {disp(cur.get(field))!r} -> {disp(out[field])!r}")
     if run.dry_run:
         return
     try:
@@ -892,7 +1022,11 @@ def main() -> int:
 
         run.log("\n--- PASS 2: album-level consolidation per artist ---")
         artists = sorted(
-            (p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")),
+            (
+                p
+                for p in root.iterdir()
+                if p.is_dir() and not p.name.startswith(".") and p not in run.removed
+            ),
             key=lambda p: p.name.lower(),
         )
         scanned = 0
