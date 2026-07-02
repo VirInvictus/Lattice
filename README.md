@@ -365,6 +365,8 @@ Artist<TAB>Genre<TAB>Second Genre<TAB>...
 
 Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name. Lattice's tag layer prefers the album-artist, so a compilation is keyed under its `Various Artists` album-artist and caught by the exclusion above.
 
+On a genre-first library (the `Genre/Artist/Album` shape `genre_foldermap.py` builds), pass `--layout '{genre}/{artist}/{album}'` to both subcommands so an *untagged* file's artist is recovered from the right path level instead of the genre folder; tagged files are unaffected.
+
 **Safety.** Seeding the map from the library's current state means `apply` changes nothing you have not asked for: a retag happens only where you removed a genre from a line. `apply` is otherwise guarded like the other companions: `--dry-run` previews every `retag.py` call and writes nothing (log lines prefixed `[DRY]`), an append-only timestamped log records every decision (default `<library>/genre_tidy.log`), and the operation is idempotent (a second `apply` is all no-ops). Re-running `build` over an existing map preserves your edits and only appends artists new to the library.
 
 **The Workflow:**
@@ -430,7 +432,7 @@ Same album, no track overlap, scattered between two folders by filesystem accide
 
 **Safety contract.**
 - **`mv` only** on the same filesystem: an atomic rename, so audio bytes are never read or rewritten.
-- **Audio collisions never auto-delete.** If a track of the same name exists in both folders with *different* file sizes, the source copy is kept under a `<stem>.from-fragment.<ext>` suffix instead of being overwritten. Identical-size copies (true duplicates) are dropped from the source.
+- **Audio collisions never auto-delete.** If a track of the same name exists in both folders, the source copy is kept under a `<stem>.from-fragment.<ext>` suffix instead of being overwritten. A copy is dropped as a true duplicate only when both the byte count *and* sampled content (first/last 64 KiB) match; a same-size file with differing bytes is kept as a fragment too.
 - **Cover-art collisions keep the better image.** When a `.jpg`/`.png` exists in both folders, the higher-resolution file wins (ties, or images it cannot parse, fall back to the larger byte size). Other non-audio collisions (`.nfo`, `.cue`) drop the source; the canonical copy wins.
 - **The survivor is normalized.** The folder with the most files becomes canonical, so its name can be the less-standard variant; after merging, the survivor is renamed to its normalized form (broken hyphens, curly quotes/apostrophes folded to ASCII; en/em dashes, the ellipsis glyph, and prime marks preserved so names stay legal on NTFS/exFAT).
 - **Conservative matching.** Only sibling folders whose normalized names match are merged. Cases like `Domestica` vs `Cursive's Domestica (Deluxe Edition)` (different prefix, not just quote variation) are left alone for manual review.
@@ -501,7 +503,7 @@ Albums already at `Genre/Artist/Album` are left in place. If such an album's fol
 **Safety contract.**
 - **`mv` only** on the same filesystem: an atomic rename, so audio bytes (and embedded tags/ratings) are never read or rewritten.
 - **Dry-run by default.** Without `--apply` the tool only prints the plan; `--apply` performs it and writes the manifest.
-- **Reversible.** Every move is appended to a manifest TSV (`src<TAB>dst<TAB>time`); `genre_foldermap.py --revert <manifest>` undoes the run.
+- **Reversible.** Every move is appended to a manifest TSV (`src<TAB>dst<TAB>time`); `genre_foldermap.py --revert <manifest> --apply` undoes the run (like a forward run, `--revert` alone is a dry-run preview). Files and moved folders are restored; source folders pruned empty are not recreated.
 - **Never overwrites.** A destination that already exists is reported and skipped; collisions are flagged before anything moves.
 - **Wrong-root guard.** A directory deeper than `Genre/Artist/Album` is flagged `TOO DEEP` and skipped, never collapsed to its last two components. Aim the tool at the parent of an already-organized library by mistake and it flags everything rather than relocating the whole tree. (Point it at the library root itself, e.g. `…/Music`, not its parent.)
 - **Genre names are folded** to a filesystem-legal form (Windows/NTFS-forbidden characters become spaces), so a stray `:` or `/` in a tag can't break the tree.
@@ -519,7 +521,7 @@ Albums already at `Genre/Artist/Album` are left in place. If such an album's fol
    ```
 3. If you change your mind, replay the manifest in reverse:
    ```bash
-   ./scripts/genre_foldermap.py --revert ~/foldermap.manifest.tsv
+   ./scripts/genre_foldermap.py --revert ~/foldermap.manifest.tsv --apply
    ```
 4. Point Lattice at the new shape by setting `"layout": "{genre}/{artist}/{album}"` in `~/.config/lattice/config.json` (or pass `--layout`), then regenerate your wings.
 

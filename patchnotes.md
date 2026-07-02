@@ -1,5 +1,189 @@
 # Lattice Patch Notes
 
+## v4.9.0 (2026-07-02)
+
+TUI parity and UX release, closing the 2026-07-01 audit's T1 to T6 (T7, the persistent-curses-screen rework, stays deliberately parked). One deliberate behavior change is called out below.
+
+- **Multi-root configs are visible to the TUI (T1).** A `library_roots`-only config used to read as a first run: the TUI prompted and overwrote the user's intent with a single `library_root`. The session check now consults both keys, the menu title shows `[N roots]`, and every mode receives the full roots list exactly as the CLI passes it. "Change library root" edits only `library_root` and says so when a roots list exists.
+- **Behavior change: Esc in a prompt cancels (T2).** Esc used to mean "accept default", so selecting a scan by accident and mashing Esc *launched* it. Esc (or Ctrl-C at a text prompt) now unwinds the whole prompt chain back to the menu with nothing launched; bare Enter still accepts the default. The hint bar reads "⏎ Accept  Esc Cancel  Ctrl-U Clear".
+- **Library-root changes are validated before persisting (T3).** A typo'd root was saved over the good one, every retry of the recovery loop was labelled "First run:", and Esc or a blank answer at the true first run silently made the launch directory the permanent root. Paths are now checked with `isdir` before `set_library_root`; a bad answer shows "Not a directory" and keeps the old root; a missing configured root gets its own "Configured root missing" wording; a blank first-run answer re-prompts (type `.` to choose the CWD explicitly).
+- **Output-path prompts expand `~` (T4).** `~/reports/x.txt` used to create a literal `./~/reports/`. Every output prompt now expands the tilde (paths otherwise stay relative), and the results pager ends with "Report written to /abs/path" so the report's location answers itself.
+- **CLI parity in the prompts (T5).** The decode-scan modes gained an "ffmpeg path (blank = auto)" prompt (the CLI's `--ffmpeg` had no TUI equivalent); stats gained the layout prompt its siblings have; the FLAC prefer-tool prompt re-asks until it gets `flac` or `ffmpeg`; the OK-rows question is labelled "(verbose report)" since one answer drives both knobs; and the unreachable `or "{artist}/{album}"` arms after layout prompts (which would have shadowed a configured layout if ever reached) are gone.
+- **TUI niceties (T6).** Bad numeric input re-prompts with a note instead of silently using the default; menus taller than the terminal scroll to keep the selection visible; the pager pans horizontally (←→/h/l) with `…` truncation markers and no longer recomputes its width on every keypress; Ctrl-U clears a prompt field; the in-mode progress box is throttled to ~10 redraws/s and shows `n/total · Ctrl-C cancels`; the Quit/Change-root result tuples are named constants. Mode-level: a bad smart-playlist rule is now rejected once, up front (`validate_rule`), instead of printing one error per track — the CLI benefits too.
+- Tests extended (`tests/test_tui.py` + `tests/test_playlists.py`, 436 total across the suite): a hermetic menu harness (config stubbed, pager captured) covering cancel chains, root validation, multi-root passthrough and titling, prefer-tool re-prompting, `~` expansion, integer re-prompts, and the rule validator.
+
+## cleaner.py v1.3.3 (2026-07-02)
+
+Polish release from the 2026-07-01 audit (roadmap L-cleaner batch); one behavior change, strictly safer.
+
+- **Fix: "identical" duplicates are verified by content sample, not size alone.** A colliding file was dropped as a DROP DUPE purely on byte count, so a same-size re-encode or retag of a different take was deleted. The drop now also requires equal first/last 64 KiB (`head_tail_equal`); a same-size file with differing sampled bytes takes the collision path instead, so audio survives as `.from-fragment`. A mid-file-only difference within same-size files can still slip through the sample; the log line says "sampled bytes" for that reason.
+- **Fix: an MP3 with no ID3 header (tags only in APEv2/ID3v1) is reported and counted** (`SKIP (no ID3 header ...)`, new `tag_no_id3_skipped` stat) instead of silently skipped; the `.wav` path was already the model.
+- **Fix: the ASF tag write deletes case-variant keys first.** The `.wma` branch read keys case-insensitively but wrote canonical case beside a variant original, leaving two keys; it now clears variants like the Vorbis branch.
+- **Fix: pass headers no longer orphan the log timestamp.** `log("\n--- PASS ---")` put the timestamp prefix on the blank line; the blank line is emitted separately now.
+- **Fix: a merge survivor that also gets renamed is one tag target, not two.** The rename hook and the group both recorded the artist; the group's record (which also carries the merged sources) is now the only one for that case, while Pass 3 sweep renames still record their own.
+- Cleanups: `_normalize_folder_name`/`_normalize_file_name` share one `_rename_to` guard helper (H3's fix no longer has to be made twice), `consolidate_group` computes each folder's file count once instead of walking twice, and `file_count` no longer uses `_` as a load-bearing variable.
+- Tests extended (`tests/test_cleaner.py`, 82 total): same-size-different-bytes collisions, `head_tail_equal` edge cases, the headerless-MP3 report, the ASF case-variant delete, the log format, and tag-target dedupe (merge+rename vs sweep).
+
+## genre_foldermap.py v1.3.3 (2026-07-02)
+
+Polish release from the 2026-07-01 audit (roadmap L-genre_foldermap batch). Also corrects a housekeeping miss: yesterday's v1.3.2 changes shipped without bumping `__version__` (it still said 1.3.1); this release moves it straight to 1.3.3.
+
+- **Fix: the genre gate matches case-insensitively and reuses the existing folder's spelling.** A stray tagged `hip hop` against an existing `Hip Hop` folder was flagged UNKNOWN GENRE, and `--allow-new-genre` would then mint a case-variant duplicate top-level folder. A case-variant match now files into the existing folder (artist-level sidecars follow the same spelling), and an organized album whose tag differs from its folder only by case is no longer a NOTE.
+- **Fix: cross-device moves are refused.** `shutil.move` silently degrades to copy+delete across filesystems, against the documented mv-only contract (audio bytes are never rewritten); the Runner now compares device numbers and refuses with a `CROSS-DEVICE (refused)` line and its own stats counter.
+- **Fix: paths containing a tab or newline are refused, not moved.** Such a path would corrupt the manifest TSV, making the move unrevertable; it is flagged `UNSAFE NAME` (rename the folder first) and its bookkeeping is skipped.
+- **Docs honest about revert and reversibility.** Every `--revert` mention now says it is a dry-run by default (add `--apply` to execute, same as a forward run), including the hint the manifest header writes; the "reversible" claim is scoped to files and moved folders (source folders pruned empty are not recreated); the vocabulary is documented as record-derived (a genre folder with no readable audio that run drops out of the gate). Comment fixes: the `Move.kind` comment no longer claims pruning behavior, the `dst == src` guard is annotated with its only reachable case (genre folder named like the staging inbox), and the prune comment describes the real single deepest-first pass.
+- Tests extended (`tests/test_genre_foldermap.py`, 55 total): case-variant gate reuse (with and without `--allow-new-genre`), the case-variant NOTE suppression, unsafe-name refusal, and the cross-device refusal.
+
+## genre_tidy.py v1.2.3 (2026-07-02)
+
+Polish release from the 2026-07-01 audit (roadmap L-genre_tidy batch).
+
+- **New: `--layout` on both subcommands.** The scanner was pinned to `{artist}/{album}`, so on the genre-foldered library genre_foldermap produces, an untagged file's artist fell back to the genre folder name. Pass `--layout "{genre}/{artist}/{album}"` to recover artist/genre from the right path levels, exactly like cleaner.py.
+- **Fix: tabs and newlines in tag values no longer corrupt the map.** A genre like `Rock<TAB>Pop` was written as two TSV columns, so it read back as two allowed genres and a fresh map was not a no-op (`apply` rewrote the tag). Generated fields fold tab/newline to a space; `norm()` collapses whitespace the same way, so the sanitized row still matches the raw tag at compliance time.
+- **Fix: silent last-wins on normalized-key collisions.** Two hand-edited rows that normalize to the same artist (`Jay-Z` vs a curly-dash `Jay‐Z`) silently dropped the earlier row; the overwrite warns on stderr now.
+- **Docs: the EXCLUDED trade-off is stated.** A real artist actually named "Various" or "VA" is permanently unenforceable; the comment block above `EXCLUDED_ARTISTS` acknowledges it.
+- Tests extended (`tests/test_genre_tidy.py`, 40 total): TSV sanitization round-trips, the collision warning, and the layout passthrough.
+
+## retag.py v1.1.2 (2026-07-02)
+
+Polish release from the 2026-07-01 audit (roadmap L-retag batch); no new features. RT4 (the "subdirectories not descended" note) had already landed with M17.
+
+- **Fix: direct invocation is byte-idempotent.** A file already carrying exactly the target genre was still fully rewritten on every run (APEv2 deleted, v2.4 tag re-saved as v2.3, ID3v1 minted). A per-file no-op guard now skips the write and logs `unchanged`; for MP3 the guard also checks the hidden genre spots retag exists to clear, so a matching TCON with a stray APEv2 tag or bare `TXXX:GENRE` frame still gets the write. Dry-run predicts the same skips. (genre_tidy already gated via compliance; this hardens direct use.)
+- **Fix: an unreadable Vorbis-family file reports its failure.** `mutagen.File()` returning None for a corrupt file used to return False *silently*, invisible next to every other failure path's `[!] Failed` line; it prints one now.
+- **Fix: WMA dry-runs show the real old genre.** `read_genres` used `easy=True`, which has no ASF wrapper, so `.wma` always read back `[]`; `WM/Genre` is read directly now.
+- **Docs: dead code dropped.** The Vorbis branch popped both `"genre"` and `"GENRE"` with a comment about clearing "both cases"; mutagen's comment dict is case-insensitive, so the second pop could never do anything and is gone.
+- Tests extended (`tests/test_retag.py`, 24 total): byte-identical second run, the stray-APE and bare-TXXX force paths, dry-run unchanged prediction, the WMA read, and the unreadable-file report.
+
+## rerate.py v1.0.2 (2026-07-02)
+
+Polish release from the 2026-07-01 audit (roadmap L-rerate batch); no new features. RR4 (error accounting) had already landed with M10.
+
+- **Fix: hidden directories are pruned from the walk.** `.testing/` album copies (and any dot-directory) were rerated along with the library; the walker now prunes them, matching replaygain.py.
+- **Fix: a bad `--log` path is a clean error** (exit 1 with a message, not a traceback), matching the directory validation.
+- **Docs: the REMAP comment no longer claims extra entries are harmless.** They are not: the map is deliberately closed because only DeaDBeeF's 2★ (127) and 4★ (254) have a byte both players agree on. Byte 64 is a fixpoint collision (DeaDBeeF 1★ and foobar 2★ share it, unfixable by byte rewrite alone) and DeaDBeeF 3★ (190) has no byte both players read as 3 stars. The comment now says so, and warns that any candidate entry needs verifying in both players first.
+- **Docs: the save is described honestly.** "Rewrites the POPM byte in place" undersold it; the save re-serializes the whole ID3 tag (v2.4 comes back v2.3, ID3v1 refreshed, matching retag.py), audio untouched.
+- Tests extended (`tests/test_rerate.py`, 12 total): hidden-dir pruning and the guarded log open.
+
+## replaygain.py v1.2.1 (2026-07-02)
+
+Polish release from the 2026-07-01 audit (roadmap L-replaygain batch); no new features.
+
+- **Fix: an album rsgain silently declined is a NO-OP, not "scanned".** Easy mode exits 0 with "No files were scanned" when it finds nothing it can tag; the run counted it scanned and logged nothing unusual. The album's gains are now read back before it counts: no message and no gains means a distinct `NO-OP` log line and its own summary counter.
+- **Fix: M4A gains read back as text.** `MP4FreeForm` is a bytes subclass, so the post-scan verification logged `b'-6.66 dB'`; bytes values are decoded now.
+- **Fix: every run leaves a log trail.** A run where everything was skipped (`--skip-tagged` on a fully tagged library) or that was declined at the confirmation prompt wrote nothing at all to the log; both now write a proper `RG RUN START`/summary/`END` block saying why nothing happened.
+- **Fix: a bad `--log` path is a clean error.** The log open was unguarded, so an unwritable path was a traceback; it now validates like `directory` does and exits 1 with a message.
+- **Docs: `--skip-tagged` target-blindness stated.** It checks only that gain tags exist, not what target they were computed against, so an album tagged at the default 89 dB reads as tagged under `--target-lufs -14`; the docstring says to rescan without `--skip-tagged` when changing targets. Also tidied: the worklist filter unpacks its tuples instead of indexing `w[5]`.
+- Tests extended (`tests/test_replaygain.py`, 27 total): NO-OP vs scanned accounting, the bytes decode, skip-everything and declined-prompt log blocks, and the guarded log open; the `main` harness is now shared between the dry-run and apply test classes.
+
+## apestrip.py v1.1.2 (2026-07-02)
+
+Polish release from the 2026-07-01 audit (roadmap L-apestrip batch); no new features.
+
+- **Fix: unmigratable APE items are reported and skipped, never written as junk frames.** Under `--keep-metadata`, a binary item bound for a TXXX passthrough became an *empty* TXXX frame, an external cover reference became an `APIC` with zero bytes of image data, and a cover in an unrecognized image format was mislabeled `image/jpeg`. All three now land in a per-file `[skip]` report (with the reason) and are dropped with the tag; the preview summary counts them.
+- **Fix: a described COMM frame no longer blocks a real comment migration.** The redundancy check counted any `COMM*` frame, so an iTunes `COMM:iTunNORM:eng` normalization blob made a sole-source APE Comment read as redundant and silently dropped it; only an unqualified comment (empty description) counts now.
+- **Fix: the raw item parser bounds each value length.** A malformed item whose declared length overran the footer would slurp footer bytes into its value; the parse now stops at such an item instead.
+- **Fix: repair-path fsync ordering.** With migrations, `id3.save(tmp)` rewrote the temp file *after* the flush+fsync, so the atomic swap could install a half-flushed tag on power loss; the file is synced again after the save.
+- **Docs honest about the redundancy check.** The docstring promised value-level preservation ("so nothing is lost") but the check is presence-only: a field ID3 already has, whatever its value, is treated as authoritative and not overwritten. Now says so. Also tidied: the garbled `_RawAPEValue` docstring, a narration comment, the mid-file `AUDIO_EXT` constant, and `plan_file`'s annotation (it also accepts raw-parsed items).
+- Tests extended (`tests/test_apestrip.py`, 53 total): binary/external/unknown-format skip paths, the iTunNORM redundancy trap, and the overflowing item length.
+
+## apestrip.py v1.1.1 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items M1 to M6); no new features.
+
+- **Fix: `--keep-metadata` on an ID3v1-only MP3 no longer clobbers the v1 values.** Without seeing ID3v1, every APE field looked sole-source and the eventual `save(v1=2)` rebuilt ID3v1 from the sparse v2 frames, blanking the old title/artist (exactly the old rips most likely to carry APE tags). Migration planning now seeds from the trailing v1 block when there is no v2 tag. On mutagen 1.46+ (which reads v1 into `ID3()` itself) the bug never fired; the seed covers older mutagen and the test pins the behavior either way.
+- **Fix: multi-value APE text items migrate as separate values.** They were flattened to one NUL-joined string, and an embedded NUL truncates a v2.3 UTF-16 frame so players showed only the first value. Values now stay separate through the migration (the v2.3 save renders them slash-joined, all values visible); labels render them readably.
+- **Fix: `--repair-malformed` preserves file permissions.** The atomic-swap temp file (mode 0600) was installed verbatim, silently stripping group/other access on shared-mount libraries; the original mode is copied before the swap.
+- **Fix: a repair-path I/O error is a per-file error, not a crash.** An unreadable file or read-only directory raised out of the unguarded repair body and killed a library-wide run mid-write-pass; it now returns an error result the loop's accounting handles.
+- **Fix: the repair excision recognizes trailing structures.** Everything between the APE footer and a strictly terminal ID3v1 used to be cut as junk: a Lyrics3v2 block was deleted, and an ID3v1 followed by stray padding was itself excised (the end-anchor missed it). Lyrics3v2 and a terminal ID3v1 are now preserved byte for byte; junk before a terminal ID3v1 (the shape that motivated the flag) is still excised; anything else refuses the repair and reports instead of guessing.
+- **Fix: honest audit log and exit code.** A file whose APE tag vanished between the planning and write passes was logged as "stripped APEv2 tag"; it now logs "no APEv2 tag at write time (skipped)". `main` exits 1 when any file errored (was always 0).
+- Tests extended (`tests/test_apestrip.py`, 46 total): v1-only preservation, multi-value migration, permission preservation, read-only-dir error path, the three trailer shapes, and first coverage of the `main` execution loop (happy path, vanished tag, error exit).
+
+## replaygain.py v1.2.0 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items M7 to M9); no new features.
+
+- **Fix: custom mode no longer fails a whole album over one rsgain-unsupported file.** `rsgain custom` rejects its entire file list when one entry is unsupported (verified live: a raw ADTS `.aac` bonus track failed a 12-FLAC album under `--target-lufs` while default easy mode sailed through). The custom branch now filters to the formats rsgain 3.6 can write (per `rsgain --help`), logs each `SKIP (rsgain-unsupported)` file, and skips an album with nothing left.
+- **Fix: dry-run honors `--skip-tagged`.** The preview printed "Would scan" over the unfiltered worklist while apply filtered it; on a mostly-tagged library it predicted hundreds of albums where apply would scan a handful. The scan set is now computed once, before the dry/apply split; the dry-run marks skipped rows and summarizes "Would scan X of Y".
+- **Fix: nested album folders are no longer rescanned via rsgain easy's recursion.** `rsgain easy` scans a directory recursively, so a parent album dir with a loose track beside `CD1/` meant CD1 was scanned twice and, with `--skip-tagged`, rewritten even when skipped. Such parents are excluded from easy-mode runs and reported (`NESTED ALBUM (skipped): ... scan the subfolders or flatten`); custom mode passes explicit direct files and is unaffected. The fuller option (scanning the parent's direct files as their own unit via custom mode) is deliberately not taken yet; flagged as an open decision.
+- Tests extended (`tests/test_replaygain.py`): supported-set filtering and argv exclusion, nested-parent detection (including the sibling-string-prefix trap), and first `main` coverage via dry-run runs; the test file now imports `AUDIO_EXTENSIONS` from `lattice.config` instead of carrying a copy.
+
+## rerate.py v1.0.1 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items M10, M11); no new features.
+
+- **Fix: one bad file no longer crashes the whole run.** `tags.save` sat outside the try in a function documented "never raises", so a read-only file or full disk killed the walk with no log line and no SUMMARY. `rerate_file` now returns `(changes, error)`; `main` logs an `ERR` line per failure, counts errors into the SUMMARY, and exits 1 when any occurred.
+- **Documented decision (M11): the remap stays byte-only, with no POPM email filter.** Safe in a DeaDBeeF/foobar-only library; the docstring now states the assumption prominently and points at the dry-run output (which prints each frame's email) for libraries touched by other taggers. Revisit with an email gate only if a foreign tagger actually shows up.
+- Tests extended (`tests/test_rerate.py`): the error result on a read-only file, and first `main` coverage (error accounting, exit codes).
+
+## retag.py v1.1.1 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items M16, M17); no new features. Exit-code contract change: **`main` now returns 1 when any file failed to write** (known callers: `genre_tidy.py` apply, which wants exactly this, and manual use).
+
+- **Fix: failures are visible to callers.** Per-file failure messages go to stderr (they were buried in stdout), and a run where files failed exits nonzero, so `genre_tidy.py` can count the album as an error instead of a successful retag.
+- **Fix: unwritable audio in a mixed album is named.** Files retag cannot write (`.wav`, `.aac`, `.alac`, `.ape`, `.wv`, `.aiff`) were silently skipped; each now logs `skip (unsupported): <name>`, and the "No valid audio files found" note mentions that subdirectories are not descended.
+- Tests extended (`tests/test_retag.py`): stderr routing, nonzero exit with a read-only file, full-success exit 0, and the mixed-album skip line.
+
+## genre_tidy.py v1.2.2 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items M14 to M17); no new features.
+
+- **Fix: artists whose name starts with `#` are data, not comments.** `#1 Dad` used to be discarded by the map parser, could never be enforced, and was re-appended as a "new" artist on every rebuild. The comment rule is now explicit (`#` + space, dash, or end of line); generated comments always match it, so a `#`-leading artist survives the round-trip. The rule is documented in the map header.
+- **Fix: EXCLUDED (Various Artists) entries no longer re-append on every rebuild.** They intentionally have no data row, so the "already present" check could never see them and every `build` appended a fresh dated marker plus a duplicate EXCLUDED comment; they are now filtered from the new-artist diff and the "No new artists" path is reachable.
+- **Fix: a failed retag counts as an error, not a retag.** `apply` counted an album into `retagged` before invoking retag and retag always exited 0; with retag v1.1.1's exit code, a nonzero run now increments `errors` (with the captured stderr logged) and `retagged` only counts successes.
+- **Fix: albums retag cannot write are skipped with a reason.** A `.wav`-only album with a stray genre was "retagged" forever (retag skipped every file, exited 0, nothing converged). `apply` now checks the album's extensions against retag's writable set (imported from `retag.py`, so the two cannot drift), logs `UNSUPPORTED FORMAT (skipped)` once, and counts it under a new `unsupported` stat.
+- Tests extended (`tests/test_genre_tidy.py`): the comment rule and round-trip, rebuild no-op with a VA comp, and first `cmd_build`/`cmd_apply` coverage (success, failure-counts-as-error, unsupported-format convergence) with the real retag subprocess.
+
+## genre_foldermap.py v1.3.2 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items M12, M13); no new features.
+
+- **Fix: a rejected album move no longer triggers its sidecar bookkeeping.** When an album was skipped (`DEST EXISTS`/collision), its artist-level sidecars (cover art, .nfo) were still relocated to the target genre, stranding the un-moved album without its artwork, and the source dir was still queued for pruning. Bookkeeping is now gated on the move actually being planned.
+- **Fix: `--revert` runs through the Runner.** Reverts moved as much as an apply but bypassed the context manager: no audit trail, no replay manifest (the `.revert.tsv` was named but never written), and a dry-run revert always predicted `pruned=0` because nothing fed the virtual-removed set. Each restore now goes through `do_move` (kind `revert`), so the manifest, stats, and dry-run prune prediction all come for free; the Runner also models virtual *creations*, so a dry-run revert sees restored albums as children of their original parents and predicts exactly the prunes a real revert performs.
+- Tests extended (`tests/test_genre_foldermap.py`): rejected-move bookkeeping, the replayable `.revert.tsv`, dry-vs-real revert prune parity, and dry-run-revert-touches-nothing.
+
+## cleaner.py v1.3.2 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items M18 to M20); no new features.
+
+- **Fix: multi-valued tags keep all their values through the typographic fold.** The tag pass read only the first value and wrote back a singleton, so a FLAC with `artist=["Artist A’s Band", "Artist B"]` lost the co-artist whenever the first value needed folding. Every value is now folded and written back as the full list. The authority restamp deliberately still collapses to the single survivor name (that is its semantic), now stated in a comment.
+- **Fix: dry-run models creations, not just removals.** Collision and rename decisions consulted the raw disk, so previews diverged from apply in several shapes: a three-way merge where both sources carry the same extra track previewed two plain moves where apply performs one move plus an `AUDIO COLLISION`; two siblings folding to the same rendered name previewed two renames where apply performs one. The Run now tracks virtual creations (mapping each virtual destination to the real path holding its bytes, so size/kind checks still read real data), every existence/size check in the merge and rename paths goes through the virtual-aware views, and Pass 2/3 walks skip folders an earlier pass virtually merged away. Dry-run stats now match apply on all the audited fixtures; the residual limitation (contents of virtually-moved folders are not modeled recursively) is noted in the docstring.
+- **Docs: the module docstring's stale v1.2.0 tag-pass text is gone.** Two passes were both numbered "4." and the survivor described the pass as MP3-only and merged-folders-scoped, contradicting shipped v1.3.0 behavior; one accurate pass description remains, and the misleading "Pass 3" comment on the tag-target hook (which also fires for Pass 1/2 survivor renames) is corrected.
+- Tests extended (`tests/test_cleaner.py`, 72 total): multi-value fold and authority collapse, dry-vs-apply parity for the three-way merge and same-render siblings, and virtually-removed folders being skipped by the group scan.
+
+## v4.8.2 (2026-07-01)
+
+Bugfix release for the TUI, from the 2026-07-01 audit (roadmap items H6 and H7); no new features.
+
+- **Fix: a mode error no longer kills the TUI with the terminal stuck in curses mode.** `_run_with_capture` had no exception boundary, so a mode failure (say, an unwritable output path after a completed scan) escaped as a raw traceback, lost the captured results, and left the screen in curses mode because the in-mode progress bar had started a screen nothing tore down. Mode exceptions are now caught and paged under an `[Error]` heading with the full traceback plus whatever output was captured; Ctrl-C pages a `[Cancelled]` notice the same way. The curses screen is explicitly ended and the terminal reset before paging, and `_TUIPbar.close()` now ends the screen it started, so well-behaved modes hand back a sane terminal too.
+- **Fix: a plain-text fallback session no longer routes progress to the curses bar.** `interactive_menu` set `utils.IN_TUI` unconditionally, so a session that had already degraded to the typed-input menu (curses missing, or stdin not a TTY) still handed progress to `_TUIPbar`, which could crash on the missing module or hijack the screen mid-session. `IN_TUI` now tracks `_USE_CURSES`, re-evaluated every menu pass.
+- **Fix: a curses init failure no longer reads as "Quit".** On capability-poor terminals (`TERM=vt100`, dumb terminals) `curs_set`/color setup raised `curses.error`, which the menu treated as the user choosing Quit: the TUI silently exited 0 even though the text fallback works. Cosmetic capabilities (colors, cursor visibility) are now non-fatal, so such terminals get a monochrome TUI; a real `curses.wrapper` failure flips the session to the text fallback menu instead of exiting.
+- New tests in `tests/test_tui.py` pin all three behaviors (paged tracebacks, fallback sessions leaving `IN_TUI` unset, the fallback sentinel re-entering the menu loop).
+
+## cleaner.py v1.3.1 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap items H1, H2, H3); no new features.
+
+- **Fix: `feat.` detection no longer matches inside words.** The guest-credit regex used a zero-width `\s*` boundary, so the `ft` ending "Left", "Swift", or "Croft" read as a feat marker: `--normalize-tags` under a merged/renamed artist folder rewrote a clean "Left Boy" tag to "Left Boy feat. Boy", and every further pass appended another "feat. Boy" (non-idempotent corruption). The marker now requires a real token boundary. Also fixed in the same change: a parenthesised credit like "A (feat. B)" no longer leaves the stray closing paren on the guest.
+- **Fix: `.wma` collisions are treated as audio.** `.wma` was in `TAGGABLE_EXT` but missing from `AUDIO_EXT`, so a differing-size `.wma` collision during a merge fell into the non-audio branch and the source copy was deleted, violating the "audio is never overwritten or deleted" guarantee. It now survives as a `.from-fragment.wma` copy, and `--normalize-filenames` reaches `.wma` tracks. `AUDIO_EXT` is now documented against the package's `AUDIO_EXTENSIONS` (`.mp4` stays deliberately excluded as ambiguous with video).
+- **Fix: dry-run now predicts the survivor rename.** The rename collision guard checked only the disk, where the merged-away source folder still exists during a dry-run, so the flagship scenario (canonical `Drive‐By Truckers` with a U+2010 hyphen absorbing `Drive-By Truckers`) previewed `RETAIN NAME` while apply performed the rename, and the tag pass preview consequently missed the authority restamps. The guard now consults the run's virtual removals, so dry-run and apply report identical stats and tag targets.
+- Tests extended (`tests/test_cleaner.py`): mid-word `ft` cases, paren stripping, feat idempotency, `.wma` collision and rename, and a dry-vs-apply parity check on the survivor-rename fixture.
+
+## genre_foldermap.py v1.3.1 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap item H4); no new features.
+
+- **Fix: multi-disc album subfolders no longer poison the genre vocabulary.** The scanner emits one record per audio-bearing directory, so `Artist/Album/CD1` in a flat library arrived as a depth-3 record and classified as "organized", which put the artist's name into the genre vocabulary, turned the placement gate on, and flagged every ordinary stray `UNKNOWN GENRE`: one disc folder broke the whole flat-to-genre conversion, and the disc album itself was never filed. Disc subfolders (`CD1`, `Disc 2`, `disk_3`, `DVD 1`, `Side 1`, `Vinyl 2`, ...) now collapse to their parent album, which moves as one unit with the discs inside; CD1+CD2 records dedupe to a single move, and discs whose genre tags disagree keep the first and flag a `DISC GENRE MISMATCH` issue instead of planning two moves of one folder.
+- **Fix: organized disc albums no longer spam `TOO DEEP`.** A legit `Genre/Artist/Album/CD1` is recognized as that album (in place, no issue) instead of producing perpetual wrong-root noise.
+- **Fix: inbox content can never read as "organized".** `Unfiltered/Artist/Album/CD1` strips to the album and is filed like any stray; anything deeper or stranger under the inbox is flagged `STAGED TOO DEEP (left in inbox)` for manual review rather than being silently treated as an organized album stuck in the inbox forever.
+- Tests extended (`tests/test_genre_foldermap.py`): disc classification (flat, organized, staged, and an album genuinely named like a disc), one-unit end-to-end move with the gate off, vocabulary hygiene, disc genre disagreement, and the staged-deep flag.
+
+## genre_tidy.py v1.2.1 (2026-07-01)
+
+Bugfix release from the 2026-07-01 audit (roadmap item H5); no new features. `retag.py` is unchanged.
+
+- **Fix: a slash canonical no longer causes a permanent retag loop.** `apply` used to split `"Emo / Orgcore"` on `/` into two genre values; retag wrote them as a multi-value tag that never read back equal to the map (lattice reads only the first Vorbis genre field; MP3's v2.3 save slash-joins without spaces), so every `apply` re-ran retag on the same albums forever: files rewritten, APEv2 stripped, mtimes churned, dry-run never converging. The canonical is now passed verbatim as one genre value, so the tag written is exactly the string the compliance check reads back and the run converges. This treats a slash genre as one genre (which is what DeaDBeeF/foobar2000 display anyway); nothing in the shipped `artist_genre_defaults.tsv` used a slash genre, so no live behavior changes.
+- Tests updated (`tests/test_genre_tidy.py`): the single-argument invocation is pinned, and a new end-to-end check writes the slash canonical through `retag.apply_genres` on FLAC and MP3 fixtures and asserts the re-read tag is compliant (a second apply would plan zero retags).
+
 ## genre_foldermap.py v1.3.0 (2026-06-21)
 
 New feature (no package change): a **staging inbox**, so albums dumped outside the organized tree can be filed without being mistaken for a genre.
