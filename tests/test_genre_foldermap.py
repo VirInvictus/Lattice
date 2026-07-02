@@ -1,4 +1,7 @@
+import contextlib
+import io
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -88,6 +91,50 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(
             gf.classify(Path("/m/Unfiltered/Kanye West/BULLY"), self.root),
             ("organized", "Unfiltered", "Kanye West", "BULLY"),
+        )
+
+    def test_flat_disc_subfolder_is_the_parent_album(self):
+        # H4: Artist/Album/CD1 in a flat library is NOT an organized album under
+        # a genre named "Artist"; it collapses to its parent album unit.
+        for disc in ("CD1", "CD 2", "Disc 1", "disk_2", "DVD 1", "Side 1", "Vinyl 2"):
+            self.assertEqual(
+                gf.classify(Path(f"/m/Artist/Album/{disc}"), self.root),
+                ("album", "Artist", "Album"),
+            )
+
+    def test_organized_disc_subfolder_is_its_album_not_toodeep(self):
+        self.assertEqual(
+            gf.classify(Path("/m/Rock/Artist/Album/CD2"), self.root),
+            ("organized", "Rock", "Artist", "Album"),
+        )
+
+    def test_staged_disc_subfolder_collapses_to_the_album(self):
+        self.assertEqual(
+            gf.classify(
+                Path("/m/Unfiltered/Artist/Album/CD1"), self.root, staging="Unfiltered"
+            ),
+            ("album", "Artist", "Album"),
+        )
+
+    def test_staged_non_disc_depth_is_never_organized(self):
+        # Nothing inside the inbox can be "organized"; a weird deep dump is
+        # flagged for manual review instead.
+        self.assertEqual(
+            gf.classify(Path("/m/Unfiltered/A/B/C"), self.root, staging="Unfiltered"),
+            ("staged-toodeep", 3),
+        )
+        self.assertEqual(
+            gf.classify(
+                Path("/m/Unfiltered/A/B/C/weird"), self.root, staging="Unfiltered"
+            ),
+            ("staged-toodeep", 4),
+        )
+
+    def test_album_actually_named_like_a_disc_is_not_collapsed(self):
+        # A real album folder that merely resembles a disc name must not drag
+        # its artist dir along as the move unit.
+        self.assertEqual(
+            gf.classify(Path("/m/Artist/CD1"), self.root), ("album", "Artist", "CD1")
         )
 
 
@@ -304,6 +351,107 @@ class BuildPlanTests(unittest.TestCase):
         self.assertEqual(moves, [])
         self.assertTrue(any("UNKNOWN GENRE" in m and "Polka" in m for m in issues))
 
+    def test_flat_disc_album_moves_as_one_unit_and_gate_stays_off(self):
+        # H4: the scanner emits one record per audio-bearing dir, so a disc
+        # album yields CD1+CD2 records. They must dedupe to ONE album move, the
+        # artist name must not enter the genre vocabulary, and an ordinary stray
+        # in the same library must still convert (gate off).
+        _make_tree(
+            self.root,
+            {
+                "Sigur Ros/Agaetis/CD1/01.flac": "a",
+                "Sigur Ros/Agaetis/CD2/01.flac": "b",
+                "Outkast/Stankonia/01.mp3": "c",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Sigur Ros/Agaetis/CD1"), "Post-Rock"),
+            FakeAD(str(self.root / "Sigur Ros/Agaetis/CD2"), "Post-Rock"),
+            FakeAD(str(self.root / "Outkast/Stankonia"), "Hip Hop"),
+        ]
+        moves, issues, sources = gf.build_plan(recs, self.root)
+        self.assertEqual(issues, [])
+        self.assertEqual(
+            {m.dst for m in moves},
+            {
+                self.root / "Post-Rock/Sigur Ros/Agaetis",
+                self.root / "Hip Hop/Outkast/Stankonia",
+            },
+        )
+        album_moves = [m for m in moves if m.src == self.root / "Sigur Ros/Agaetis"]
+        self.assertEqual(len(album_moves), 1)  # CD1+CD2 deduped to one unit
+        self.assertIn(self.root / "Sigur Ros", sources)
+        # End-to-end: the discs ride along inside the moved album.
+        with gf.Runner(self.root / "m.tsv", dry_run=False, quiet=True) as runner:
+            gf.execute(moves, sources, runner)
+        self.assertEqual(
+            (self.root / "Post-Rock/Sigur Ros/Agaetis/CD1/01.flac").read_text(), "a"
+        )
+        self.assertEqual(
+            (self.root / "Post-Rock/Sigur Ros/Agaetis/CD2/01.flac").read_text(), "b"
+        )
+        self.assertFalse((self.root / "Sigur Ros").exists())
+
+    def test_organized_disc_album_produces_no_toodeep_noise(self):
+        _make_tree(self.root, {"Rock/Artist/Album/CD1/01.mp3": "a"})
+        rec = FakeAD(str(self.root / "Rock/Artist/Album/CD1"), "Rock")
+        moves, issues, _ = gf.build_plan([rec], self.root)
+        self.assertEqual(moves, [])
+        self.assertEqual(issues, [])
+
+    def test_staged_disc_album_files_into_taxonomy(self):
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "a",
+                "Unfiltered/Artist/Album/CD1/01.mp3": "b",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop"),
+            FakeAD(str(self.root / "Unfiltered/Artist/Album/CD1"), "Hip Hop"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root, staging="Unfiltered")
+        self.assertEqual(issues, [])
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].src, self.root / "Unfiltered/Artist/Album")
+        self.assertEqual(moves[0].dst, self.root / "Hip Hop/Artist/Album")
+
+    def test_staged_deep_non_disc_is_flagged_not_organized(self):
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "a",
+                "Unfiltered/A/B/C/weird/01.mp3": "b",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop"),
+            FakeAD(str(self.root / "Unfiltered/A/B/C/weird"), "Polka"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root, staging="Unfiltered")
+        self.assertEqual(moves, [])
+        self.assertTrue(any("STAGED TOO DEEP" in m for m in issues))
+        # "A" (the inbox artist) must not have entered the vocabulary as a genre.
+        self.assertFalse(any("UNKNOWN GENRE" in m for m in issues))
+
+    def test_disc_records_with_disagreeing_genres_keep_first_and_flag(self):
+        _make_tree(
+            self.root,
+            {
+                "Artist/Album/CD1/01.mp3": "a",
+                "Artist/Album/CD2/01.mp3": "b",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Artist/Album/CD1"), "Rock"),
+            FakeAD(str(self.root / "Artist/Album/CD2"), "Pop"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root)
+        self.assertEqual(len(moves), 1)  # one unit, first record's genre wins
+        self.assertEqual(moves[0].dst, self.root / "Rock/Artist/Album")
+        self.assertTrue(any("DISC GENRE MISMATCH" in m for m in issues))
+
     def test_missing_genre_is_flagged_not_moved(self):
         _make_tree(self.root, {"Mystery/Album/01.opus": "x"})
         rec = FakeAD(str(self.root / "Mystery/Album"), "")
@@ -323,6 +471,20 @@ class BuildPlanTests(unittest.TestCase):
         moves, _, _ = gf.build_plan(recs, self.root, only_genres={"Trap"})
         self.assertEqual(len(moves), 1)
         self.assertEqual(moves[0].dst, self.root / "Trap/A/Alb1")
+
+    def test_rejected_album_keeps_its_sidecar_and_source_dir(self):
+        # M12: an album skipped with DEST EXISTS must not have its artist-level
+        # sidecar moved out from under it, nor its artist dir queued for prune.
+        _make_tree(
+            self.root,
+            {"AFI/Sing the Sorrow/01.mp3": "a", "AFI/cover.jpg": "art"},
+        )
+        (self.root / "Post-Hardcore/AFI/Sing the Sorrow").mkdir(parents=True)
+        rec = FakeAD(str(self.root / "AFI/Sing the Sorrow"), "Post-Hardcore")
+        moves, issues, sources = gf.build_plan([rec], self.root)
+        self.assertTrue(any("DEST EXISTS" in m for m in issues))
+        self.assertEqual(moves, [])  # no album move AND no sidecar move
+        self.assertNotIn(self.root / "AFI", sources)
 
     def test_dest_collision_is_flagged(self):
         # Two albums that would land on the same destination path.
@@ -454,10 +616,12 @@ class ApplyRevertRoundTripTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _snapshot(self) -> dict:
+        # .tsv excluded: the manifest and (post-M13) the revert's own
+        # .revert.tsv are bookkeeping, not library content.
         return {
             str(p.relative_to(self.root)): p.read_text(encoding="utf-8")
             for p in self.root.rglob("*")
-            if p.is_file() and p != self.manifest
+            if p.is_file() and p.suffix != ".tsv"
         }
 
     def _apply(self):
@@ -502,6 +666,42 @@ class ApplyRevertRoundTripTests(unittest.TestCase):
         self.assertGreater(runner.stats["pruned"], 0)
         self.assertTrue((self.root / "Aesop Rock").exists())  # still there
 
+    def _revert_summary(self, dry: bool) -> str:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = gf.revert(self.manifest, dry_run=dry, quiet=False)
+        self.assertEqual(rc, 0)
+        return buf.getvalue()
+
+    def test_revert_writes_replayable_manifest_and_log_lines(self):
+        # M13: a revert moves as much as an apply; it must leave the same
+        # audit trail (a .revert.tsv manifest with one row per restore).
+        self._apply()
+        out = self._revert_summary(dry=False)
+        self.assertIn("MV revert:", out)
+        revert_manifest = self.manifest.with_suffix(".revert.tsv")
+        self.assertTrue(revert_manifest.exists())
+        pairs = gf.parse_manifest(
+            revert_manifest.read_text(encoding="utf-8").splitlines()
+        )
+        self.assertGreater(len(pairs), 0)
+
+    def test_dry_run_revert_predicts_prunes(self):
+        # M13: dry-run revert used to read unchanged disk and predict pruned=0.
+        self._apply()
+        dry = re.search(r"pruned=(\d+)", self._revert_summary(dry=True))
+        self.assertIsNotNone(dry)
+        real = re.search(r"pruned=(\d+)", self._revert_summary(dry=False))
+        self.assertIsNotNone(real)
+        self.assertEqual(dry.group(1), real.group(1))
+        self.assertGreater(int(real.group(1)), 0)
+
+    def test_dry_run_revert_touches_nothing(self):
+        self._apply()
+        before = self._snapshot()
+        self._revert_summary(dry=True)
+        self.assertEqual(self._snapshot(), before)
+
     def test_round_trip_restores_original(self):
         before = self._snapshot()
         self._apply()
@@ -523,6 +723,90 @@ class ManifestTests(unittest.TestCase):
             "  ",
         ]
         self.assertEqual(gf.parse_manifest(lines), [("/m/A/Alb", "/m/Genre/A/Alb")])
+
+
+class GenreGateCaseTests(unittest.TestCase):
+    """GF4: the vocabulary gate matches case-insensitively and reuses the
+    existing folder's spelling, so a lowercase tag is neither flagged UNKNOWN
+    nor (with --allow-new-genre) minted as a case-variant duplicate folder."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _make_tree(
+            self.root,
+            {
+                "Hip Hop/Nas/Illmatic/01.mp3": "x",  # vocabulary: {"Hip Hop"}
+                "Aesop Rock/Skelethon/01.mp3": "x",  # flat stray
+            },
+        )
+        self.organized = FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "Hip Hop")
+        self.stray = FakeAD(str(self.root / "Aesop Rock/Skelethon"), "hip hop")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_case_variant_tag_files_into_existing_folder(self):
+        moves, issues, _ = gf.build_plan([self.organized, self.stray], self.root)
+        self.assertEqual(issues, [])
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].dst, self.root / "Hip Hop/Aesop Rock/Skelethon")
+
+    def test_allow_new_genre_still_reuses_existing_spelling(self):
+        moves, issues, _ = gf.build_plan(
+            [self.organized, self.stray], self.root, allow_new_genre=True
+        )
+        self.assertEqual(issues, [])
+        self.assertEqual(moves[0].dst, self.root / "Hip Hop/Aesop Rock/Skelethon")
+
+    def test_organized_case_variant_genre_is_not_a_note(self):
+        organized = FakeAD(str(self.root / "Hip Hop/Nas/Illmatic"), "hip hop")
+        moves, issues, _ = gf.build_plan([organized], self.root)
+        self.assertEqual(issues, [])
+        self.assertEqual(moves, [])
+
+
+class UnsafeNameTests(unittest.TestCase):
+    """GF3: a tab/newline in a folder name would corrupt the manifest TSV and
+    make the move unrevertable; such moves are refused with an issue."""
+
+    def test_tab_in_album_name_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _make_tree(root, {"Artist/Al\tbum/01.mp3": "x"})
+            rec = FakeAD(str(root / "Artist/Al\tbum"), "Rock")
+            moves, issues, sources = gf.build_plan([rec], root)
+            self.assertEqual(moves, [])
+            self.assertTrue(any("UNSAFE NAME" in i for i in issues))
+            self.assertEqual(sources, set())  # rejected move: no prune target
+
+
+class CrossDeviceTests(unittest.TestCase):
+    """GF2: shutil.move silently degrades to copy+delete across devices; the
+    Runner refuses instead (mv-only contract, audio bytes never rewritten)."""
+
+    def test_cross_device_move_is_refused(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _make_tree(root, {"Artist/Album/01.mp3": "x"})
+            src = root / "Artist" / "Album"
+            dst = root / "Rock" / "Artist" / "Album"
+            manifest = root / "m.tsv"
+
+            def fake_stat(p, **kw):
+                return mock.Mock(st_dev=1 if p == src else 2)
+
+            with gf.Runner(manifest, dry_run=False, quiet=True) as runner:
+                with mock.patch("pathlib.Path.stat", new=fake_stat):
+                    runner.do_move(src, dst, "dir")
+            self.assertTrue(src.exists())
+            self.assertFalse(dst.exists())
+            self.assertEqual(runner.stats["cross_device_refused"], 1)
+            self.assertEqual(runner.stats["moved_dir"], 0)
+            # Nothing recorded in the manifest for a refused move.
+            self.assertEqual(gf.parse_manifest(manifest.read_text().splitlines()), [])
 
 
 if __name__ == "__main__":
