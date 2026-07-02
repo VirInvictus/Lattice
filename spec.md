@@ -1,6 +1,6 @@
 # Lattice Application Specification
 
-**Version:** 4.9.0  
+**Version:** 4.10.0  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT

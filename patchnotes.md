@@ -1,5 +1,15 @@
 # Lattice Patch Notes
 
+## v4.10.0 (2026-07-02)
+
+The persistent-curses-screen rework: audit item T7, the last parked entry from the 2026-07-01 TUI/UX audit. Purely a lifecycle change; no menu, prompt, or mode behavior differs.
+
+- **One curses screen per session.** Every menu, prompt, pause, and pager used to be its own `curses.wrapper` init/teardown, so multi-prompt flows visibly flashed to the shell between widgets. `interactive_menu` now opens the screen once and every widget draws into it (`_with_screen`); a widget invoked outside a session still gets its own one-shot wrapper, so nothing changes for direct callers. Measured under a pty: a full menu → prompt → cancel → mode → pager → quit session enters the terminal's alternate screen exactly once, where the same flow on v4.9.0 entered it seven times.
+- **The in-mode progress bar joins the session.** `_TUIPbar` draws into the shared screen the session publishes (via `utils.set_shared_screen`) instead of `initscr()`-ing a screen of its own, and its `close()` no longer tears down terminal state that isn't its to tear down. Standalone use (no session) keeps the old start-and-end-a-screen behavior.
+- **One degradation path.** A mid-session curses failure (terminal died, capability lost) funnels through `_degrade_to_text`: the screen is suspended once and the rest of the session runs the text fallback. Session startup failure does the same before the first menu. All the v4.8.2 guarantees (no stuck terminal, no silent exit) hold.
+- **Ctrl-C is coherent everywhere.** At a prompt it cancels exactly like Esc; in the pager it closes the pager; at the menu it ends the session cleanly with exit code 130 (previously an unhandled traceback).
+- Tests extended (`tests/test_tui.py` + `tests/test_utils.py`, 441 total): session-screen routing, wrapper fallback, degradation clearing every piece of session state, the 130 exit, and the progress bar leaving a shared screen alone.
+
 ## v4.9.0 (2026-07-02)
 
 TUI parity and UX release, closing the 2026-07-01 audit's T1 to T6 (T7, the persistent-curses-screen rework, stays deliberately parked). One deliberate behavior change is called out below.

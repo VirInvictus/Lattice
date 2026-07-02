@@ -267,6 +267,17 @@ _TUI_BOX_W = 46
 _CP_FRAME = 1
 _CP_HEADER = 3
 
+# The persistent TUI screen, when an interactive session owns one (published
+# by tui.interactive_menu; see T7). _TUIPbar draws into it instead of
+# initscr()'ing a screen of its own, so a mode's progress no longer tears the
+# session's terminal state down and back up.
+_SHARED_SCREEN = None
+
+
+def set_shared_screen(scr) -> None:
+    global _SHARED_SCREEN
+    _SHARED_SCREEN = scr
+
 
 class _TUIPbar:
     """A progress bar that renders in a curses box to match the TUI style."""
@@ -295,11 +306,13 @@ class _TUIPbar:
         try:
             import curses
 
-            # Each TUI widget is its own curses.wrapper session, already torn
-            # down by the time a mode runs, so initscr() here starts a fresh
-            # screen; close() ends it so what follows starts from a sane
-            # terminal.
-            s = curses.initscr()
+            # Draw into the session's persistent screen when one is active.
+            # Without one (a mode invoked outside interactive_menu), initscr()
+            # starts a standalone screen; close() ends that one so what
+            # follows starts from a sane terminal.
+            s = _SHARED_SCREEN
+            if s is None:
+                s = curses.initscr()
             s.erase()
             h, w = s.getmaxyx()
             box_w = _TUI_BOX_W
@@ -338,8 +351,11 @@ class _TUIPbar:
             pass
 
     def close(self) -> None:
-        # End the screen draw() started so well-behaved modes hand back a sane
-        # terminal as soon as their bar closes.
+        # End the standalone screen draw() started so well-behaved modes hand
+        # back a sane terminal as soon as their bar closes. A session screen
+        # is the session's to tear down, not the bar's.
+        if _SHARED_SCREEN is not None:
+            return
         try:
             import curses
 

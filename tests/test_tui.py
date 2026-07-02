@@ -386,6 +386,73 @@ class PreferToolValidationTests(_MenuHarness):
         self.assertEqual(calls, [(4, "ffmpeg")])
 
 
+class PersistentScreenTests(unittest.TestCase):
+    """T7: one curses screen per session. Widgets run against the session's
+    screen when one is active; a mid-session curses failure degrades the whole
+    session to the text fallback in one place."""
+
+    def test_with_screen_uses_session_screen(self):
+        marker = object()
+        orig = tui._SCREEN
+        tui._SCREEN = marker
+        try:
+            self.assertIs(tui._with_screen(lambda scr: scr), marker)
+        finally:
+            tui._SCREEN = orig
+
+    @unittest.skipUnless(tui.HAVE_CURSES, "curses not available")
+    def test_with_screen_falls_back_to_wrapper_without_session(self):
+        calls = []
+        orig = tui.curses.wrapper
+
+        def fake_wrapper(fn):
+            calls.append(fn)
+            return "wrapped"
+
+        tui.curses.wrapper = fake_wrapper
+        try:
+            self.assertIsNone(tui._SCREEN)
+            self.assertEqual(tui._with_screen(lambda scr: scr), "wrapped")
+        finally:
+            tui.curses.wrapper = orig
+        self.assertEqual(len(calls), 1)
+
+    def test_degrade_to_text_clears_all_session_state(self):
+        import lattice.utils as utils
+
+        orig = (tui._SCREEN, tui._USE_CURSES, utils.IN_TUI, utils._SHARED_SCREEN)
+        marker = object()
+        tui._SCREEN = marker
+        utils.set_shared_screen(marker)
+        tui._USE_CURSES = True
+        utils.IN_TUI = True
+        try:
+            tui._degrade_to_text()
+            self.assertIsNone(tui._SCREEN)
+            self.assertIsNone(utils._SHARED_SCREEN)
+            self.assertFalse(tui._USE_CURSES)
+            self.assertFalse(utils.IN_TUI)
+        finally:
+            tui._SCREEN, tui._USE_CURSES, utils.IN_TUI = orig[0], orig[1], orig[2]
+            utils.set_shared_screen(orig[3])
+
+
+class MenuInterruptTests(_MenuHarness):
+    """T7: Ctrl-C at the menu exits the session cleanly (130), instead of
+    propagating a traceback with the terminal half-restored."""
+
+    def test_ctrl_c_at_menu_exits_130(self):
+        def boom(title):
+            raise KeyboardInterrupt
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._config.get_library_root = lambda: tmp
+            self._config.get_library_roots = lambda: [tmp]
+            tui._select_main = boom
+            rc, _ = self._run()
+        self.assertEqual(rc, 130)
+
+
 class PromptHelperTests(unittest.TestCase):
     """T4/T6a: output prompts expand ~ (but stay relative otherwise); a bad
     integer re-prompts with a note instead of silently using the default."""

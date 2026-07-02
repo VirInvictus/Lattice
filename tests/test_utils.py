@@ -126,5 +126,33 @@ class ColorTests(unittest.TestCase):
             utils._use_color = orig
 
 
+class TUIPbarSharedScreenTests(unittest.TestCase):
+    """T7: with a session screen published, the TUI progress bar draws into
+    it — no initscr() of its own, and close() leaves the session's screen
+    alone instead of endwin()'ing the whole terminal state."""
+
+    def test_draws_into_shared_screen_and_close_leaves_it(self):
+        from unittest import mock
+
+        scr = mock.Mock()
+        scr.getmaxyx.return_value = (24, 80)
+        utils.set_shared_screen(scr)
+        try:
+            with (
+                mock.patch("curses.initscr") as initscr,
+                mock.patch("curses.endwin") as endwin,
+                mock.patch("curses.color_pair", return_value=0),
+            ):
+                bar = utils._TUIPbar(10, "Scanning")
+                bar.update(10)
+                bar.close()
+            initscr.assert_not_called()
+            endwin.assert_not_called()
+            self.assertTrue(scr.erase.called)
+            self.assertTrue(scr.refresh.called)
+        finally:
+            utils.set_shared_screen(None)
+
+
 if __name__ == "__main__":
     unittest.main()

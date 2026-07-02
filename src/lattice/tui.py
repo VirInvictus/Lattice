@@ -66,6 +66,73 @@ from lattice.modes.audit import (
 
 _USE_CURSES = HAVE_CURSES and sys.stdin.isatty()
 
+# T7: one persistent curses screen per interactive session. interactive_menu
+# opens it once and every widget draws into it, so multi-prompt flows no
+# longer flash to the shell between widgets (each widget used to be its own
+# curses.wrapper init/teardown). None when no session owns a screen — widgets
+# invoked directly then fall back to a one-shot wrapper session.
+_SCREEN = None
+
+
+def _with_screen(fn):
+    """Run a widget body against the session's persistent screen, or in a
+    one-shot curses.wrapper session when no session owns one."""
+    if _SCREEN is not None:
+        return fn(_SCREEN)
+    return curses.wrapper(fn)
+
+
+def _open_screen():
+    """Start the session screen (initscr + the modes curses.wrapper would
+    set). Returns the screen, or None when curses can't start on this
+    terminal — the caller degrades the whole session to the text menu."""
+    try:
+        stdscr = curses.initscr()
+        curses.noecho()
+        curses.cbreak()
+        stdscr.keypad(True)
+        _init_tui_colors()
+        return stdscr
+    except curses.error:
+        # initscr may have partially engaged the terminal; put it back.
+        try:
+            if not curses.isendwin():
+                curses.endwin()
+        except curses.error:
+            pass
+        return None
+
+
+def _close_screen() -> None:
+    """End the session screen. Idempotent and guarded, so it is safe after a
+    mid-session degrade already ended the screen."""
+    global _SCREEN
+    _SCREEN = None
+    utils.set_shared_screen(None)
+    if not HAVE_CURSES:
+        return
+    try:
+        if not curses.isendwin():
+            try:
+                curses.echo()
+                curses.nocbreak()
+            except curses.error:
+                pass
+            curses.endwin()
+    except curses.error:
+        pass
+
+
+def _degrade_to_text() -> None:
+    """A mid-session curses failure (terminal died, capability lost): suspend
+    the screen and flip the whole session to the text fallback. endwin puts
+    the terminal back in normal mode and nothing refreshes it afterwards, so
+    plain print/input work from here on."""
+    global _USE_CURSES
+    _USE_CURSES = False
+    utils.IN_TUI = False
+    _close_screen()
+
 
 class _Cancelled(Exception):
     """Raised when the user cancels a prompt (Esc in the TUI, Ctrl-C/EOF at a
@@ -331,14 +398,12 @@ def _tui_select(
                 pass
 
     try:
-        return curses.wrapper(_run)
+        return _with_screen(_run)
     except curses.error:
-        # A real init failure (dumb terminal, TERM=vt100), not a user Quit:
+        # A real curses failure (dumb terminal, TERM=vt100), not a user Quit:
         # degrade the whole session to the text fallback and hand the menu
         # loop a sentinel it re-enters on, instead of silently exiting 0.
-        global _USE_CURSES
-        _USE_CURSES = False
-        utils.IN_TUI = False
+        _degrade_to_text()
         return "fallback"
 
 
@@ -428,8 +493,11 @@ def _tui_prompt_str(label: str, default: str | None) -> str | None:
                 buf.append(chr(key))
 
     try:
-        return curses.wrapper(_run)
+        return _with_screen(_run)
+    except KeyboardInterrupt:
+        return None  # Ctrl-C at a prompt cancels, exactly like Esc
     except curses.error:
+        _degrade_to_text()
         try:
             raw = input(f"  {label} [{default}]: ").strip()
         except EOFError, KeyboardInterrupt:
@@ -478,8 +546,11 @@ def _tui_pause() -> None:
                 return
 
     try:
-        curses.wrapper(_run)
+        _with_screen(_run)
+    except KeyboardInterrupt:
+        pass
     except curses.error:
+        _degrade_to_text()
         try:
             input("\n  Press Enter to continue...")
         except EOFError, KeyboardInterrupt:
@@ -755,8 +826,11 @@ def _tui_page(title: str, content: str) -> None:
                 pass
 
     try:
-        curses.wrapper(_run)
+        _with_screen(_run)
+    except KeyboardInterrupt:
+        pass  # Ctrl-C just closes the pager
     except curses.error:
+        _degrade_to_text()
         print(content)
         _pause()
 
@@ -784,15 +858,18 @@ def _run_with_capture(title: str, func, *args, footer: str = "", **kwargs):
             # A mode error must not escape as a raw traceback with the screen
             # stuck in curses mode; page it (plus whatever was captured).
             note = "[Error]\n" + traceback.format_exc().rstrip()
-    # The mode's _TUIPbar may have initscr()'d a screen of its own; tear it
-    # down before paging, even (especially) when the mode died mid-run.
-    if _USE_CURSES:
-        try:
-            if not curses.isendwin():
-                curses.endwin()
-        except curses.error:
-            pass
-    _reset_terminal()
+    # With a session screen the mode's _TUIPbar drew into it and nothing needs
+    # tearing down. Without one (direct invocation) the pbar initscr()'d a
+    # screen of its own; end it before paging, even (especially) when the mode
+    # died mid-run.
+    if _SCREEN is None:
+        if _USE_CURSES:
+            try:
+                if not curses.isendwin():
+                    curses.endwin()
+            except curses.error:
+                pass
+        _reset_terminal()
 
     text = ""
     if note:
@@ -912,6 +989,33 @@ def _integrity_prompts() -> tuple[int, str | None, bool]:
 
 
 def interactive_menu() -> int:
+    """Run one interactive session. Owns the persistent curses screen (T7):
+    it is opened once here, every widget draws into it, and it is torn down
+    once on the way out — no per-widget init/teardown flash. When curses
+    can't start (or isn't available), the whole session runs the text menu."""
+    global _SCREEN, _USE_CURSES
+    if _USE_CURSES:
+        stdscr = _open_screen()
+        if stdscr is None:
+            _USE_CURSES = False
+            utils.IN_TUI = False
+        else:
+            _SCREEN = stdscr
+            utils.set_shared_screen(stdscr)
+            try:
+                return _menu_session()
+            except KeyboardInterrupt:
+                return 130
+            finally:
+                _close_screen()
+    try:
+        return _menu_session()
+    except KeyboardInterrupt:
+        print()
+        return 130
+
+
+def _menu_session() -> int:
     from lattice.config import get_library_root, get_library_roots, set_library_root
 
     while True:
@@ -953,11 +1057,12 @@ def interactive_menu() -> int:
         if len(roots) > 1:
             title += f"  [{len(roots)} roots]"
 
-        _reset_terminal()
+        if _SCREEN is None:
+            _reset_terminal()
         result = _select_main(title)
 
         if result == "fallback":
-            continue  # curses init failed; the next pass renders the text menu
+            continue  # curses died mid-session; the next pass renders the text menu
 
         if result == "invalid":
             if not _USE_CURSES:
