@@ -29,6 +29,11 @@ streaming-loudness range): each 1 LUFS is 1 dB, so a higher target attenuates
 loud masters less. This switches rsgain to custom mode; keep one target across
 the whole library or albums will not be evenly normalized.
 
+Caveat: --skip-tagged checks only that gain tags are present, not what target
+they were computed against. An album tagged at the default 89 dB reads as
+tagged under --target-lufs -14 (Opus R128 tags from a prior default run
+included), so when changing targets, rescan without --skip-tagged.
+
 Usage:
     ./replaygain.py /mnt/SharedData/Music --dry-run
     ./replaygain.py /mnt/SharedData/Music
@@ -45,9 +50,42 @@ from datetime import datetime
 
 from mutagen import File as MutagenFile
 
-__version__ = "1.1.1"
+__version__ = "1.2.1"
 
 RSGAIN = "rsgain"
+
+# File types rsgain can write tags to, per `rsgain --help` (verified against
+# rsgain 3.6). Lattice's AUDIO_EXTENSIONS is wider (raw ADTS .aac has no tag
+# container rsgain handles); easy mode silently skips unsupported files on its
+# own, but custom mode takes an explicit file list and rejects the WHOLE list
+# ("File list is not valid") over one unsupported file, so it must be filtered.
+RSGAIN_SUPPORTED = {
+    ".flac",
+    ".ogg",
+    ".oga",
+    ".spx",
+    ".opus",
+    ".mp2",
+    ".mp3",
+    ".mp4",
+    ".m4a",
+    ".wma",
+    ".wv",
+    ".ape",
+    ".wav",
+    ".aiff",
+    ".aif",
+    ".snd",
+    ".tak",
+}
+
+
+def split_rsgain_supported(audio_files: list[str]) -> tuple[list[str], list[str]]:
+    """(supported, unsupported) partition of an album's audio files by whether
+    rsgain can write tags to them."""
+    sup = [f for f in audio_files if os.path.splitext(f)[1].lower() in RSGAIN_SUPPORTED]
+    unsup = [f for f in audio_files if f not in sup]
+    return sup, unsup
 
 
 def _import_lattice():
@@ -78,6 +116,23 @@ def find_album_dirs(root: str, audio_exts) -> list[tuple[str, list[str]]]:
         if audio:
             albums.append((dirpath, audio))
     return albums
+
+
+def find_nested_parents(albums: list[tuple[str, list[str]]]) -> set[str]:
+    """Album dirs with another album dir strictly beneath them (a loose bonus
+    track beside CD1/CD2 subfolders). `rsgain easy` scans a directory
+    recursively, so scanning such a parent would rescan the nested album(s),
+    rewriting their tags and bypassing --skip-tagged; these parents are
+    excluded from easy-mode runs and reported instead."""
+    dirs = {os.path.normpath(d) for d, _ in albums}
+    nested: set[str] = set()
+    for d in dirs:
+        parent = os.path.dirname(d)
+        while parent and parent != os.path.dirname(parent):
+            if parent in dirs:
+                nested.add(parent)
+            parent = os.path.dirname(parent)
+    return nested
 
 
 def coverage_label(n_track: int, n_album: int, n_total: int) -> str:
@@ -132,7 +187,10 @@ def read_gain_strings(path: str) -> tuple[str | None, str | None]:
         if hasattr(val, "text"):  # ID3 frame
             t = val.text
             val = t[0] if isinstance(t, list) and t else t
-        s = str(val)
+        if isinstance(val, bytes):  # MP4FreeForm is a bytes subclass
+            s = val.decode("utf-8", "replace")
+        else:
+            s = str(val)
         if kl.endswith("replaygain_track_gain") or kl.endswith("r128_track_gain"):
             track = s
         elif kl.endswith("replaygain_album_gain") or kl.endswith("r128_album_gain"):
@@ -155,7 +213,11 @@ def scan_album(
     every format, Opus included — the R128 convention is fixed at -23 LUFS and
     cannot carry a custom target, so it is deliberately not used here. rsgain's
     custom mode takes an explicit file list and has no scan-thread option (its
-    -m means max-peak), so --threads does not apply in this mode."""
+    -m means max-peak), so --threads does not apply in this mode.
+
+    Mode asymmetry: easy mode silently skips files rsgain can't tag, but custom
+    mode rejects the whole file list over one of them, so the custom branch
+    filters to RSGAIN_SUPPORTED (the caller reports what was left out)."""
     if target_lufs is None:
         cmd = [RSGAIN, "easy", "-q"]
         if threads and threads > 1:
@@ -174,7 +236,8 @@ def scan_album(
             "-l",
             f"{target_lufs:g}",
         ]
-        cmd += [os.path.join(dirpath, f) for f in audio_files]
+        supported, _unsup = split_rsgain_supported(audio_files)
+        cmd += [os.path.join(dirpath, f) for f in supported]
     # errors="replace": rsgain's output is decoded with the locale encoding
     # (cp1252 on Windows, possibly non-UTF-8 on Linux); a stray undecodable byte
     # in an error message must not crash the run instead of being logged.
@@ -277,8 +340,34 @@ def main() -> int:
         for dirpath, audio in albums
     ]
 
+    # Easy mode scans directories recursively, so a parent album dir with
+    # audio-bearing subdirs would rescan the nested albums (and bypass
+    # --skip-tagged for them); custom mode passes explicit direct files and is
+    # immune. Computed here so the dry-run and the apply path agree.
+    nested = find_nested_parents(albums) if args.target_lufs is None else set()
+
+    # The scan set, filtered identically for dry-run and apply so the preview
+    # counts match what apply would actually do.
+    def is_nested(dirpath: str) -> bool:
+        return os.path.normpath(dirpath) in nested
+
+    to_scan = []
+    skipped_tagged = 0
+    for entry in worklist:
+        dirpath, _audio, _n_total, _nt, _na, label = entry
+        if is_nested(dirpath):
+            continue
+        if args.skip_tagged and label == "ok":
+            skipped_tagged += 1
+            continue
+        to_scan.append(entry)
+
     log_path = args.log_path or os.path.join(root, "replaygain.log")
-    log_fh = open(log_path, "a", encoding="utf-8")
+    try:
+        log_fh = open(log_path, "a", encoding="utf-8")
+    except OSError as e:
+        print(f"error: cannot open log file {log_path}: {e}", file=sys.stderr)
+        return 1
 
     def log(msg: str = "") -> None:
         if msg:
@@ -289,6 +378,13 @@ def main() -> int:
             log_fh.write("\n")
         log_fh.flush()
 
+    def nested_note(dirpath: str) -> str:
+        rel = os.path.relpath(dirpath, root)
+        return (
+            f"  NESTED ALBUM (skipped): {rel} has audio in subfolders; "
+            "scan the subfolders or flatten"
+        )
+
     try:
         if args.dry_run:
             log("=" * 70)
@@ -296,20 +392,46 @@ def main() -> int:
             log("=" * 70)
             for dirpath, _audio, n_total, _nt, _na, label in worklist:
                 rel = os.path.relpath(dirpath, root)
-                log(f"  would scan {rel}  ({n_total} tracks, current: {label})")
+                if is_nested(dirpath):
+                    log(nested_note(dirpath))
+                elif args.skip_tagged and label == "ok":
+                    log(f"  would skip {rel}  (fully tagged)")
+                else:
+                    log(f"  would scan {rel}  ({n_total} tracks, current: {label})")
             log("--- SUMMARY ---")
-            log(f"  albums: {len(worklist)}")
+            log(
+                f"  would scan {len(to_scan)} of {len(worklist)} album(s) "
+                f"({skipped_tagged} skipped as fully tagged, "
+                f"{len(nested)} nested parent(s) skipped)"
+            )
             log("RG RUN END [DRY RUN]")
             log("=" * 70)
-            print(f"Would scan {len(worklist)} album(s). Nothing written.")
+            print(
+                f"Would scan {len(to_scan)} of {len(worklist)} album(s) "
+                f"({skipped_tagged} skipped as fully tagged, "
+                f"{len(nested)} nested parent(s) skipped). Nothing written."
+            )
             print(f"Log: {log_path}")
             return 0
 
-        to_scan = [w for w in worklist if not (args.skip_tagged and w[5] == "ok")]
-        skipped = len(worklist) - len(to_scan)
-
         if not to_scan:
-            print(f"Nothing to scan ({skipped} album(s) already tagged, skipped).")
+            # A run that writes nothing is still a run; the log records it.
+            log("=" * 70)
+            log(f"RG RUN START [APPLY]: {root}   target: {target_desc}")
+            for dirpath in sorted(nested):
+                log(nested_note(dirpath))
+            log("--- SUMMARY ---")
+            log(
+                f"  nothing to scan: {skipped_tagged} album(s) already tagged, "
+                f"{len(nested)} nested parent(s) skipped"
+            )
+            log("RG RUN END [APPLY]")
+            log("=" * 70)
+            print(
+                f"Nothing to scan ({skipped_tagged} album(s) already tagged, "
+                f"{len(nested)} nested parent(s) skipped)."
+            )
+            print(f"Log: {log_path}")
             return 0
 
         if not args.yes and sys.stdin.isatty():
@@ -323,42 +445,70 @@ def main() -> int:
                 )
             if len(to_scan) > 20:
                 print(f"  ... and {len(to_scan) - 20} more")
-            if skipped:
-                print(f"({skipped} already-tagged album(s) skipped.)")
+            if skipped_tagged:
+                print(f"({skipped_tagged} already-tagged album(s) skipped.)")
+            if nested:
+                print(f"({len(nested)} nested parent album(s) skipped; see log.)")
             if not input("Proceed? [y/N] ").strip().lower().startswith("y"):
+                log("=" * 70)
+                log(f"RG RUN START [APPLY]: {root}   target: {target_desc}")
+                log("  aborted by user at confirmation; nothing written")
+                log("RG RUN END [APPLY]")
+                log("=" * 70)
                 print("Aborted.")
                 return 0
 
-        scanned = errors = filecount = 0
+        scanned = noops = errors = filecount = 0
         log("=" * 70)
         log(f"RG RUN START [APPLY]: {root}   target: {target_desc}")
         log("=" * 70)
+        for dirpath in sorted(nested):
+            log(nested_note(dirpath))
         for dirpath, audio, n_total, _nt, _na, label in to_scan:
             rel = os.path.relpath(dirpath, root)
-            rc, out, err = scan_album(dirpath, audio, args.threads, args.target_lufs)
+            files = audio
+            if args.target_lufs is not None:
+                files, unsupported = split_rsgain_supported(audio)
+                for f in unsupported:
+                    log(f"    SKIP (rsgain-unsupported): {rel}/{f}")
+                if not files:
+                    log(f"  SKIP {rel}: no rsgain-supported files")
+                    continue
+            rc, out, err = scan_album(dirpath, files, args.threads, args.target_lufs)
             if rc != 0:
                 errors += 1
                 detail = err.strip() or out.strip() or "no output"
                 log(f"  ERROR scanning {rel} (rc={rc}): {detail}")
                 continue
+            # rc=0 does not mean anything was written: easy mode reports "No
+            # files were scanned" (still rc=0) when it finds nothing it can
+            # tag. Read back before counting the album as scanned.
+            gains = [(f, *read_gain_strings(os.path.join(dirpath, f))) for f in files]
+            if "No files were scanned" in out + err or not any(
+                tg or ag for _f, tg, ag in gains
+            ):
+                noops += 1
+                log(f"  NO-OP {rel}: rsgain wrote no gains (unsupported formats?)")
+                continue
             scanned += 1
-            filecount += n_total
-            log(f"  scanned {rel}  ({n_total} tracks, was {label})")
-            for f in audio:
-                tg, ag = read_gain_strings(os.path.join(dirpath, f))
+            filecount += len(files)
+            log(f"  scanned {rel}  ({len(files)} tracks, was {label})")
+            for f, tg, ag in gains:
                 log(f"    {f}  track={tg}  album={ag}")
 
         log("--- SUMMARY ---")
         log(
-            f"  albums scanned: {scanned}   skipped: {skipped}   "
-            f"errors: {errors}   files: {filecount}"
+            f"  albums scanned: {scanned}   skipped: {skipped_tagged}   "
+            f"nested skipped: {len(nested)}   no-ops: {noops}   errors: {errors}   "
+            f"files: {filecount}"
         )
         log("RG RUN END [APPLY]")
         log("=" * 70)
 
         print(
             f"Scanned {scanned} album(s), {filecount} file(s). "
-            f"Skipped {skipped}, errors {errors}."
+            f"Skipped {skipped_tagged}, nested skipped {len(nested)}, "
+            f"no-ops {noops}, errors {errors}."
         )
         print(f"Log: {log_path}")
         return 1 if errors else 0
