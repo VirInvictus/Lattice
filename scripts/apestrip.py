@@ -14,8 +14,10 @@ culprit), so absorbing them back into ID3 would defeat the tool — it is exactl
 how a bad APE genre ends up baked into ID3.
 
 Pass --keep-metadata to opt in to migration: before deleting the APEv2 tag,
-every APE field whose data is **not already in ID3** is copied into the right
-ID3 frame, so nothing is lost:
+every APE field ID3 does not already carry is copied into the right ID3 frame.
+The redundancy check is presence-level: a field ID3 already has, whatever its
+value, is treated as authoritative and not overwritten. Binary items other than
+an embedded front cover have no ID3 home and are reported, not migrated:
 
     Year/Date          -> TDRC        Title/Artist/Album    -> TIT2/TPE1/TALB
     Album Artist/Band  -> TPE2        Track/Disc            -> TRCK/TPOS
@@ -50,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import struct
 import sys
 import tempfile
@@ -87,14 +90,16 @@ from mutagen.id3 import (
     TXXX,
     USLT,
     ID3NoHeaderError,
+    ParseID3v1,
     TDRC,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.1.2"
 
 # APE key (lowercased) -> simple ID3 text frame class. Genre/Rating/Comment/cover/
-# lyrics are handled out of band; everything not listed here is preserved via a
-# TXXX:<key> passthrough so no datum is ever dropped.
+# lyrics are handled out of band; every other *text* item is preserved via a
+# TXXX:<key> passthrough. Binary items (other than the front cover) have no ID3
+# representation and are reported, then dropped with the tag.
 SIMPLE_FRAMES: dict[str, type[Frame]] = {
     "title": TIT2,
     "artist": TPE1,
@@ -128,6 +133,8 @@ SIMPLE_FRAMES: dict[str, type[Frame]] = {
 _COVER_KEYS = {"cover art (front)", "cover art(front)", "coverart", "cover"}
 _LYRICS_KEYS = {"unsynced lyrics", "unsynchronised lyrics", "unsyncedlyrics", "lyrics"}
 
+AUDIO_EXT = ".mp3"
+
 
 def classify_ape_field(key: str) -> tuple[str, type[Frame] | str | None]:
     """Map an APE key to an action + payload. The pure brain of the migration.
@@ -157,22 +164,31 @@ def classify_ape_field(key: str) -> tuple[str, type[Frame] | str | None]:
     return ("txxx", key.strip())
 
 
-def _ape_text(value) -> str:
-    """Text of an APE value; empty string for binary values."""
+def _ape_values(value) -> list[str]:
+    """Values of an APE text item as a list (mutagen renders multi-value items
+    NUL-joined; a NUL embedded in a v2.3 UTF-16 frame truncates the string, so
+    the values must stay separate). Empty list for binary values."""
     try:
         if getattr(value, "kind", 0) == 1:  # BINARY
-            return ""
-        return str(value)
+            return []
+        return str(value).split("\x00")
     except Exception:
-        return ""
+        return []
 
 
-def _img_mime(data: bytes) -> str:
+def _ape_text(value) -> str:
+    """Single readable string of an APE value, for labels/reports and USLT."""
+    return " / ".join(_ape_values(value))
+
+
+def _img_mime(data: bytes) -> str | None:
+    """MIME type of embedded image data; None when the format is unrecognized
+    (a cover that can't be labeled honestly is skipped, not mislabeled JPEG)."""
     if data[:3] == b"\xff\xd8\xff":
         return "image/jpeg"
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return "image/png"
-    return "image/jpeg"
+    return None
 
 
 def _frame_nonempty(frame) -> bool:
@@ -192,7 +208,9 @@ def id3_has_equivalent(
         fr = id3.get(cast("type[Frame]", payload).__name__)
         return fr is not None and _frame_nonempty(fr)
     if action == "comment":
-        return any(k.startswith("COMM") and _frame_nonempty(id3[k]) for k in id3)
+        # Only an unqualified comment (empty desc) counts: a COMM:iTunNORM:eng
+        # normalization blob is not "already has a comment".
+        return any(_frame_nonempty(fr) for fr in id3.getall("COMM") if not fr.desc)
     if action == "cover":
         return any(k.startswith("APIC") for k in id3)
     if action == "lyrics":
@@ -235,16 +253,16 @@ def apply_migration(
     """Write one APE field into the ID3 object. Returns its migration label."""
     if action == "frame":
         cls = cast("type[Frame]", payload)
-        id3.setall(cls.__name__, [cls(encoding=3, text=[_ape_text(value)])])
+        id3.setall(cls.__name__, [cls(encoding=3, text=_ape_values(value) or [""])])
     elif action == "comment":
-        id3.add(COMM(encoding=3, lang="eng", desc="", text=[_ape_text(value)]))
+        id3.add(COMM(encoding=3, lang="eng", desc="", text=_ape_values(value) or [""]))
     elif action == "lyrics":
         id3.add(USLT(encoding=3, lang="eng", desc="", text=_ape_text(value)))
     elif action == "cover":
         img = _cover_bytes(value)
         id3.add(APIC(encoding=3, mime=_img_mime(img), type=3, desc="", data=img))
     elif action == "txxx":
-        id3.add(TXXX(encoding=3, desc=str(payload), text=[_ape_text(value)]))
+        id3.add(TXXX(encoding=3, desc=str(payload), text=_ape_values(value) or [""]))
     return migration_label(action, payload, value)
 
 
@@ -254,12 +272,36 @@ class FileResult:
     had_ape: bool = False
     migrated: list[tuple[str, str]] = field(default_factory=list)
     redundant: list[str] = field(default_factory=list)
+    skipped: list[tuple[str, str]] = field(default_factory=list)
     ratings: list[str] = field(default_factory=list)
     genre_warning: bool = False
     stripped: bool = False
     repaired: bool = False
     malformed: bool = False
     error: str | None = None
+
+
+def _id3_for(path: str) -> ID3:
+    """ID3 object used to plan migrations. On older mutagen (<1.46) ID3()
+    raises for a v1-only file, so the fresh ID3() is seeded from the trailing
+    v1 block: otherwise every APE field looks sole-source, and the eventual
+    save(v1=2) would rebuild ID3v1 from the sparse v2 frames, blanking
+    whatever title/artist/album the old ID3v1 held. (mutagen 1.46+ loads v1
+    into ID3() itself, in which case the except branch never fires.)"""
+    try:
+        return ID3(path)
+    except ID3NoHeaderError:
+        id3 = ID3()
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(-128, os.SEEK_END)
+                tail = fh.read(128)
+        except OSError:
+            return id3
+        if tail[:3] == b"TAG":
+            for frame in (ParseID3v1(tail) or {}).values():
+                id3.add(frame)
+        return id3
 
 
 def _id3_has_genre(id3: ID3) -> bool:
@@ -289,9 +331,9 @@ _APE_IS_HEADER = 0x80000000
 class _RawAPEValue:
     """A stand-in for a mutagen APE value, built from a manually parsed item.
 
-    Only the surface `_ape_text`, `_cover_bytes`, and `apply_migration` rely on
-    (`kind`, `value`, `str()`) is implemented, so the normal migration path can
-    consume items from a malformed tag mutagen refuses to load.
+    Implements only the surface the migration path relies on (`kind`, `value`,
+    `str()`), so items recovered from a malformed tag can flow through the same
+    planning/migration code as mutagen-parsed ones.
     """
 
     def __init__(self, kind: int, data: bytes):
@@ -307,10 +349,14 @@ def _parse_raw_ape(data: bytes):
 
     Returns ``(header_start, excise_end, items)`` where excising
     ``data[header_start:excise_end]`` removes the whole APE block (and any junk
-    between its footer and a trailing ID3v1), or ``None`` if no structurally
-    consistent tag is found. The consistency check (footer exactly where the
-    header's size field points) is what makes the byte surgery safe: it proves
-    ``header_start`` is a real tag boundary, not a chance signature in the audio.
+    between its footer and a strictly terminal ID3v1), or ``None`` if no
+    structurally consistent tag is found. The consistency check (footer exactly
+    where the header's size field points) is what makes the byte surgery safe:
+    it proves ``header_start`` is a real tag boundary, not a chance signature
+    in the audio. Recognized trailing structures after the APE block (a
+    Lyrics3v2 block, a terminal ID3v1) are preserved; unrecognized trailing
+    bytes in any other shape (e.g. an ID3v1 followed by padding, which the old
+    end-anchoring would have mis-cut) make the parse refuse rather than guess.
     """
     h = data.find(b"APETAGEX")
     if h == -1 or len(data) < h + 32:
@@ -319,11 +365,36 @@ def _parse_raw_ape(data: bytes):
     if not (flags & _APE_IS_HEADER):
         return None  # first signature must be the header
     footer = data.rfind(b"APETAGEX")
-    if footer != h + size:
+    if footer != h + size or footer <= h:
         return None  # footer not where the header claims; refuse to touch
-    id3v1_start = len(data) - 128 if data[-128:][:3] == b"TAG" else len(data)
-    if not (h < footer < id3v1_start):
-        return None
+    n = len(data)
+    ape_end = footer + 32
+    if ape_end > n:
+        return None  # truncated footer
+    if ape_end == n:
+        excise_end = ape_end  # APE block is strictly terminal
+    elif data[ape_end : ape_end + 11] == b"LYRICSBEGIN":
+        # A Lyrics3v2 block is a real structure, not junk; it (and a terminal
+        # ID3v1 after it) is preserved byte for byte.
+        lyr = data.find(b"LYRICS200", ape_end)
+        if lyr == -1:
+            return None
+        after = lyr + 9
+        if after != n and not (n - after == 128 and data[after : after + 3] == b"TAG"):
+            return None  # unrecognized bytes after the lyrics block
+        excise_end = ape_end
+    elif n - ape_end == 128 and data[ape_end : ape_end + 3] == b"TAG":
+        excise_end = ape_end  # clean terminal ID3v1, preserved
+    elif ape_end < n - 128 and data[n - 128 : n - 125] == b"TAG":
+        # Junk between the APE block and a strictly terminal ID3v1 (the
+        # downloader-damage shape that motivated --repair-malformed): the junk
+        # is excised with the tag, the ID3v1 kept. A Lyrics3 block hiding in
+        # that region is a real structure, not junk; refuse rather than cut it.
+        if b"LYRICSBEGIN" in data[ape_end : n - 128]:
+            return None
+        excise_end = n - 128
+    else:
+        return None  # unrecognized trailing data; refuse rather than guess
     items: dict[str, _RawAPEValue] = {}
     p = h + 32  # items begin after the 32-byte header
     for _ in range(count):
@@ -337,9 +408,11 @@ def _parse_raw_ape(data: bytes):
         key = data[p:ks].decode("latin1")
         p = ks + 1
         kind = (vflags >> 1) & 3
+        if p + vlen > footer:
+            break  # value length overruns the footer: malformed item, stop here
         items[key] = _RawAPEValue(1 if kind == 1 else 0, data[p : p + vlen])
         p += vlen
-    return h, id3v1_start, items
+    return h, excise_end, items
 
 
 def repair_file(path: str, dry_run: bool, keep_metadata: bool = False) -> FileResult:
@@ -351,29 +424,34 @@ def repair_file(path: str, dry_run: bool, keep_metadata: bool = False) -> FileRe
     file bytes directly; the result is written to a temp file, verified (decodes,
     no APE signature survives), and atomically swapped in.
     """
-    with open(path, "rb") as fh:
-        data = fh.read()
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError as e:
+        return FileResult(path, had_ape=True, error=str(e))
     parsed = _parse_raw_ape(data)
     if parsed is None:
         return FileResult(
             path,
             had_ape=True,
-            error="malformed APEv2 tag could not be safely parsed for repair",
+            error="malformed APEv2 tag could not be safely parsed for repair "
+            "(inconsistent structure or unrecognized trailing data)",
         )
     header_start, excise_end, items = parsed
 
     try:
-        id3 = ID3(path)
-    except ID3NoHeaderError:
-        id3 = ID3()
+        id3 = _id3_for(path)
     except Exception as e:
         return FileResult(path, had_ape=True, error=str(e))
 
-    migrations, redundant, ratings, genre_warning = plan_file(id3, items, keep_metadata)
+    migrations, redundant, ratings, genre_warning, skipped = plan_file(
+        id3, items, keep_metadata
+    )
     result = FileResult(
         path,
         had_ape=True,
         redundant=redundant,
+        skipped=skipped,
         ratings=ratings,
         genre_warning=genre_warning,
         malformed=True,
@@ -389,11 +467,16 @@ def repair_file(path: str, dry_run: bool, keep_metadata: bool = False) -> FileRe
     for key, action, payload, value in migrations:
         result.migrated.append((key, apply_migration(id3, action, payload, value)))
 
-    # Everything before header_start (ID3v2 + audio) and the trailing ID3v1 are
-    # preserved byte for byte; only the APE block and its trailing junk are cut.
+    # Everything before header_start (ID3v2 + audio) and recognized trailers
+    # (a Lyrics3v2 block, the terminal ID3v1) are preserved byte for byte; the
+    # cut covers only the APE block plus junk before a terminal ID3v1.
     new = data[:header_start] + data[excise_end:]
     tmp_dir = os.path.dirname(path) or "."
-    fd, tmp = tempfile.mkstemp(dir=tmp_dir, suffix=".apestrip.tmp")
+    try:
+        fd, tmp = tempfile.mkstemp(dir=tmp_dir, suffix=".apestrip.tmp")
+    except OSError as e:
+        result.error = f"repair failed: {e}"
+        return result
     try:
         with os.fdopen(fd, "wb") as out:
             out.write(new)
@@ -401,11 +484,16 @@ def repair_file(path: str, dry_run: bool, keep_metadata: bool = False) -> FileRe
             os.fsync(out.fileno())
         if migrations:
             id3.save(tmp, v2_version=3, v1=2)
+            # The save reopened and rewrote the temp file after the fsync
+            # above; sync again so os.replace can't install a half-flushed tag.
+            with open(tmp, "r+b") as sf:
+                os.fsync(sf.fileno())
         with open(tmp, "rb") as vf:
             if b"APETAGEX" in vf.read():
                 raise ValueError("APE signature survived repair")
         if getattr(MP3(tmp).info, "sample_rate", 0) <= 0:
             raise ValueError("repaired file does not decode")
+        shutil.copymode(path, tmp)  # mkstemp created it 0600
         os.replace(tmp, path)
         result.repaired = True
         result.stripped = True
@@ -429,19 +517,26 @@ def _handle_malformed(
     )
 
 
-def plan_file(id3: ID3, ape: APEv2, keep_metadata: bool = False):
+def plan_file(
+    id3: ID3, ape: APEv2 | dict[str, _RawAPEValue], keep_metadata: bool = False
+):
     """Decide, for one file's parsed tags, what to migrate / drop / report.
 
     Pure: inspects but does not mutate. Returns (migrations, redundant, ratings,
-    genre_warning), where migrations is a list of (key, action, payload, value).
+    genre_warning, skipped), where migrations is a list of (key, action,
+    payload, value) and skipped is a list of (key, reason) for fields that have
+    no honest ID3 representation (binary blobs, external cover references,
+    unrecognized image data): those are reported and dropped with the tag,
+    never written as junk frames.
 
     Without keep_metadata the default is a pure strip: nothing is migrated, so
-    migrations and redundant come back empty. Genre and rating are still scanned
-    so they can be reported (the values being dropped).
+    migrations, redundant, and skipped come back empty. Genre and rating are
+    still scanned so they can be reported (the values being dropped).
     """
     migrations = []
     redundant: list[str] = []
     ratings: list[str] = []
+    skipped: list[tuple[str, str]] = []
     has_ape_genre = False
     for key in ape.keys():
         value = ape[key]
@@ -454,12 +549,23 @@ def plan_file(id3: ID3, ape: APEv2, keep_metadata: bool = False):
             continue
         if not keep_metadata:
             continue  # strip-only: drop every other field with the tag
+        if action == "cover":
+            img = _cover_bytes(value)
+            if getattr(value, "kind", 0) != 1 or not img:
+                skipped.append((key, "not embedded image data (not migrated)"))
+                continue
+            if _img_mime(img) is None:
+                skipped.append((key, "unrecognized image format (not migrated)"))
+                continue
+        elif getattr(value, "kind", 0) == 1:
+            skipped.append((key, "binary value (not migrated)"))
+            continue
         if id3_has_equivalent(id3, action, payload):
             redundant.append(key)
             continue
         migrations.append((key, action, payload, value))
     genre_warning = has_ape_genre and not _id3_has_genre(id3)
-    return migrations, redundant, ratings, genre_warning
+    return migrations, redundant, ratings, genre_warning, skipped
 
 
 def process_file(
@@ -482,17 +588,18 @@ def process_file(
         return FileResult(path, had_ape=True, error="unreadable APEv2 tag")
 
     try:
-        id3 = ID3(path)
-    except ID3NoHeaderError:
-        id3 = ID3()
+        id3 = _id3_for(path)
     except Exception as e:
         return FileResult(path, had_ape=True, error=str(e))
 
-    migrations, redundant, ratings, genre_warning = plan_file(id3, ape, keep_metadata)
+    migrations, redundant, ratings, genre_warning, skipped = plan_file(
+        id3, ape, keep_metadata
+    )
     result = FileResult(
         path,
         had_ape=True,
         redundant=redundant,
+        skipped=skipped,
         ratings=ratings,
         genre_warning=genre_warning,
     )
@@ -513,7 +620,6 @@ def process_file(
         APEv2(path).delete()
         if migrations:
             id3.save(path, v2_version=3, v1=2)
-        # Verify the APE tag is gone.
         try:
             APEv2(path)
             result.error = "APEv2 tag still present after delete"
@@ -522,9 +628,6 @@ def process_file(
     except Exception as e:
         result.error = str(e)
     return result
-
-
-AUDIO_EXT = ".mp3"
 
 
 def _iter_mp3s(root: str):
@@ -623,6 +726,8 @@ def main() -> int:
                     print("      (APE fully redundant with ID3; strip only)")
                 else:
                     print("      (strip only; --keep-metadata to migrate into ID3)")
+            for key, reason in r.skipped:
+                print(f"      [skip] APE {key!r}: {reason}")
             for val in r.ratings:
                 rating_files += 1
                 print(f"      [rating] APE Rating={val!r} (reported, not written)")
@@ -631,8 +736,13 @@ def main() -> int:
                 print("      [warn] APE genre present but ID3 has no genre; left blank")
 
         total_migrations = sum(len(r.migrated) for r in worklist)
+        total_skipped = sum(len(r.skipped) for r in worklist)
+        skip_note = (
+            f" {total_skipped} unmigratable field(s) skipped," if total_skipped else ""
+        )
         print(
-            f"\n{head}{len(worklist)} file(s), {total_migrations} field migration(s), "
+            f"\n{head}{len(worklist)} file(s), {total_migrations} field migration(s),"
+            f"{skip_note} "
             f"{rating_files} rating(s) reported, {warn_files} genre warning(s)."
         )
 
@@ -672,18 +782,26 @@ def main() -> int:
                 repaired += 1
             for key, label in r.migrated:
                 log(f"  {rel}: migrated {key!r} -> {label}")
+            for key, reason in r.skipped:
+                log(f"  {rel}: [skip] APE {key!r}: {reason}")
             for val in r.ratings:
                 log(f"  {rel}: [rating] APE Rating={val!r} (not written)")
             if r.genre_warning:
                 log(f"  {rel}: [warn] no ID3 genre after strip")
             if r.repaired:
                 log(f"  {rel}: repaired (excised malformed APEv2 tag)")
-            else:
+            elif r.stripped:
                 log(f"  {rel}: stripped APEv2 tag")
+            else:
+                # e.g. the tag vanished between the planning and write passes;
+                # the audit log must not claim a strip that never happened.
+                log(f"  {rel}: no APEv2 tag at write time (skipped)")
         log(
             f"-> stripped {stripped} file(s) "
             f"({repaired} via malformed-tag repair); {errors} error(s)."
         )
+        if errors:
+            return 1
     finally:
         if log_fh is not None:
             log_fh.close()

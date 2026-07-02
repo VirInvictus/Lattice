@@ -1,5 +1,8 @@
+import contextlib
+import io
 import os
 import shutil
+import stat
 import struct
 import sys
 import tempfile
@@ -14,8 +17,15 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 import apestrip  # noqa: E402
-from mutagen.apev2 import BINARY, TEXT, APENoHeaderError, APEv2, APEValue  # noqa: E402
-from mutagen.id3 import ID3  # noqa: E402
+from mutagen.apev2 import (  # noqa: E402
+    BINARY,
+    EXTERNAL,
+    TEXT,
+    APENoHeaderError,
+    APEv2,
+    APEValue,
+)
+from mutagen.id3 import COMM, ID3  # noqa: E402
 from mutagen.mp3 import MP3  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures" / "library"
@@ -293,6 +303,190 @@ class PlanGuardTests(unittest.TestCase):
             self.assertTrue(r.genre_warning)
 
 
+def _id3v1_block(title: str, artist: str) -> bytes:
+    return (
+        b"TAG"
+        + title.encode().ljust(30, b"\x00")
+        + artist.encode().ljust(30, b"\x00")
+        + b"\x00" * 30  # album
+        + b"1998"  # year
+        + b"\x00" * 30  # comment
+        + b"\x11"  # genre 17 (Rock)
+    )
+
+
+class V1OnlyTests(unittest.TestCase):
+    """M1: --keep-metadata on an MP3 whose only tag is ID3v1 must preserve the
+    v1 values. Without seeing v1, every APE field looks sole-source and
+    save(v1=2) rebuilds ID3v1 from the sparse v2 frames, blanking the old
+    title/artist. (mutagen 1.46+ reads v1 into ID3() itself; _id3_for seeds it
+    by hand for older mutagen. This pins the behavior either way.)"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._tmp.name, "track.mp3")
+        shutil.copy(MP3_SRC, self.path)
+        ID3(self.path).delete(self.path)  # drop the fixture's ID3v2
+        ape = APEv2()
+        ape["Composer"] = APEValue("Tim Kasher", TEXT)  # sole-source (v1 has none)
+        ape["Title"] = APEValue("APE Title", TEXT)  # redundant with the v1 title
+        ape.save(self.path)
+        # Hand-append the ID3v1 so the layout is audio|APE|ID3v1 (mutagen's
+        # APEv2.save would otherwise clobber a pre-existing v1).
+        with open(self.path, "ab") as fh:
+            fh.write(_id3v1_block("The Casualty", "Cursive"))
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_id3v1_values_survive_keep_metadata(self):
+        r = apestrip.process_file(self.path, dry_run=False, keep_metadata=True)
+        self.assertTrue(r.stripped)
+        self.assertIsNone(r.error)
+        id3 = ID3(self.path)
+        self.assertEqual(id3["TIT2"].text, ["The Casualty"])  # v1 title kept
+        self.assertEqual(id3["TCOM"].text, ["Tim Kasher"])  # sole-source migrated
+        tail = Path(self.path).read_bytes()[-128:]
+        self.assertEqual(tail[:3], b"TAG")
+        self.assertIn(b"The Casualty", tail)  # regenerated v1 is faithful
+
+    def test_v1_values_count_as_redundant(self):
+        r = apestrip.process_file(self.path, dry_run=True, keep_metadata=True)
+        self.assertIn("Title", r.redundant)
+
+
+class MultiValueTests(unittest.TestCase):
+    """M2: multi-value APE text items must migrate as separate ID3 text values
+    (mutagen NUL-joins them; an embedded NUL truncates a v2.3 UTF-16 frame)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._tmp.name, "track.mp3")
+        shutil.copy(MP3_SRC, self.path)
+        ape = APEv2()
+        ape["Composer"] = APEValue("Tim Kasher\x00Matt Maginn", TEXT)
+        ape["Barcode"] = APEValue("111\x00222", TEXT)
+        ape.save(self.path)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_both_values_survive_in_native_frame_and_txxx(self):
+        r = apestrip.process_file(self.path, dry_run=False, keep_metadata=True)
+        self.assertTrue(r.stripped)
+        id3 = ID3(self.path)
+        # The v2.3 save renders multi-value text frames slash-joined; the
+        # guarantee is that every value survives and no embedded NUL truncates
+        # the string (players showed only the first value before).
+        tcom = "/".join(id3["TCOM"].text)
+        self.assertIn("Tim Kasher", tcom)
+        self.assertIn("Matt Maginn", tcom)
+        self.assertNotIn("\x00", tcom)
+        barcode = "/".join(id3["TXXX:Barcode"].text)
+        self.assertIn("111", barcode)
+        self.assertIn("222", barcode)
+        self.assertNotIn("\x00", barcode)
+
+    def test_label_renders_values_readably(self):
+        r = apestrip.process_file(self.path, dry_run=True, keep_metadata=True)
+        labels = dict(r.migrated)
+        self.assertIn("Tim Kasher / Matt Maginn", labels["Composer"])
+
+
+class UnmigratableFieldTests(unittest.TestCase):
+    """A1/A2/A4: binary items, non-embedded cover references, and covers in an
+    unrecognized image format have no honest ID3 home; they are reported as
+    skipped and dropped with the tag, never written as junk frames."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._tmp.name, "track.mp3")
+        shutil.copy(MP3_SRC, self.path)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _strip(self):
+        return apestrip.process_file(self.path, dry_run=False, keep_metadata=True)
+
+    def test_binary_item_skipped_not_empty_txxx(self):
+        ape = APEv2()
+        ape["Fingerprint"] = APEValue(b"\x01\x02\x03\x04", BINARY)
+        ape.save(self.path)
+        r = self._strip()
+        self.assertTrue(r.stripped)
+        self.assertIn(("Fingerprint", "binary value (not migrated)"), r.skipped)
+        self.assertNotIn("TXXX:Fingerprint", ID3(self.path))
+
+    def test_external_cover_reference_skipped(self):
+        ape = APEv2()
+        ape["Cover Art (Front)"] = APEValue("http://example.com/cover.jpg", EXTERNAL)
+        ape.save(self.path)
+        r = self._strip()
+        self.assertTrue(r.stripped)
+        self.assertEqual(
+            r.skipped,
+            [("Cover Art (Front)", "not embedded image data (not migrated)")],
+        )
+        self.assertFalse([k for k in ID3(self.path) if k.startswith("APIC")])
+
+    def test_unrecognized_image_format_skipped(self):
+        ape = APEv2()
+        ape["Cover Art (Front)"] = APEValue(b"cover.bmp\x00BMnotarealbitmap", BINARY)
+        ape.save(self.path)
+        r = self._strip()
+        self.assertTrue(r.stripped)
+        self.assertIn(
+            ("Cover Art (Front)", "unrecognized image format (not migrated)"),
+            r.skipped,
+        )
+        self.assertFalse([k for k in ID3(self.path) if k.startswith("APIC")])
+
+    def test_strip_only_reports_no_skips(self):
+        ape = APEv2()
+        ape["Fingerprint"] = APEValue(b"\x01\x02", BINARY)
+        ape.save(self.path)
+        r = apestrip.process_file(self.path, dry_run=False)
+        self.assertTrue(r.stripped)
+        self.assertEqual(r.skipped, [])
+
+
+class CommRedundancyTests(unittest.TestCase):
+    """A3: a described COMM frame (e.g. COMM:iTunNORM:eng) must not make a real
+    APE Comment read as redundant; only an unqualified comment counts."""
+
+    def test_itunnorm_does_not_block_comment_migration(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "track.mp3")
+            shutil.copy(MP3_SRC, p)
+            id3 = ID3(p)
+            id3.add(COMM(encoding=3, lang="eng", desc="iTunNORM", text=[" 00000123"]))
+            id3.save(p)
+            ape = APEv2()
+            ape["Comment"] = APEValue("from the rip", TEXT)
+            ape.save(p)
+            r = apestrip.process_file(p, dry_run=False, keep_metadata=True)
+            self.assertTrue(r.stripped)
+            self.assertNotIn("Comment", r.redundant)
+            plain = [fr for fr in ID3(p).getall("COMM") if not fr.desc]
+            self.assertTrue(any("from the rip" in str(fr.text[0]) for fr in plain))
+
+    def test_plain_comment_still_counts_as_redundant(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "track.mp3")
+            shutil.copy(MP3_SRC, p)
+            id3 = ID3(p)
+            id3.add(COMM(encoding=3, lang="eng", desc="", text=["already here"]))
+            id3.save(p)
+            ape = APEv2()
+            ape["Comment"] = APEValue("from the rip", TEXT)
+            ape.save(p)
+            r = apestrip.process_file(p, dry_run=False, keep_metadata=True)
+            self.assertIn("Comment", r.redundant)
+            comms = ID3(p).getall("COMM")
+            self.assertFalse(any("from the rip" in str(fr.text) for fr in comms))
+
+
 class RepairMalformedTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -364,6 +558,184 @@ class RepairMalformedTests(unittest.TestCase):
         hidx = data.find(b"APETAGEX")
         struct.pack_into("<I", data, hidx + 12, 999999)
         self.assertIsNone(apestrip._parse_raw_ape(bytes(data)))
+
+    def test_parse_raw_ape_bounds_item_length(self):
+        # A9: an item whose declared value length overruns the footer must not
+        # slurp footer/audio bytes into a value; the malformed item is dropped.
+        body = struct.pack("<II", 4, 0) + b"YEAR\x00" + b"2011"
+        body += struct.pack("<II", 999999, 0) + b"BAD\x00" + b"xx"
+        size = len(body) + 32
+        header = (
+            b"APETAGEX" + struct.pack("<IIII", 2000, size, 2, 0xA0000000) + b"\x00" * 8
+        )
+        footer = (
+            b"APETAGEX" + struct.pack("<IIII", 2000, size, 2, 0x80000000) + b"\x00" * 8
+        )
+        data = Path(MP3_SRC).read_bytes() + header + body + footer
+        parsed = apestrip._parse_raw_ape(data)
+        self.assertIsNotNone(parsed)
+        _, _, items = parsed
+        self.assertIn("YEAR", items)
+        self.assertNotIn("BAD", items)
+
+    def test_repair_preserves_file_permissions(self):
+        # M3: mkstemp creates the temp file 0600; os.replace must not install
+        # that verbatim on a shared-mount library.
+        os.chmod(self.path, 0o644)
+        r = apestrip.process_file(self.path, dry_run=False, repair=True)
+        self.assertTrue(r.repaired)
+        self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o644)
+
+    def test_repair_in_readonly_dir_reports_error_not_raises(self):
+        # M4: an un-creatable temp file must become a per-file error result,
+        # not an exception that kills a library-wide run mid-write-pass.
+        os.chmod(self._tmp.name, 0o555)
+        try:
+            r = apestrip.process_file(self.path, dry_run=False, repair=True)
+        finally:
+            os.chmod(self._tmp.name, 0o755)
+        self.assertTrue(r.had_ape)
+        self.assertIsNotNone(r.error)
+
+
+def _ape_blob(items):
+    """A well-formed raw APE block (header + items + footer), no trailers."""
+    body = b""
+    for k, v in items.items():
+        body += struct.pack("<II", len(v), 0) + k.encode("latin1") + b"\x00" + v
+    size = len(body) + 32
+    header = (
+        b"APETAGEX"
+        + struct.pack("<IIII", 2000, size, len(items), 0xA0000000)
+        + b"\x00" * 8
+    )
+    footer = (
+        b"APETAGEX"
+        + struct.pack("<IIII", 2000, size, len(items), 0x80000000)
+        + b"\x00" * 8
+    )
+    return header + body + footer
+
+
+class RepairTrailerTests(unittest.TestCase):
+    """M5: only recognized trailing structures (Lyrics3v2, a strictly terminal
+    ID3v1) may follow the APE block; anything else refuses the repair. The
+    repair machinery is exercised directly (repair_file); whether mutagen
+    happens to choke on a given shape is its business, not this contract's."""
+
+    ID3V1 = b"TAG" + b"\x00" * 125
+    LYRICS3 = b"LYRICSBEGIN" + b"LYR200Some lyric text here" + b"000037LYRICS200"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._tmp.name, "track.mp3")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, tail: bytes) -> None:
+        base = Path(MP3_SRC).read_bytes()
+        Path(self.path).write_bytes(base + _ape_blob({"YEAR": b"2011"}) + tail)
+
+    def test_lyrics3_block_survives_repair(self):
+        self._write(self.LYRICS3 + self.ID3V1)
+        r = apestrip.repair_file(self.path, dry_run=False)
+        self.assertTrue(r.repaired, r.error)
+        data = Path(self.path).read_bytes()
+        self.assertNotIn(b"APETAGEX", data)
+        self.assertIn(b"LYRICSBEGIN", data)  # Lyrics3 preserved byte for byte
+        self.assertIn(b"LYRICS200", data)
+        self.assertEqual(data[-128:][:3], b"TAG")
+
+    def test_id3v1_with_trailing_padding_is_refused(self):
+        # The old end-anchoring excised the (no longer terminal) ID3v1 itself.
+        self._write(self.ID3V1 + b"\x00\x00\x00")
+        before = Path(self.path).read_bytes()
+        r = apestrip.repair_file(self.path, dry_run=False)
+        self.assertFalse(r.repaired)
+        self.assertIsNotNone(r.error)
+        self.assertEqual(Path(self.path).read_bytes(), before)  # untouched
+
+    def test_junk_hiding_a_lyrics3_block_is_refused(self):
+        self._write(b"\xde\xad" + self.LYRICS3 + self.ID3V1)
+        before = Path(self.path).read_bytes()
+        r = apestrip.repair_file(self.path, dry_run=False)
+        self.assertFalse(r.repaired)
+        self.assertEqual(Path(self.path).read_bytes(), before)
+
+    def test_strictly_terminal_ape_block_repairs(self):
+        self._write(b"")
+        r = apestrip.repair_file(self.path, dry_run=False)
+        self.assertTrue(r.repaired, r.error)
+        self.assertNotIn(b"APETAGEX", Path(self.path).read_bytes())
+
+
+class MainTests(unittest.TestCase):
+    """Coverage for the execution loop (previously untested): honest per-file
+    log lines (M6) and a nonzero exit when any file errored."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_main(self, argv):
+        old = sys.argv
+        sys.argv = ["apestrip.py", *argv]
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                rc = apestrip.main()
+        finally:
+            sys.argv = old
+        return rc, buf.getvalue()
+
+    def _mp3_with_ape(self, name="track.mp3"):
+        p = os.path.join(self.root, name)
+        shutil.copy(MP3_SRC, p)
+        ape = APEv2()
+        ape["Genre"] = APEValue("Rap", TEXT)
+        ape.save(p)
+        return p
+
+    def test_happy_path_strips_and_exits_zero(self):
+        self._mp3_with_ape()
+        rc, out = self._run_main([self.root, "--yes"])
+        self.assertEqual(rc, 0)
+        self.assertIn("stripped APEv2 tag", out)
+        self.assertTrue(os.path.exists(os.path.join(self.root, "apestrip.log")))
+
+    def test_vanished_tag_logs_skip_not_strip(self):
+        # M6: a file whose APE tag disappears between the planning and write
+        # passes must not get a false "stripped APEv2 tag" audit line.
+        self._mp3_with_ape()
+        real = apestrip.process_file
+
+        def fake(path, dry_run, repair=False, keep_metadata=False):
+            if dry_run:
+                return real(path, True, repair, keep_metadata)
+            return apestrip.FileResult(path, had_ape=False)
+
+        apestrip.process_file = fake
+        try:
+            rc, out = self._run_main([self.root, "--yes"])
+        finally:
+            apestrip.process_file = real
+        self.assertEqual(rc, 0)
+        self.assertIn("no APEv2 tag at write time (skipped)", out)
+        self.assertNotIn("stripped APEv2 tag\n", out.replace("\r", ""))
+
+    def test_per_file_error_exits_nonzero(self):
+        p = self._mp3_with_ape()
+        data = bytearray(Path(p).read_bytes())
+        fidx = data.rfind(b"APETAGEX")
+        struct.pack_into("<I", data, fidx + 12, 8)  # bogus tag size
+        Path(p).write_bytes(data)
+        rc, out = self._run_main([self.root, "--yes"])  # no --repair-malformed
+        self.assertEqual(rc, 1)
+        self.assertIn("1 error(s)", out)
 
 
 if __name__ == "__main__":
