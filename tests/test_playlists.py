@@ -1,7 +1,7 @@
 import unittest
 from collections import namedtuple
 
-from lattice.modes.playlists import _evaluate_rule
+from lattice.modes.playlists import _evaluate_rule, validate_rule
 
 # Only the fields _evaluate_rule reads.
 FakeTag = namedtuple(
@@ -21,6 +21,26 @@ def tag(**kw):
     )
     base.update(kw)
     return FakeTag(**base)
+
+
+class ValidateRuleTests(unittest.TestCase):
+    """T6g: a rule that can never evaluate is one error before the walk, not
+    one stderr line per track (the TUI paged thousands of identical lines)."""
+
+    def test_valid_rules_pass(self):
+        for rule in ("", "rating >= 4", "rating >= 4 AND genre == 'Jazz'"):
+            self.assertIsNone(validate_rule(rule), rule)
+
+    def test_syntax_error_is_reported(self):
+        self.assertIsNotNone(validate_rule("rating >="))
+
+    def test_unknown_field_is_reported(self):
+        err = validate_rule("stars >= 4")
+        self.assertIsNotNone(err)
+        self.assertIn("stars", err)
+
+    def test_disallowed_construct_is_reported(self):
+        self.assertIsNotNone(validate_rule("__import__('os')"))
 
 
 class RuleEvalTests(unittest.TestCase):

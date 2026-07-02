@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from lattice.config import (
@@ -259,43 +260,63 @@ def parse_layout(rel_path: str, layout: str) -> dict:
     return result
 
 
+# Mirrors tui.py's _TUI_BOX_W and the _CP_FRAME/_CP_HEADER color-pair ids (the
+# TUI initialises those pairs before any mode runs). Mirrored by hand with this
+# cross-reference because utils can't import tui (tui imports utils).
+_TUI_BOX_W = 46
+_CP_FRAME = 1
+_CP_HEADER = 3
+
+
 class _TUIPbar:
     """A progress bar that renders in a curses box to match the TUI style."""
+
+    # Redraws are throttled (a full-screen erase per file on a 100k-file scan
+    # is visible flicker and wasted work); the final update always draws.
+    _MIN_REDRAW_S = 0.1
 
     def __init__(self, total: int, desc: str):
         self.total = total
         self.desc = desc
         self.current = 0
+        self._last_draw = 0.0
         self.draw()
 
     def update(self, n: int = 1) -> None:
         self.current += n
-        self.draw()
+        if (
+            self.current >= self.total
+            or time.monotonic() - self._last_draw >= self._MIN_REDRAW_S
+        ):
+            self.draw()
 
     def draw(self) -> None:
-        import curses
-
+        self._last_draw = time.monotonic()
         try:
-            # The TUI already has a screen active; initscr() returns that same
-            # window without re-initializing, and we never call endwin() here.
+            import curses
+
+            # Each TUI widget is its own curses.wrapper session, already torn
+            # down by the time a mode runs, so initscr() here starts a fresh
+            # screen; close() ends it so what follows starts from a sane
+            # terminal.
             s = curses.initscr()
             s.erase()
             h, w = s.getmaxyx()
-            box_w = 46  # Same width as TUI
+            box_w = _TUI_BOX_W
             inner = box_w - 2
             bx = max(0, (w - box_w) // 2)
-            y = max(0, (h - 5) // 2)
+            y = max(0, (h - 6) // 2)
 
-            s.addstr(y, bx, "╔" + "═" * inner + "╗", curses.color_pair(1))
-            s.addstr(y + 1, bx, "║", curses.color_pair(1))
+            s.addstr(y, bx, "╔" + "═" * inner + "╗", curses.color_pair(_CP_FRAME))
+            s.addstr(y + 1, bx, "║", curses.color_pair(_CP_FRAME))
             s.addstr(
                 y + 1,
                 bx + 1,
                 f" {self.desc}".ljust(inner),
-                curses.color_pair(3) | curses.A_BOLD,
+                curses.color_pair(_CP_HEADER) | curses.A_BOLD,
             )
-            s.addstr(y + 1, bx + box_w - 1, "║", curses.color_pair(1))
-            s.addstr(y + 2, bx, "╠" + "═" * inner + "╣", curses.color_pair(1))
+            s.addstr(y + 1, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME))
+            s.addstr(y + 2, bx, "╠" + "═" * inner + "╣", curses.color_pair(_CP_FRAME))
 
             percent = self.current / max(1, self.total)
             bar_len = inner - 10
@@ -303,16 +324,29 @@ class _TUIPbar:
             bar = "█" * filled + "░" * (bar_len - filled)
             pct_str = f"{int(percent * 100):3d}%"
 
-            s.addstr(y + 3, bx, "║", curses.color_pair(1))
+            s.addstr(y + 3, bx, "║", curses.color_pair(_CP_FRAME))
             s.addstr(y + 3, bx + 1, f" {bar} {pct_str} ".ljust(inner))
-            s.addstr(y + 3, bx + box_w - 1, "║", curses.color_pair(1))
-            s.addstr(y + 4, bx, "╚" + "═" * inner + "╝", curses.color_pair(1))
+            s.addstr(y + 3, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME))
+            info = f" {self.current}/{self.total} · Ctrl-C cancels"
+            s.addstr(y + 4, bx, "║", curses.color_pair(_CP_FRAME))
+            s.addstr(y + 4, bx + 1, info[:inner].ljust(inner))
+            s.addstr(y + 4, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME))
+            s.addstr(y + 5, bx, "╚" + "═" * inner + "╝", curses.color_pair(_CP_FRAME))
             s.refresh()
-        except curses.error:
+        except Exception:
+            # curses.error, or curses missing entirely: progress is cosmetic.
             pass
 
     def close(self) -> None:
-        pass
+        # End the screen draw() started so well-behaved modes hand back a sane
+        # terminal as soon as their bar closes.
+        try:
+            import curses
+
+            if not curses.isendwin():
+                curses.endwin()
+        except Exception:
+            pass
 
 
 class _FallbackProgress:

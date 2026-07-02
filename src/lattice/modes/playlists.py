@@ -100,6 +100,29 @@ def _pythonize_rule(rule: str) -> str:
     return "".join(parts)
 
 
+def validate_rule(rule: str) -> str | None:
+    """One-shot check of a smart rule against dummy metadata, so a rule that
+    can never evaluate (syntax error, unknown field, type mismatch) is one
+    error before the walk instead of one stderr line per track. Returns the
+    error message, or None when the rule is usable."""
+    if not rule or not rule.strip():
+        return None
+    names = {
+        "rating": 0.0,
+        "genre": "",
+        "artist": "",
+        "album": "",
+        "title": "",
+        "duration": 0.0,
+        "bitrate": 0,
+    }
+    try:
+        _eval_node(ast.parse(_pythonize_rule(rule), mode="eval"), names)
+    except Exception as e:
+        return str(e)
+    return None
+
+
 def _evaluate_rule(rule: str, t, parsed_layout: dict) -> bool:
     """Evaluate a dynamic smart playlist rule against a track's metadata, using
     a restricted AST walker (see _eval_node) rather than eval()."""
@@ -132,6 +155,11 @@ def generate_playlist(
     quiet: bool = False,
 ) -> int:
     """Generate an .m3u playlist based on a smart rule filter."""
+    rule_error = validate_rule(rule)
+    if rule_error is not None:
+        print(f"Invalid rule '{rule}': {rule_error}", file=sys.stderr)
+        return 1
+
     roots = as_roots(root_dir)
     total_files = count_audio_files(roots)
 
