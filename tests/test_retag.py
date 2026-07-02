@@ -89,6 +89,75 @@ class ApplyGenresMp3Tests(unittest.TestCase):
         self.assertIn("TXXX:AB:GENRE", tags)  # qualified frame preserved
 
 
+class FailureReportingTests(unittest.TestCase):
+    """M16: per-file failures go to stderr and main exits nonzero, so a caller
+    (genre_tidy's apply) can tell a failed album from a retagged one."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+
+    def tearDown(self):
+        for dirpath, _dirs, files in os.walk(self.root):
+            for f in files:
+                os.chmod(os.path.join(dirpath, f), 0o644)
+        self._tmp.cleanup()
+
+    def _run_main(self, argv):
+        import contextlib
+        import io
+
+        old = sys.argv
+        sys.argv = ["retag.py", *argv]
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = retag.main()
+        finally:
+            sys.argv = old
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_apply_failure_prints_to_stderr_and_returns_false(self):
+        import contextlib
+        import io
+
+        p = os.path.join(self.root, "t.flac")
+        shutil.copy(FLAC_SRC, p)
+        os.chmod(p, 0o444)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            ok = retag.apply_genres(p, ["X"])
+        self.assertFalse(ok)
+        self.assertIn("Failed to tag", err.getvalue())
+
+    def test_main_exits_nonzero_when_a_file_fails(self):
+        good = os.path.join(self.root, "a.flac")
+        bad = os.path.join(self.root, "b.flac")
+        shutil.copy(FLAC_SRC, good)
+        shutil.copy(FLAC_SRC, bad)
+        os.chmod(bad, 0o444)
+        rc, out, err = self._run_main([self.root, "IDM"])
+        self.assertEqual(rc, 1)
+        self.assertIn("1 file(s) failed", out)
+        self.assertIn("Failed to tag", err)
+        self.assertEqual(retag.read_genres(good), ["IDM"])  # others still done
+
+    def test_main_exits_zero_on_full_success(self):
+        p = os.path.join(self.root, "a.flac")
+        shutil.copy(FLAC_SRC, p)
+        rc, _out, _err = self._run_main([self.root, "IDM"])
+        self.assertEqual(rc, 0)
+
+    def test_mixed_album_reports_unsupported_file(self):
+        # M17: the unwritable sibling is named, not silently skipped.
+        shutil.copy(FLAC_SRC, os.path.join(self.root, "01.flac"))
+        Path(self.root, "02.wav").write_bytes(b"RIFFxxxx")
+        rc, out, _err = self._run_main([self.root, "IDM", "--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertIn("skip (unsupported): 02.wav", out)
+        self.assertIn("would retag 01.flac", out)
+
+
 class ApplyGenresGuardTests(unittest.TestCase):
     def test_unsupported_extension_returns_false(self):
         with tempfile.TemporaryDirectory() as d:
@@ -101,6 +170,103 @@ class ApplyGenresGuardTests(unittest.TestCase):
             p = os.path.join(d, "broken.flac")
             Path(p).write_bytes(b"not audio")
             self.assertEqual(retag.read_genres(p), [])
+
+    def test_unreadable_vorbis_family_reports_failure(self):
+        # RT2: mutagen.File returning None used to fail *silently*; the
+        # failure must print like every other failure path.
+        import contextlib
+        import io
+
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "broken.flac")
+            Path(p).write_bytes(b"not audio")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                ok = retag.apply_genres(p, ["X"])
+            self.assertFalse(ok)
+            self.assertIn("Failed to tag", err.getvalue())
+
+
+class ReadGenresWmaTests(unittest.TestCase):
+    """RT3: easy=True has no ASF wrapper, so .wma read back [] and dry-runs
+    always showed the old genre as empty; WM/Genre is read directly now.
+    (No WMA fixture exists, so the container is faked.)"""
+
+    def test_wma_reads_wm_genre_attribute(self):
+        from unittest import mock
+
+        with mock.patch.object(retag, "ASF", return_value={"WM/Genre": ["Rock"]}):
+            self.assertEqual(retag.read_genres("/x.wma"), ["Rock"])
+
+    def test_wma_without_genre_reads_empty(self):
+        from unittest import mock
+
+        with mock.patch.object(retag, "ASF", return_value={}):
+            self.assertEqual(retag.read_genres("/x.wma"), [])
+
+
+class NoopGuardTests(unittest.TestCase):
+    """RT1: a file already carrying exactly the target genre is not rewritten
+    (no APEv2 delete, no v2.4->v2.3 re-save, no minted ID3v1), so direct use is
+    byte-idempotent; the hidden MP3 genre spots still force the write."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        self.mp3 = os.path.join(self.root, "a.mp3")
+        shutil.copy(MP3_SRC, self.mp3)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_main(self, argv):
+        import contextlib
+        import io
+
+        old = sys.argv
+        sys.argv = ["retag.py", *argv]
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = retag.main()
+        finally:
+            sys.argv = old
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_second_run_is_byte_identical(self):
+        rc, out, _err = self._run_main([self.root, "Clean Genre"])
+        self.assertEqual(rc, 0)
+        self.assertIn("retagged a.mp3", out)
+        before = Path(self.mp3).read_bytes()
+        rc, out, _err = self._run_main([self.root, "Clean Genre"])
+        self.assertEqual(rc, 0)
+        self.assertIn("unchanged a.mp3", out)
+        self.assertEqual(Path(self.mp3).read_bytes(), before)
+
+    def test_matching_tcon_with_stray_ape_still_written(self):
+        self._run_main([self.root, "Clean Genre"])
+        ape = APEv2()
+        ape["Genre"] = "StaleApe"
+        ape.save(self.mp3)
+        self.assertFalse(retag.is_noop(self.mp3, ["Clean Genre"]))
+        rc, out, _err = self._run_main([self.root, "Clean Genre"])
+        self.assertEqual(rc, 0)
+        self.assertIn("retagged a.mp3", out)
+        with self.assertRaises(APENoHeaderError):
+            APEv2(self.mp3)
+
+    def test_matching_tcon_with_bare_txxx_genre_still_written(self):
+        self._run_main([self.root, "Clean Genre"])
+        tags = ID3(self.mp3)
+        tags.add(TXXX(encoding=3, desc="GENRE", text=["Stale"]))
+        tags.save(self.mp3)
+        self.assertFalse(retag.is_noop(self.mp3, ["Clean Genre"]))
+
+    def test_dry_run_predicts_unchanged(self):
+        self._run_main([self.root, "Clean Genre"])
+        _rc, out, _err = self._run_main([self.root, "Clean Genre", "--dry-run"])
+        self.assertIn("unchanged a.mp3", out)
+        self.assertNotIn("would retag", out)
 
 
 if __name__ == "__main__":

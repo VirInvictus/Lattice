@@ -20,21 +20,31 @@ import sys
 from datetime import datetime
 
 import mutagen
-from mutagen.apev2 import APEv2
+from mutagen.apev2 import APENoHeaderError, APEv2
 from mutagen.asf import ASF
 from mutagen.id3 import ID3, TCON, ID3NoHeaderError
 from mutagen.mp4 import MP4
 
-__version__ = "1.1.0"
+__version__ = "1.1.2"
 
 # Only formats whose genre containers are handled below. Raw ADTS .aac is
 # intentionally excluded: it has no standard tag container to write a genre to.
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".mp4", ".wma"}
 
+# Audio formats retag cannot write a genre to; reported per file so a mixed
+# album is honest about what was not updated. Non-audio files (covers, logs,
+# cue sheets) stay silent.
+UNSUPPORTED_AUDIO = {".wav", ".aac", ".alac", ".ape", ".wv", ".aiff"}
+
 
 def read_genres(filepath: str) -> list[str]:
     """Best-effort current genre(s), for preview and logging. Never raises."""
     try:
+        # easy=True has no ASF wrapper, so .wma always read back [] and every
+        # dry-run showed the old genre as empty; read WM/Genre directly.
+        if filepath.lower().endswith(".wma"):
+            vals = ASF(filepath).get("WM/Genre")
+            return [str(v) for v in vals] if vals else []
         audio = mutagen.File(filepath, easy=True)
         if audio is not None:
             g = audio.get("genre")
@@ -43,6 +53,31 @@ def read_genres(filepath: str) -> list[str]:
     except Exception:
         pass
     return []
+
+
+def is_noop(filepath: str, new_genres: list[str]) -> bool:
+    """True when a write would change nothing, so direct invocation is
+    idempotent (no gratuitous APEv2 delete + full ID3 re-save on an already
+    correct file). For MP3 the hidden genre spots retag exists to clear must
+    also be absent: a stray APEv2 tag or bare TXXX:GENRE frame still needs the
+    write even when TCON already matches."""
+    if read_genres(filepath) != new_genres:
+        return False
+    if filepath.lower().endswith(".mp3"):
+        try:
+            APEv2(filepath)
+            return False  # APEv2 present; the write would delete it
+        except APENoHeaderError:
+            pass
+        except Exception:
+            return False  # unreadable/malformed: let the write path report it
+        try:
+            tags = ID3(filepath)
+        except Exception:
+            return False
+        if any(k.upper() == "TXXX:GENRE" for k in tags):
+            return False
+    return True
 
 
 def apply_genres(filepath: str, new_genres: list[str]) -> bool:
@@ -75,10 +110,15 @@ def apply_genres(filepath: str, new_genres: list[str]) -> bool:
         elif ext in (".flac", ".opus", ".ogg"):
             audio = mutagen.File(filepath)
             if audio is None:
+                print(
+                    f"  [!] Failed to tag {os.path.basename(filepath)}: "
+                    "mutagen could not read the file",
+                    file=sys.stderr,
+                )
                 return False
-            # Vorbis comments natively support repeated keys; clear both cases first.
+            # Vorbis comments natively support repeated keys; mutagen's comment
+            # dict is case-insensitive, so one pop clears every case variant.
             audio.pop("genre", None)
-            audio.pop("GENRE", None)
             audio["genre"] = new_genres
             audio.save()
 
@@ -101,7 +141,9 @@ def apply_genres(filepath: str, new_genres: list[str]) -> bool:
 
         return True
     except Exception as e:
-        print(f"  [!] Failed to tag {os.path.basename(filepath)}: {e}")
+        # stderr, so a caller capturing output (genre_tidy) sees the failure
+        # on the error stream instead of buried in the normal log lines.
+        print(f"  [!] Failed to tag {os.path.basename(filepath)}: {e}", file=sys.stderr)
         return False
 
 
@@ -148,28 +190,42 @@ def main() -> int:
         log(f"Genres:  {genres}")
 
         updated = 0
+        failed = 0
+        unchanged = 0
         for f in sorted(os.listdir(target_dir)):
-            if os.path.splitext(f)[1].lower() not in AUDIO_EXTENSIONS:
+            ext = os.path.splitext(f)[1].lower()
+            if ext not in AUDIO_EXTENSIONS:
+                if ext in UNSUPPORTED_AUDIO:
+                    log(f"  skip (unsupported): {f}")
                 continue
             filepath = os.path.join(target_dir, f)
             old = read_genres(filepath)
-            if args.dry_run:
+            if is_noop(filepath, genres):
+                unchanged += 1
+                log(f"  unchanged {f}: already {genres} (no write)")
+            elif args.dry_run:
                 log(f"  would retag {f}: {old} -> {genres}")
                 updated += 1
             elif apply_genres(filepath, genres):
                 log(f"  retagged {f}: {old} -> {genres}")
                 updated += 1
+            else:
+                failed += 1
 
         verb = "would update" if args.dry_run else "updated"
-        if updated == 0:
-            log("  -> No valid audio files found.")
+        if updated == 0 and failed == 0 and unchanged == 0:
+            log("  -> No valid audio files found (subdirectories not descended).")
         else:
-            log(f"  -> {verb} {updated} file(s).")
+            tail = f"  {unchanged} unchanged." if unchanged else ""
+            tail += f"  {failed} file(s) failed." if failed else ""
+            log(f"  -> {verb} {updated} file(s).{tail}")
     finally:
         if log_fh is not None:
             log_fh.close()
 
-    return 0
+    # Nonzero when any file failed to write, so callers (genre_tidy's apply)
+    # can count the album as an error instead of a successful retag.
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
