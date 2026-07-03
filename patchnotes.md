@@ -1,5 +1,16 @@
 # Lattice Patch Notes
 
+## v4.10.1 (2026-07-03)
+
+Carry-backs from the cquarry review: cquarry finished porting the 2026-07-01 audit, and its adversarially verified code review confirmed four defects in the shared curses skeleton that v4.10.0 still carried. The fixes mirror cquarry's (CalibreQuarry `0304cfa`). One deliberate behavior change is called out below.
+
+- **Fix: the "Report written to ..." footer no longer appears after an error or cancel.** `_run_with_capture` appended the success footer unconditionally, so the pager could show `[Error]` plus a traceback (or `[Cancelled]`) followed by a footer claiming a file that was never finished. The footer is now suppressed whenever the mode raised or was cancelled.
+- **Behavior change: Ctrl-C at the text-fallback menu exits 130, not 0.** `_fallback_input` swallowed `KeyboardInterrupt` into a clean Quit, so a wrapper script checking for the documented 130 saw success. The interrupt now propagates to the session handler (which already maps it to 130), matching the curses menu; EOF remains a quiet Quit. Verified end-to-end: SIGINT at the degraded text menu exits 130.
+- **Fix: the prompt and pause curses-failure fallbacks delegate instead of duplicating.** `_tui_prompt_str`'s `curses.error` handler re-implemented the text prompt inline (and both copies rendered a `None` default as `[None]`); it now degrades and calls `_prompt_str`, which renders an empty default as `[]`. `_tui_pause` likewise delegates to `_pause`.
+- **Cleanup: widget color init runs once per screen, not per widget.** Every widget `_run` re-called `_init_tui_colors()` although the session screen already initialized colors; the one-shot init now lives in `_with_screen`'s wrapper branch (session screens get it from `_open_screen`), and the four per-widget calls are gone. No behavior change.
+- **Found and fixed while verifying: the library submenu broke the persistent screen with `stty sane`.** `_library_submenu` ran `_reset_terminal()` unconditionally after every selection; under the v4.10.0 session screen that re-enabled echo and canonical mode, so the very next prompt echoed keystrokes over the TUI and only saw input after Enter. The v4.10.0 pty verification drove a main-menu flow and missed it. Fixed at the source, matching cquarry's shape: `_reset_terminal` now returns early while a session screen is published (`utils._SHARED_SCREEN`), since a live curses session owns the terminal state. CLI use is unchanged (no session screen there). Re-verified under a pty: menu → submenu → prompt → Esc-cancel → quit works with one alternate-screen enter/leave.
+- Tests extended (`tests/test_tui.py` + `tests/test_utils.py`, 449 total across the suite): footer suppressed on error and cancel (still shown on success), `_fallback_input` propagating Ctrl-C and quietly quitting on EOF, the prompt/pause fallbacks routing through their text counterparts, and `_reset_terminal` staying quiet while a session screen is live.
+
 ## v4.10.0 (2026-07-02)
 
 The persistent-curses-screen rework: audit item T7, the last parked entry from the 2026-07-01 TUI/UX audit. Purely a lifecycle change; no menu, prompt, or mode behavior differs.

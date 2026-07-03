@@ -57,6 +57,10 @@ def _reset_terminal() -> None:
     line discipline — most commonly turning off icrnl so Enter sends \\r
     (displayed as ^M) instead of \\n.  This resets to sane defaults.
     """
+    if _SHARED_SCREEN is not None:
+        # A live curses session owns the terminal state; stty sane here would
+        # re-enable echo/canonical mode and break every later getch().
+        return
     if not sys.stdin.isatty():
         return
     try:

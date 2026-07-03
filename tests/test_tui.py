@@ -1,3 +1,5 @@
+import contextlib
+import io
 import tempfile
 import unittest
 
@@ -154,6 +156,24 @@ class RunWithCaptureTests(unittest.TestCase):
     def test_normal_result_still_paged(self):
         tui._run_with_capture("T", lambda: "hello")
         self.assertIn("hello", self.pages[0][1])
+
+    def test_footer_shown_on_success(self):
+        tui._run_with_capture("T", lambda: print("done"), footer="Report written")
+        self.assertIn("Report written", self.pages[0][1])
+
+    def test_footer_suppressed_on_error_and_cancel(self):
+        # The footer claims an output file exists; a mode that died or was
+        # cancelled never finished writing one.
+        def boom():
+            raise RuntimeError("no file was written")
+
+        def cancelled():
+            raise KeyboardInterrupt
+
+        tui._run_with_capture("T", boom, footer="Report written to /x")
+        tui._run_with_capture("T", cancelled, footer="Report written to /x")
+        for _title, content in self.pages:
+            self.assertNotIn("Report written", content)
 
 
 class _MenuHarness(unittest.TestCase):
@@ -439,7 +459,9 @@ class PersistentScreenTests(unittest.TestCase):
 
 class MenuInterruptTests(_MenuHarness):
     """T7: Ctrl-C at the menu exits the session cleanly (130), instead of
-    propagating a traceback with the terminal half-restored."""
+    propagating a traceback with the terminal half-restored. Applies to the
+    text-fallback menu too: _fallback_input lets KeyboardInterrupt through
+    instead of swallowing it into a clean Quit (exit 0)."""
 
     def test_ctrl_c_at_menu_exits_130(self):
         def boom(title):
@@ -451,6 +473,36 @@ class MenuInterruptTests(_MenuHarness):
             tui._select_main = boom
             rc, _ = self._run()
         self.assertEqual(rc, 130)
+
+    def test_fallback_input_propagates_ctrl_c(self):
+        import builtins
+
+        orig = builtins.input
+
+        def fake(prompt=""):
+            raise KeyboardInterrupt
+
+        builtins.input = fake
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                tui._fallback_input("Select: ", {})
+        finally:
+            builtins.input = orig
+
+    def test_fallback_input_eof_is_quiet_quit(self):
+        import builtins
+
+        orig = builtins.input
+
+        def fake(prompt=""):
+            raise EOFError
+
+        builtins.input = fake
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertIsNone(tui._fallback_input("Select: ", {}))
+        finally:
+            builtins.input = orig
 
 
 class PromptHelperTests(unittest.TestCase):
@@ -533,6 +585,43 @@ class CursesInitFailureTests(unittest.TestCase):
             tui._curs_set(0)  # must not raise
         finally:
             tui.curses.curs_set = orig
+
+    def test_prompt_fallback_delegates_to_text_prompt(self):
+        # The curses.error handler must not re-implement the text prompt
+        # inline; after degrading it goes through _prompt_str.
+        calls = []
+        orig = (tui._with_screen, tui._prompt_str, tui._USE_CURSES)
+
+        def boom(_fn):
+            raise tui.curses.error("terminal died")
+
+        def record(label, default):
+            calls.append((label, default))
+            return "typed"
+
+        tui._with_screen, tui._prompt_str = boom, record
+        tui._USE_CURSES = True
+        try:
+            self.assertEqual(tui._tui_prompt_str("Output file", "d.txt"), "typed")
+            self.assertFalse(tui._USE_CURSES)  # the session degraded
+        finally:
+            tui._with_screen, tui._prompt_str, tui._USE_CURSES = orig
+        self.assertEqual(calls, [("Output file", "d.txt")])
+
+    def test_pause_fallback_delegates_to_text_pause(self):
+        calls = []
+        orig = (tui._with_screen, tui._pause, tui._USE_CURSES)
+
+        def boom(_fn):
+            raise tui.curses.error("terminal died")
+
+        tui._with_screen, tui._pause = boom, lambda: calls.append(True)
+        tui._USE_CURSES = True
+        try:
+            tui._tui_pause()
+        finally:
+            tui._with_screen, tui._pause, tui._USE_CURSES = orig
+        self.assertEqual(calls, [True])
 
 
 if __name__ == "__main__":

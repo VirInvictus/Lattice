@@ -154,5 +154,33 @@ class TUIPbarSharedScreenTests(unittest.TestCase):
             utils.set_shared_screen(None)
 
 
+class ResetTerminalSessionGuardTests(unittest.TestCase):
+    """With a session screen published, _reset_terminal must not run stty
+    sane: it would re-enable echo/canonical mode under the live curses screen
+    and break every later getch() (found via the submenu's reset call)."""
+
+    def test_no_stty_while_session_owns_the_terminal(self):
+        from unittest import mock
+
+        utils.set_shared_screen(mock.Mock())
+        try:
+            with mock.patch.object(utils.subprocess, "run") as run:
+                utils._reset_terminal()
+            run.assert_not_called()
+        finally:
+            utils.set_shared_screen(None)
+
+    def test_stty_runs_again_once_session_ends(self):
+        from unittest import mock
+
+        utils.set_shared_screen(None)
+        with (
+            mock.patch.object(utils.subprocess, "run") as run,
+            mock.patch.object(utils.sys.stdin, "isatty", return_value=True),
+        ):
+            utils._reset_terminal()
+        run.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -76,10 +76,16 @@ _SCREEN = None
 
 def _with_screen(fn):
     """Run a widget body against the session's persistent screen, or in a
-    one-shot curses.wrapper session when no session owns one."""
+    one-shot curses.wrapper session when no session owns one. Colors are
+    initialized here (or in _open_screen), not per widget."""
     if _SCREEN is not None:
         return fn(_SCREEN)
-    return curses.wrapper(fn)
+
+    def _boot(stdscr):
+        _init_tui_colors()
+        return fn(stdscr)
+
+    return curses.wrapper(_boot)
 
 
 def _open_screen():
@@ -145,8 +151,9 @@ def _prompt_str(label: str, default: str | None) -> str | None:
     None when the user cancelled."""
     if _USE_CURSES:
         return _tui_prompt_str(label, default)
+    display = default if default else ""
     try:
-        raw = input(f"  {label} [{default}]: ").strip()
+        raw = input(f"  {label} [{display}]: ").strip()
     except EOFError, KeyboardInterrupt:
         print()
         return None
@@ -380,7 +387,6 @@ def _tui_select(
         stdscr.refresh()
 
     def _run(stdscr) -> tuple | None:
-        _init_tui_colors()
         _curs_set(0)
         cur = 0
         while True:
@@ -414,7 +420,6 @@ def _tui_prompt_str(label: str, default: str | None) -> str | None:
     INNER = _TUI_INNER
 
     def _run(stdscr) -> str | None:
-        _init_tui_colors()
         _curs_set(1)
         buf = list(default or "")
 
@@ -497,13 +502,9 @@ def _tui_prompt_str(label: str, default: str | None) -> str | None:
     except KeyboardInterrupt:
         return None  # Ctrl-C at a prompt cancels, exactly like Esc
     except curses.error:
+        # _USE_CURSES is now False, so this re-asks via the text prompt.
         _degrade_to_text()
-        try:
-            raw = input(f"  {label} [{default}]: ").strip()
-        except EOFError, KeyboardInterrupt:
-            print()
-            return None
-        return raw or (default or "")
+        return _prompt_str(label, default)
 
 
 def _tui_pause() -> None:
@@ -511,7 +512,6 @@ def _tui_pause() -> None:
     INNER = _TUI_INNER
 
     def _run(stdscr) -> None:
-        _init_tui_colors()
         _curs_set(0)
 
         stdscr.erase()
@@ -550,18 +550,19 @@ def _tui_pause() -> None:
     except KeyboardInterrupt:
         pass
     except curses.error:
+        # _USE_CURSES is now False, so this re-runs as the text pause.
         _degrade_to_text()
-        try:
-            input("\n  Press Enter to continue...")
-        except EOFError, KeyboardInterrupt:
-            pass
+        _pause()
 
 
 def _fallback_input(prompt: str, mapping: dict) -> Any:
+    # KeyboardInterrupt propagates on purpose: Ctrl-C at the menu must exit
+    # 130 like the curses menu does, not read as a clean Quit.
     try:
         ch = input(prompt).strip().lower()
-    except EOFError, KeyboardInterrupt:
-        return None
+    except EOFError:
+        print()
+        return None  # input exhausted: treat as Quit
     return mapping.get(ch, "invalid")
 
 
@@ -740,7 +741,6 @@ def _tui_page(title: str, content: str) -> None:
     max_line_len = max((len(ln) for ln in lines), default=0)
 
     def _run(stdscr):
-        _init_tui_colors()
         _curs_set(0)
         top = 0
         left = 0
@@ -885,7 +885,9 @@ def _run_with_capture(title: str, func, *args, footer: str = "", **kwargs):
     if err_text:
         text += "\n[Errors/Warnings]:\n" + err_text + "\n"
 
-    if footer:
+    if footer and not note:
+        # The "Report written to ..." footer must not assert a file exists
+        # when the mode died or was cancelled before finishing.
         text += "\n" + footer + "\n"
 
     text = text.strip()
