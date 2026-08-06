@@ -29,7 +29,13 @@ read as an organized album under a genre named after the artist.
 
 Albums already at Genre/Artist/Album (including their disc subfolders) are left
 in place; if their folder genre disagrees with their tags, that is reported as
-a NOTE, never silently re-filed.
+a NOTE, never silently re-filed. Pass --refile-mismatched to move them to their
+tag's genre folder instead (still vocabulary-gated) — the intended follow-up to
+a retag pass, so corrected tags become corrected folders.
+
+A tag value joining several genres with ";" or "/" never becomes one path
+component: the first genre places the album and the rest are flagged as a
+MULTI-GENRE TAG issue so the tag can be fixed at the source.
 
 A staging folder (default "Unfiltered") is transparent: its leading component is
 stripped before classification, so Unfiltered/Artist/Album is filed into the real
@@ -84,7 +90,7 @@ from collections import Counter, namedtuple
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.3.3"
+__version__ = "1.4.0"
 
 # Path-component characters forbidden on Windows/NTFS/exFAT (the library often
 # lives on a shared NTFS volume), plus the trailing "." / " " rule. Genre names
@@ -118,6 +124,25 @@ def sanitize_component(name: str) -> str:
     cleaned = "".join(" " if c in _ILLEGAL_NAME_CHARS else c for c in name)
     cleaned = " ".join(cleaned.split())
     return cleaned.rstrip(". ") or "Unknown"
+
+
+# Separators that join several genres into one tag value: ";" from taggers that
+# write multi-genre TCON as a single joined string, "/" as the library's own
+# multi-genre convention (which the wing modes split the same way).
+_MULTI_GENRE_SEP_RE = re.compile(r"[;/]")
+
+
+def split_multi_genre(genre: str) -> tuple[str, str]:
+    """Split a possibly multi-genre tag value into (primary, ignored-rest).
+    A single-genre value returns (value, ""); a joined value returns its first
+    component and the rest re-joined for reporting. A value that is nothing but
+    separators returns ("", "") so callers fall through to their NO GENRE path.
+    Without this, a joined value would sanitize into one absurd path component
+    (";" is NTFS-legal, "/" would fold to a space)."""
+    parts = [p.strip() for p in _MULTI_GENRE_SEP_RE.split(genre) if p.strip()]
+    if not parts:
+        return "", ""
+    return parts[0], "; ".join(parts[1:])
 
 
 def classify(path: Path, root: Path, staging: str | None = None) -> tuple:
@@ -176,7 +201,12 @@ def classify(path: Path, root: Path, staging: str | None = None) -> tuple:
 
 
 def build_plan(
-    records, root: Path, only_genres=None, allow_new_genre=False, staging=None
+    records,
+    root: Path,
+    only_genres=None,
+    allow_new_genre=False,
+    staging=None,
+    refile_mismatched=False,
 ):
     """Turn scanner records (each with `.path` and `.genre`) into a list of
     Moves, plus a list of human-readable issues and the set of source artist
@@ -288,6 +318,11 @@ def build_plan(
                 "(discs inside the album folder)."
             )
             continue
+        genre, ignored = split_multi_genre(genre)
+        if ignored:
+            issues.append(
+                f"MULTI-GENRE TAG (using {genre!r}, ignoring {ignored!r}): {path}"
+            )
         if not genre:
             issues.append(f"NO GENRE (skipped): {path}")
             continue
@@ -299,10 +334,33 @@ def build_plan(
             current_genre = info[1]
             if safe_genre.casefold() == current_genre.casefold():
                 continue  # already filed under its genre (case-insensitively)
-            issues.append(
-                f"NOTE: filed under {current_genre!r} but tags say {genre!r} "
-                f"(left in place): {path}"
-            )
+            if not refile_mismatched:
+                issues.append(
+                    f"NOTE: filed under {current_genre!r} but tags say {genre!r} "
+                    f"(left in place): {path}"
+                )
+                continue
+            # Re-filing goes through the same vocabulary gate as a stray: the
+            # tag's genre must already exist as an organized folder (any
+            # casing, reusing its spelling) unless new genres are allowed.
+            existing = vocab_spelling(safe_genre)
+            if existing is not None:
+                safe_genre = existing
+            elif gating:
+                issues.append(
+                    f"UNKNOWN GENRE {genre!r} (left in place): {path}\n"
+                    "    not an existing library genre; pass --allow-new-genre "
+                    "to create it."
+                )
+                continue
+            artist, album = info[2], info[3]
+            # Built from the classified parts, not `path`: a depth-4 disc
+            # record must move its parent album as the unit.
+            src = root / current_genre / artist / album
+            dst = root / safe_genre / artist / album
+            if add(src, dst, "dir"):
+                source_artist_dirs.add(src.parent)
+                album_artist_genres.setdefault(src.parent, Counter())[genre] += 1
             continue
 
         # A genre the library already uses (any casing) reuses the existing
@@ -609,7 +667,12 @@ def cmd_map(args) -> int:
     staging = args.staging or None
     records = scan_album_dirs(directory, args.quiet)
     moves, issues, source_dirs = build_plan(
-        records, directory, only, args.allow_new_genre, staging
+        records,
+        directory,
+        only,
+        args.allow_new_genre,
+        staging,
+        args.refile_mismatched,
     )
 
     if issues:
@@ -674,6 +737,15 @@ def main() -> int:
         "Artist/Album contents are filed into the real taxonomy instead of being "
         "read as a genre. The inbox folder itself is left in place. Pass an empty "
         "string to disable.",
+    )
+    parser.add_argument(
+        "--refile-mismatched",
+        action="store_true",
+        help="Move an already-organized album whose tag genre disagrees with "
+        "its genre folder to the tag's folder (still gated by the existing "
+        "genre vocabulary). Without it such albums are reported as NOTEs and "
+        "left in place. Meant for after a retag pass: correct the tags first, "
+        "then let this re-file the folders to match.",
     )
     parser.add_argument(
         "--allow-new-genre",

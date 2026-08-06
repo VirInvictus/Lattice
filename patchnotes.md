@@ -1,5 +1,13 @@
 # Lattice Patch Notes
 
+## genre_foldermap.py v1.4.0 (2026-08-06)
+
+Built for the library-wide genre audit: retag first, then make the folders follow.
+
+- **New: `--refile-mismatched`.** An already-organized `Genre/Artist/Album` album whose tag genre disagrees with its genre folder used to be reported as a `NOTE` and left in place: correct behavior for a conversion run, a dead end after a retag pass. With the flag, such albums move to their tag's genre folder through the same machinery as strays: vocabulary gate (unknown target genres flagged unless `--allow-new-genre`), existing-folder spelling reuse, never-overwrite, manifest rows for `--revert`, source-artist pruning, and sidecars following the artist. Disc-subfolder records still collapse to their parent album, which moves as one unit. Default behavior without the flag is unchanged.
+- **Fix: a multi-genre tag can no longer become one folder name.** A single tag value joining genres with `;` (tagger-joined TCON) or `/` (the library's own multi-genre convention) passed through `sanitize_component` intact, since `;` is NTFS-legal, and once produced a real `Drill;East Coast Hip Hop;…/` folder. `split_multi_genre` now takes the first component for placement and flags the rest as a `MULTI-GENRE TAG` issue so the tag gets fixed at the source; a separators-only value falls through to `NO GENRE`.
+- Tests: 13 new (`MultiGenreTagTests`, `RefileMismatchedTests`) covering the gate interplay, spelling reuse, disc-unit moves, dest-exists skips, sidecar follow, and the unchanged default. Suite at 462.
+
 ## v4.10.1 (2026-07-03)
 
 Carry-backs from the cquarry review: cquarry finished porting the 2026-07-01 audit, and its adversarially verified code review confirmed four defects in the shared curses skeleton that v4.10.0 still carried. The fixes mirror cquarry's (CalibreQuarry `0304cfa`). One deliberate behavior change is called out below.

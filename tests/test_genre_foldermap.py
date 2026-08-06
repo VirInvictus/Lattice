@@ -809,5 +809,201 @@ class CrossDeviceTests(unittest.TestCase):
             self.assertEqual(gf.parse_manifest(manifest.read_text().splitlines()), [])
 
 
+class MultiGenreTagTests(unittest.TestCase):
+    """A single tag value carrying several genres joined by ';' or '/' must
+    never become one path component (the 'Drill;East Coast Hip Hop;...' folder
+    bug): the first component places the album, the rest are flagged."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_semicolon_joined_tag_files_under_first_component(self):
+        _make_tree(
+            self.root,
+            {
+                "6ix9ine/BLACKBALLED/01.mp3": "x",
+                "Drill/Pop Smoke/Meet the Woo/01.mp3": "y",
+            },
+        )
+        recs = [
+            FakeAD(
+                str(self.root / "6ix9ine/BLACKBALLED"),
+                "Drill;East Coast Hip Hop;Hip Hop;Trap;Hardcore Hip Hop",
+            ),
+            FakeAD(str(self.root / "Drill/Pop Smoke/Meet the Woo"), "Drill"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root)
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].dst, self.root / "Drill/6ix9ine/BLACKBALLED")
+        self.assertTrue(any("MULTI-GENRE TAG" in m for m in issues))
+        self.assertFalse(any(";" in str(m.dst) for m in moves))
+
+    def test_slash_joined_tag_splits_instead_of_sanitizing(self):
+        # Before the guard, "Hip-Hop/Rap" sanitized to a single "Hip-Hop Rap"
+        # folder; the slash is the documented multi-genre separator (§3), so it
+        # must split the same way the wing modes split it.
+        _make_tree(self.root, {"AZ/Doe or Die/01.mp3": "x"})
+        rec = FakeAD(str(self.root / "AZ/Doe or Die"), "Hip-Hop/Rap")
+        moves, issues, _ = gf.build_plan([rec], self.root)
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].dst, self.root / "Hip-Hop/AZ/Doe or Die")
+        self.assertTrue(any("MULTI-GENRE TAG" in m for m in issues))
+
+    def test_separator_only_tag_is_no_genre(self):
+        _make_tree(self.root, {"A/B/01.mp3": "x"})
+        rec = FakeAD(str(self.root / "A/B"), " ; / ;")
+        moves, issues, _ = gf.build_plan([rec], self.root)
+        self.assertEqual(moves, [])
+        self.assertTrue(any("NO GENRE" in m for m in issues))
+        self.assertFalse(any("MULTI-GENRE TAG" in m for m in issues))
+
+    def test_organized_album_with_multi_tag_matching_folder_stays_put(self):
+        # Primary component matches the folder: no move, no NOTE, but the bad
+        # tag is still surfaced so it can be retagged at the source.
+        _make_tree(self.root, {"Drill/6ix9ine/BLACKBALLED/01.mp3": "x"})
+        rec = FakeAD(str(self.root / "Drill/6ix9ine/BLACKBALLED"), "Drill;Trap")
+        moves, issues, _ = gf.build_plan([rec], self.root)
+        self.assertEqual(moves, [])
+        self.assertTrue(any("MULTI-GENRE TAG" in m for m in issues))
+        self.assertFalse(any("NOTE" in m for m in issues))
+
+
+class RefileMismatchedTests(unittest.TestCase):
+    """--refile-mismatched: an organized album whose tag genre disagrees with
+    its genre folder moves to the tag's folder (still vocabulary-gated);
+    without the flag the old NOTE-and-leave behavior is unchanged."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _wlr(self):
+        _make_tree(
+            self.root,
+            {
+                "Trap/Playboi Carti/Whole Lotta Red/01.mp3": "x",
+                "Rage/YNG Martyr/BURR/01.mp3": "y",
+            },
+        )
+        return [
+            FakeAD(str(self.root / "Trap/Playboi Carti/Whole Lotta Red"), "Rage"),
+            FakeAD(str(self.root / "Rage/YNG Martyr/BURR"), "Rage"),
+        ]
+
+    def test_default_still_notes_and_leaves_in_place(self):
+        recs = self._wlr()
+        moves, issues, _ = gf.build_plan(recs, self.root)
+        self.assertEqual(moves, [])
+        self.assertTrue(any("NOTE" in m for m in issues))
+
+    def test_refile_moves_album_to_tag_genre(self):
+        recs = self._wlr()
+        moves, issues, sources = gf.build_plan(recs, self.root, refile_mismatched=True)
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].kind, "dir")
+        self.assertEqual(moves[0].src, self.root / "Trap/Playboi Carti/Whole Lotta Red")
+        self.assertEqual(moves[0].dst, self.root / "Rage/Playboi Carti/Whole Lotta Red")
+        self.assertIn(self.root / "Trap/Playboi Carti", sources)
+        self.assertFalse(any("NOTE" in m for m in issues))
+
+    def test_refile_respects_vocabulary_gate(self):
+        # Tag genre "Rage" has no organized album seeding the vocabulary, so
+        # the refile is refused like any stray with an unknown genre.
+        _make_tree(self.root, {"Trap/Playboi Carti/Whole Lotta Red/01.mp3": "x"})
+        rec = FakeAD(str(self.root / "Trap/Playboi Carti/Whole Lotta Red"), "Rage")
+        moves, issues, _ = gf.build_plan([rec], self.root, refile_mismatched=True)
+        self.assertEqual(moves, [])
+        self.assertTrue(any("UNKNOWN GENRE" in m for m in issues))
+
+    def test_refile_allow_new_genre_overrides_gate(self):
+        _make_tree(self.root, {"Trap/Playboi Carti/Whole Lotta Red/01.mp3": "x"})
+        rec = FakeAD(str(self.root / "Trap/Playboi Carti/Whole Lotta Red"), "Rage")
+        moves, _, _ = gf.build_plan(
+            [rec], self.root, allow_new_genre=True, refile_mismatched=True
+        )
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].dst, self.root / "Rage/Playboi Carti/Whole Lotta Red")
+
+    def test_refile_reuses_existing_folder_spelling(self):
+        # Tag says "rage" but the library's folder is "Rage": the move must
+        # reuse the on-disk spelling, not mint a case-variant sibling.
+        recs = self._wlr()
+        recs[0] = FakeAD(recs[0].path, "rage")
+        moves, _, _ = gf.build_plan(recs, self.root, refile_mismatched=True)
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].dst, self.root / "Rage/Playboi Carti/Whole Lotta Red")
+
+    def test_refile_dest_exists_is_skipped(self):
+        _make_tree(
+            self.root,
+            {
+                "Trap/Playboi Carti/Whole Lotta Red/01.mp3": "x",
+                "Rage/Playboi Carti/Whole Lotta Red/01.mp3": "dupe",
+                "Rage/YNG Martyr/BURR/01.mp3": "y",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Trap/Playboi Carti/Whole Lotta Red"), "Rage"),
+            FakeAD(str(self.root / "Rage/Playboi Carti/Whole Lotta Red"), "Rage"),
+            FakeAD(str(self.root / "Rage/YNG Martyr/BURR"), "Rage"),
+        ]
+        moves, issues, _ = gf.build_plan(recs, self.root, refile_mismatched=True)
+        self.assertEqual(moves, [])
+        self.assertTrue(any("DEST EXISTS" in m for m in issues))
+
+    def test_refile_disc_album_moves_as_one_unit(self):
+        # Two disc records of one mismatched organized album resolve to a
+        # single move of the album folder, discs riding inside.
+        _make_tree(
+            self.root,
+            {
+                "Trap/Artist/Album/Disc 1/01.mp3": "a",
+                "Trap/Artist/Album/Disc 2/01.mp3": "b",
+                "Rage/YNG Martyr/BURR/01.mp3": "y",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Trap/Artist/Album/Disc 1"), "Rage"),
+            FakeAD(str(self.root / "Trap/Artist/Album/Disc 2"), "Rage"),
+            FakeAD(str(self.root / "Rage/YNG Martyr/BURR"), "Rage"),
+        ]
+        moves, _, _ = gf.build_plan(recs, self.root, refile_mismatched=True)
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].src, self.root / "Trap/Artist/Album")
+        self.assertEqual(moves[0].dst, self.root / "Rage/Artist/Album")
+
+    def test_refile_artist_sidecar_follows_when_all_albums_leave(self):
+        _make_tree(
+            self.root,
+            {
+                "Trap/Playboi Carti/Whole Lotta Red/01.mp3": "x",
+                "Trap/Playboi Carti/cover.jpg": "art",
+                "Rage/YNG Martyr/BURR/01.mp3": "y",
+            },
+        )
+        recs = [
+            FakeAD(str(self.root / "Trap/Playboi Carti/Whole Lotta Red"), "Rage"),
+            FakeAD(str(self.root / "Rage/YNG Martyr/BURR"), "Rage"),
+        ]
+        moves, _, _ = gf.build_plan(recs, self.root, refile_mismatched=True)
+        by_dst = {m.dst for m in moves}
+        self.assertIn(self.root / "Rage/Playboi Carti/Whole Lotta Red", by_dst)
+        self.assertIn(self.root / "Rage/Playboi Carti/cover.jpg", by_dst)
+
+    def test_refile_matching_album_is_untouched(self):
+        recs = self._wlr()
+        moves, _, _ = gf.build_plan(recs, self.root, refile_mismatched=True)
+        self.assertFalse(
+            any(m.src == self.root / "Rage/YNG Martyr/BURR" for m in moves)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

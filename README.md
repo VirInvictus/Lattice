@@ -498,7 +498,9 @@ Artist-level sidecar files (e.g. an `Artist/cover.jpg` beside the album subfolde
 
 **Placement is gated by the genres your library already uses.** The tool first learns your genre vocabulary from the folders that already hold a `Genre/Artist/Album` tree, then only files a stray into one of those existing genres. An album tagged with a genre the library doesn't already use is **flagged, not given a brand-new top-level folder** (so a typo'd or junk tag can't spawn a stray genre directory). Pass `--allow-new-genre` to lift the gate and create new folders. On a flat library with no genre folders yet, the vocabulary is empty and the gate is off, so tags are trusted; this is the normal first-time `Artist/Album` → `Genre/Artist/Album` conversion.
 
-Albums already at `Genre/Artist/Album` are left in place. If such an album's folder genre disagrees with its tags, that is reported as a `NOTE` for your review and the album is **not** silently re-filed.
+Albums already at `Genre/Artist/Album` are left in place. If such an album's folder genre disagrees with its tags, that is reported as a `NOTE` for your review and the album is **not** silently re-filed. Pass `--refile-mismatched` to move those albums to their tag's genre folder instead; this is the intended follow-up to a retag pass ([`retag.py`](#retagpy) / [`genre_tidy.py`](#genre_tidypy)): correct the tags first, then re-file the folders to match. Re-filing honors the same rules as filing a stray: the vocabulary gate (unknown target genres are flagged, not created, without `--allow-new-genre`), existing-folder spelling reuse, the never-overwrite rule, manifest logging (so `--revert` restores the old layout), and pruning of emptied source artist folders, with artist-level sidecars following the artist.
+
+A tag value that joins several genres into one string with `;` or `/` never becomes a folder name: the first genre places the album and the remainder is flagged as a `MULTI-GENRE TAG` issue so the tag itself can be fixed at the source.
 
 **Safety contract.**
 - **`mv` only** on the same filesystem: an atomic rename, so audio bytes (and embedded tags/ratings) are never read or rewritten.
