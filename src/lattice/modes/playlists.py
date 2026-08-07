@@ -118,6 +118,11 @@ def validate_rule(rule: str) -> str | None:
     }
     try:
         _eval_node(ast.parse(_pythonize_rule(rule), mode="eval"), names)
+    except ZeroDivisionError:
+        # Dividing by the dummy zeros is a data-dependent outcome, not a
+        # structural error: `bitrate / duration > 200` is a valid rule (real
+        # tracks never carry duration 0; a per-track failure still reports).
+        return None
     except Exception as e:
         return str(e)
     return None

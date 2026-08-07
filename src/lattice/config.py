@@ -2,7 +2,7 @@ import re
 import os
 import json
 
-VERSION = "4.10.1"
+VERSION = "4.10.2"
 
 DEFAULT_LIBRARY_OUTPUT = "music_library.txt"
 DEFAULT_FLAC_OUTPUT = "flac_errors.txt"
@@ -17,7 +17,6 @@ DEFAULT_TAG_AUDIT_OUTPUT = "tag_audit.txt"
 DEFAULT_BITRATE_AUDIT_OUTPUT = "bitrate_audit.txt"
 DEFAULT_REPLAYGAIN_AUDIT_OUTPUT = "replaygain_audit.txt"
 DEFAULT_AI_LIBRARY_OUTPUT = "library_ai.txt"
-DEFAULT_STATS_OUTPUT = "library_stats.txt"
 DEFAULT_PLAYLIST_OUTPUT = "smart_playlist.m3u"
 
 # Path-extraction layout used to recover artist/album/genre from a file's path
@@ -72,7 +71,10 @@ def save_config(config: dict) -> None:
 
 
 def get_library_root() -> str | None:
-    return load_config().get("library_root")
+    # set_library_root always stores an absolute path, but the config invites
+    # hand-editing, so expand a hand-written "~/Music" here too.
+    root = load_config().get("library_root")
+    return os.path.abspath(os.path.expanduser(root)) if root else None
 
 
 def get_layout() -> str:
@@ -92,7 +94,7 @@ def get_library_roots() -> list[str]:
     if isinstance(roots, list) and roots:
         return [os.path.abspath(os.path.expanduser(r)) for r in roots if r]
     single = config.get("library_root")
-    return [single] if single else []
+    return [os.path.abspath(os.path.expanduser(single))] if single else []
 
 
 def set_library_root(root: str) -> None:

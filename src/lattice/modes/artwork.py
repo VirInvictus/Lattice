@@ -183,7 +183,8 @@ def run_extract_art(
         if image_data:
             output_path = os.path.join(dirpath, "cover.jpg")
             if dry_run:
-                print(f"  -> [dry-run] Would extract art to {output_path}")
+                if not quiet:
+                    print(f"  -> [dry-run] Would extract art to {output_path}")
                 extracted += 1
             else:
                 try:

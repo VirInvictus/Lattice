@@ -270,7 +270,14 @@ def write_all_wings(
         genre_str = ad.genre or "Uncategorized"
         for genre in (g.strip() for g in genre_str.split("/") if g.strip()):
             final_wings[genre][ad.artist][ad.album].extend(ad.songs)
-        album_paths[(ad.artist, ad.album)] = ad.path
+        # The same (artist, album) can live in two directories (a genuine
+        # duplicate); their songs merge above, so the annotation lists every
+        # contributing path instead of last-wins misattributing the merge.
+        key = (ad.artist, ad.album)
+        if key in album_paths and ad.path not in album_paths[key].split("; "):
+            album_paths[key] += "; " + ad.path
+        else:
+            album_paths.setdefault(key, ad.path)
 
     os.makedirs(outdir, exist_ok=True)
 

@@ -90,7 +90,7 @@ from collections import Counter, namedtuple
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 # Path-component characters forbidden on Windows/NTFS/exFAT (the library often
 # lives on a shared NTFS volume), plus the trailing "." / " " rule. Genre names
@@ -264,6 +264,7 @@ def build_plan(
             return False
         prior = seen_dst.get(dst)
         if prior is not None:
+            seen_src[src] = dst  # remember the rejection so discs don't re-flag
             issues.append(
                 f"COLLISION (two sources -> one dest): {dst}\n    {prior}\n    {src}"
             )
@@ -516,22 +517,34 @@ class Runner:
             prefix = "[DRY] " if self.dry_run else ""
             print(f"{prefix}{msg}")
 
+    def _cross_device(self, src: Path, dst: Path) -> bool:
+        """Would moving src to dst cross a filesystem boundary? The destination
+        may not exist yet, so compare against its nearest existing ancestor."""
+        try:
+            anchor = dst.parent
+            while not anchor.exists():
+                anchor = anchor.parent
+            return src.stat().st_dev != anchor.stat().st_dev
+        except OSError:
+            return False
+
     def do_move(self, src: Path, dst: Path, kind: str) -> None:
-        if not self.dry_run:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            # shutil.move silently degrades to copy+delete across devices,
-            # against the mv-only contract (audio bytes are never rewritten);
-            # refuse instead of copying.
-            if src.stat().st_dev != dst.parent.stat().st_dev:
-                self._emit(f"CROSS-DEVICE (refused): {src}  ->  {dst}")
-                self.stats["cross_device_refused"] += 1
-                return
+        # shutil.move silently degrades to copy+delete across devices, against
+        # the mv-only contract (audio bytes are never rewritten); refuse
+        # instead of copying — in a dry-run too, so the preview predicts the
+        # refusal. mkdir only happens after the check (and only in a real
+        # run), so a refused move leaves no stray empty destination tree.
+        if self._cross_device(src, dst):
+            self._emit(f"CROSS-DEVICE (refused): {src}  ->  {dst}")
+            self.stats["cross_device_refused"] += 1
+            return
         self._emit(f"MV {kind}: {src}  ->  {dst}")
         self.stats[f"moved_{kind}"] += 1
         if self.dry_run:
             self.removed.add(src)
             self.created.add(dst)
             return
+        dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
         if self.mf:
             ts = datetime.now().isoformat(timespec="seconds")
@@ -577,7 +590,13 @@ class Runner:
             cur = parent
 
 
-def execute(moves, source_artist_dirs, runner: Runner) -> None:
+def execute(
+    moves,
+    source_artist_dirs,
+    runner: Runner,
+    root: Path | None = None,
+    staging: str | None = None,
+) -> None:
     for mv in moves:
         runner.do_move(mv.src, mv.dst, mv.kind)
     # One prune pass after ALL moves (a source dir is only removable once every
@@ -585,6 +604,16 @@ def execute(moves, source_artist_dirs, runner: Runner) -> None:
     # before its parent is considered.
     for d in sorted(source_artist_dirs, key=lambda p: len(p.parts), reverse=True):
         runner.prune_empty(d)
+    # A genre folder emptied by moving its last artist out (--refile-mismatched)
+    # is pruned too, like revert's upward prune; never the library root itself,
+    # and never the staging inbox (documented to stay in place for next time).
+    if root is not None:
+        parents = {d.parent for d in source_artist_dirs}
+        for p in sorted(parents, key=lambda q: len(q.parts), reverse=True):
+            if staging and p == root / staging:
+                continue
+            if p != root and root in p.parents:
+                runner.prune_empty(p)
 
 
 def parse_manifest(lines) -> list[tuple[str, str]]:
@@ -691,7 +720,7 @@ def cmd_map(args) -> int:
         else directory / "genre_foldermap.manifest.tsv"
     )
     with Runner(manifest, dry_run=not args.apply, quiet=args.quiet) as runner:
-        execute(moves, source_dirs, runner)
+        execute(moves, source_dirs, runner, root=directory, staging=staging)
         _print_summary(
             runner.stats, not args.apply, label="reorganize", quiet=args.quiet
         )

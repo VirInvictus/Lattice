@@ -50,7 +50,7 @@ from datetime import datetime
 
 from mutagen import File as MutagenFile
 
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 
 RSGAIN = "rsgain"
 
@@ -267,7 +267,8 @@ def main() -> int:
         "-y",
         "--yes",
         action="store_true",
-        help="Don't prompt for confirmation before writing",
+        help="Don't prompt for confirmation before writing (the prompt is also "
+        "auto-skipped when stdin is not a TTY, matching apestrip.py)",
     )
     parser.add_argument(
         "--target-lufs",

@@ -94,5 +94,25 @@ class ClassifyDecodeTests(unittest.TestCase):
         self.assertIn("1589248", reason)
 
 
+class Mp3HeaderInfoTests(unittest.TestCase):
+    def test_vbr_mode_is_the_member_name(self):
+        # __class__.__name__ rendered every bitrate mode as "BitrateMode";
+        # the row must carry the actual member ("CBR"/"VBR"/"ABR").
+        from pathlib import Path
+
+        from lattice.modes.integrity import _mutagen_header_info
+
+        fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "library"
+            / "Cursive"
+            / "Domestica"
+            / "01 - The Casualty.mp3"
+        )
+        meta = _mutagen_header_info(fixture)
+        self.assertEqual(meta.get("vbr_mode"), "CBR")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 # Lattice Application Specification
 
-**Version:** 4.10.1  
+**Version:** 4.10.2  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT
@@ -41,6 +41,10 @@ named tuple from a single `MutagenFile()` open. Format-specific tag field
 mapping (ID3 for MP3, VorbisComment for FLAC/Opus/OGG, MP4 atoms for M4A)
 is handled internally. Ratings are read from POPM, TXXX, or Vorbis comment
 fields, compatible with foobar2000's `foo_quicktag` and most other taggers.
+The canonical POPM bytes (1/64/128/196/255) map to whole stars regardless of
+the frame's rater email; `FMPS_Rating`-style tags are read on their 0.0-1.0
+scale; other values fall back to a magnitude heuristic (0-5, 0-10, 0-100,
+0-255).
 When a file is missing an artist, album, or genre tag, that field is recovered
 from the file's path according to the configured `layout`.
 

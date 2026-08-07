@@ -153,7 +153,10 @@ def relpath_under(path: str, root) -> str:
     instead of as two identical relative paths."""
     roots = as_roots(root)
     for r in roots:
-        if path == r or path.startswith(r + os.sep):
+        # r may already end with a separator (a root of "/"), so build the
+        # prefix instead of always appending os.sep.
+        prefix = r if r.endswith(os.sep) else r + os.sep
+        if path == r or path.startswith(prefix):
             rel = os.path.relpath(path, r)
             if len(roots) > 1:
                 return os.path.join(os.path.basename(r.rstrip(os.sep)), rel)
@@ -254,7 +257,10 @@ def _has_cover_file(directory: str) -> bool:
 
 def parse_layout(rel_path: str, layout: str) -> dict:
     """Extract metadata from a relative path based on a layout pattern like {artist}/{album}"""
-    parts = os.path.dirname(rel_path).split(os.sep)
+    # A file directly at the root has dirname "", which split()s to [""] —
+    # filter it out so no layout slot is filled with a present-but-empty
+    # string that would defeat callers' .get(key, fallback) defaults.
+    parts = [p for p in os.path.dirname(rel_path).split(os.sep) if p]
     layout_parts = [p for p in layout.replace("\\", "/").split("/") if p]
     result = {}
     for i, l_part in enumerate(layout_parts):

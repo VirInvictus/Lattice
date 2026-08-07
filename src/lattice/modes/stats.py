@@ -128,9 +128,11 @@ def run_stats(
         artist_dir = parsed.get("artist")
         if artist_dir:
             artist_dirs.add(artist_dir)
-        rel = os.path.relpath(os.path.dirname(filepath), src_root)
-        if rel.count(os.sep) >= 1:
-            album_dirs.add(rel)
+        # A directory counts as an album when the layout's {album} slot is
+        # filled — depth-counting undercounted flat layouts and counted loose
+        # files' artist dirs as albums on a genre-first tree.
+        if parsed.get("album"):
+            album_dirs.add(os.path.relpath(os.path.dirname(filepath), src_root))
 
         # Artist from tags (prefer tag, fall back to the layout's directory).
         artist_name = t.artist or artist_dir

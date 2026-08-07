@@ -42,6 +42,12 @@ class ValidateRuleTests(unittest.TestCase):
     def test_disallowed_construct_is_reported(self):
         self.assertIsNotNone(validate_rule("__import__('os')"))
 
+    def test_division_by_numeric_field_is_valid(self):
+        # The dummy metadata is all zeros; dividing by a field is a
+        # data-dependent outcome, not a structural error, and real tracks
+        # never carry duration/bitrate 0.
+        self.assertIsNone(validate_rule("bitrate / duration > 200"))
+
 
 class RuleEvalTests(unittest.TestCase):
     def test_empty_rule_matches_everything(self):

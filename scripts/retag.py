@@ -22,10 +22,10 @@ from datetime import datetime
 import mutagen
 from mutagen.apev2 import APENoHeaderError, APEv2
 from mutagen.asf import ASF
-from mutagen.id3 import ID3, TCON, ID3NoHeaderError
+from mutagen.id3 import ID3, TCON, ID3NoHeaderError, ParseID3v1
 from mutagen.mp4 import MP4
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 
 # Only formats whose genre containers are handled below. Raw ADTS .aac is
 # intentionally excluded: it has no standard tag container to write a genre to.
@@ -55,6 +55,27 @@ def read_genres(filepath: str) -> list[str]:
     return []
 
 
+def _id3v1_genre(filepath: str) -> tuple[bool, str | None]:
+    """(has_v1_tag, resolved genre name) for the trailing 128-byte ID3v1 block.
+    The genre is None when the byte is unset/out of range. Never raises."""
+    try:
+        with open(filepath, "rb") as f:
+            f.seek(-128, os.SEEK_END)
+            data = f.read(128)
+    except OSError, ValueError:
+        return False, None
+    if not data.startswith(b"TAG"):
+        return False, None
+    try:
+        frames = ParseID3v1(data) or {}
+    except Exception:
+        return False, None
+    tcon = frames.get("TCON")
+    genres = tcon.genres if tcon else []
+    genre = genres[0] if genres else None
+    return True, genre if genre in TCON.GENRES else None
+
+
 def is_noop(filepath: str, new_genres: list[str]) -> bool:
     """True when a write would change nothing, so direct invocation is
     idempotent (no gratuitous APEv2 delete + full ID3 re-save on an already
@@ -77,6 +98,15 @@ def is_noop(filepath: str, new_genres: list[str]) -> bool:
             return False
         if any(k.upper() == "TXXX:GENRE" for k in tags):
             return False
+        # The ID3v1 genre byte is another hidden spot the write refreshes: a
+        # stale v1 genre survives in v1-reading players even when TCON already
+        # matches. A file with no v1 tag at all stays a noop (nothing stale).
+        has_v1, v1_genre = _id3v1_genre(filepath)
+        if has_v1:
+            first = (TCON(encoding=3, text=new_genres).genres or [None])[0]
+            expected = first if first in TCON.GENRES else None
+            if v1_genre != expected:
+                return False
     return True
 
 

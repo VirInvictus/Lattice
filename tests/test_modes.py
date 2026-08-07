@@ -191,6 +191,40 @@ class WingsTests(unittest.TestCase):
         self.assertIn("Rock_Library.txt", names)
         self.assertIn("Indie_Library.txt", names)
 
+    def test_paths_annotation_lists_every_duplicate_dir(self):
+        # Selected Ambient Works exists under both the main tree and
+        # Compilations/ with identical tags; the songs merge into one album
+        # entry, so the path annotation must list both directories instead of
+        # last-wins misattributing the merge to a single folder.
+        with tempfile.TemporaryDirectory() as td:
+            outdir = os.path.join(td, "wings")
+            write_all_wings(FIXTURE, outdir, quiet=True, show_paths=True)
+            text = Path(outdir, "Electronic_Library.txt").read_text(encoding="utf-8")
+        album_line = next(
+            ln for ln in text.splitlines() if "ALBUM: Selected Ambient Works" in ln
+        )
+        self.assertIn(os.path.join("Aphex Twin", "Selected Ambient Works"), album_line)
+        self.assertIn(
+            os.path.join("Compilations", "Aphex Twin", "Selected Ambient Works"),
+            album_line,
+        )
+
+
+class StatsLayoutAlbumCountTests(unittest.TestCase):
+    def test_album_count_follows_layout_slot(self):
+        # On a genre-first layout a loose file at Genre/Artist depth fills no
+        # {album} slot and must not count as an album; only Genre/Artist/Album
+        # does. The old depth-count heuristic called both albums.
+        src = os.path.join(FIXTURE, "Cursive", "Domestica", "01 - The Casualty.mp3")
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, "Rock", "Cursive", "Domestica"))
+            shutil.copy2(src, os.path.join(td, "Rock", "Cursive", "loose.mp3"))
+            shutil.copy2(
+                src, os.path.join(td, "Rock", "Cursive", "Domestica", "01.mp3")
+            )
+            report = run_stats(td, None, layout="{genre}/{artist}/{album}", quiet=True)
+        self.assertRegex(report, r"Albums:\s+1\b")
+
 
 class MultiRootTests(unittest.TestCase):
     """A single invocation can scan several roots at once; results aggregate

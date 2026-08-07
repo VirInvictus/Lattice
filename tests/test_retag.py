@@ -88,6 +88,30 @@ class ApplyGenresMp3Tests(unittest.TestCase):
         self.assertNotIn("TXXX:GENRE", tags)  # bare custom genre frame gone
         self.assertIn("TXXX:AB:GENRE", tags)  # qualified frame preserved
 
+    def test_stale_id3v1_genre_defeats_noop(self):
+        # TCON already matches, but the trailing ID3v1 genre byte disagrees —
+        # one of the hidden spots the write exists to refresh. is_noop must
+        # say a write is needed, and the write must converge to a real noop.
+        tags = self._id3()
+        tags.setall("TCON", [TCON(encoding=3, text=["Metal"])])
+        tags.save(self.path, v2_version=3, v1=2)  # v1 genre byte = Metal
+        data = bytearray(Path(self.path).read_bytes())
+        self.assertEqual(data[-128:-125], b"TAG")
+        data[-1] = 0  # genre byte 0 = Blues
+        Path(self.path).write_bytes(data)
+
+        self.assertFalse(retag.is_noop(self.path, ["Metal"]))
+        self.assertTrue(retag.apply_genres(self.path, ["Metal"]))
+        self.assertTrue(retag.is_noop(self.path, ["Metal"]))
+
+    def test_absent_id3v1_stays_noop(self):
+        # No v1 tag at all means nothing stale to clear; a matching TCON must
+        # still be a noop (a write would only mint a v1 tag nobody asked for).
+        tags = self._id3()
+        tags.setall("TCON", [TCON(encoding=3, text=["Metal"])])
+        tags.save(self.path, v2_version=3, v1=0)  # strip any ID3v1
+        self.assertTrue(retag.is_noop(self.path, ["Metal"]))
+
 
 class FailureReportingTests(unittest.TestCase):
     """M16: per-file failures go to stderr and main exits nonzero, so a caller

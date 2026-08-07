@@ -323,7 +323,7 @@ class BuildPlanTests(unittest.TestCase):
         moves, issues, sources = gf.build_plan(recs, self.root, staging="Unfiltered")
         self.assertEqual(issues, [])
         with gf.Runner(self.root / "m.tsv", dry_run=False, quiet=True) as runner:
-            gf.execute(moves, sources, runner)
+            gf.execute(moves, sources, runner, root=self.root, staging="Unfiltered")
         self.assertEqual(
             (self.root / "Hip Hop/Kanye West/BULLY/01.mp3").read_text(), "b"
         )
@@ -803,10 +803,35 @@ class CrossDeviceTests(unittest.TestCase):
                     runner.do_move(src, dst, "dir")
             self.assertTrue(src.exists())
             self.assertFalse(dst.exists())
+            # The refusal check runs before any mkdir, so no stray empty
+            # destination tree is left behind.
+            self.assertFalse((root / "Rock").exists())
             self.assertEqual(runner.stats["cross_device_refused"], 1)
             self.assertEqual(runner.stats["moved_dir"], 0)
             # Nothing recorded in the manifest for a refused move.
             self.assertEqual(gf.parse_manifest(manifest.read_text().splitlines()), [])
+
+    def test_dry_run_predicts_the_refusal(self):
+        # The check must run in dry-run too: a preview that shows a clean
+        # "would move" for a move --apply will refuse is a broken preview.
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _make_tree(root, {"Artist/Album/01.mp3": "x"})
+            src = root / "Artist" / "Album"
+            dst = root / "Rock" / "Artist" / "Album"
+
+            def fake_stat(p, **kw):
+                return mock.Mock(st_dev=1 if p == src else 2)
+
+            with gf.Runner(root / "m.tsv", dry_run=True, quiet=True) as runner:
+                with mock.patch("pathlib.Path.stat", new=fake_stat):
+                    runner.do_move(src, dst, "dir")
+            self.assertEqual(runner.stats["cross_device_refused"], 1)
+            self.assertEqual(runner.stats["moved_dir"], 0)
+            self.assertEqual(runner.removed, set())
+            self.assertEqual(runner.created, set())
 
 
 class MultiGenreTagTests(unittest.TestCase):
@@ -1003,6 +1028,63 @@ class RefileMismatchedTests(unittest.TestCase):
         self.assertFalse(
             any(m.src == self.root / "Rage/YNG Martyr/BURR" for m in moves)
         )
+
+    def test_emptied_genre_folder_is_pruned(self):
+        # Moving the last artist out of Trap must prune the emptied Trap
+        # folder itself (not just Trap/Playboi Carti), and the dry-run must
+        # predict the same prune count.
+        def scenario(dry):
+            with tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                _make_tree(
+                    base,
+                    {
+                        "Trap/Playboi Carti/Whole Lotta Red/01.mp3": "x",
+                        "Rage/YNG Martyr/BURR/01.mp3": "y",
+                    },
+                )
+                recs = [
+                    FakeAD(str(base / "Trap/Playboi Carti/Whole Lotta Red"), "Rage"),
+                    FakeAD(str(base / "Rage/YNG Martyr/BURR"), "Rage"),
+                ]
+                moves, _, sources = gf.build_plan(recs, base, refile_mismatched=True)
+                with gf.Runner(base / "m.tsv", dry_run=dry, quiet=True) as runner:
+                    gf.execute(moves, sources, runner, root=base)
+                return dict(runner.stats), (base / "Trap").exists()
+
+        apply_stats, trap_exists = scenario(dry=False)
+        dry_stats, _ = scenario(dry=True)
+        self.assertFalse(trap_exists)
+        self.assertEqual(apply_stats["pruned"], 2)  # Trap/Playboi Carti + Trap
+        self.assertEqual(dry_stats, apply_stats)
+
+
+class CollisionReportingTests(unittest.TestCase):
+    def test_multi_disc_collision_is_flagged_once(self):
+        # The flat stray plans Rock/Nas/Illmatic first (records sort by path);
+        # the inbox copy of the same album is multi-disc, so its disc records
+        # collapse to one source unit — the destination collision must produce
+        # one COLLISION issue, not one per disc.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _make_tree(
+                root,
+                {
+                    "Rock/Other/AlbumX/01.mp3": "a",
+                    "Nas/Illmatic/01.mp3": "b",
+                    "Unfiltered/Nas/Illmatic/CD1/01.mp3": "c",
+                    "Unfiltered/Nas/Illmatic/CD2/01.mp3": "d",
+                },
+            )
+            recs = [
+                FakeAD(str(root / "Rock/Other/AlbumX"), "Rock"),
+                FakeAD(str(root / "Nas/Illmatic"), "Rock"),
+                FakeAD(str(root / "Unfiltered/Nas/Illmatic/CD1"), "Rock"),
+                FakeAD(str(root / "Unfiltered/Nas/Illmatic/CD2"), "Rock"),
+            ]
+            _moves, issues, _sources = gf.build_plan(recs, root, staging="Unfiltered")
+            collisions = [m for m in issues if "COLLISION" in m]
+            self.assertEqual(len(collisions), 1)
 
 
 if __name__ == "__main__":

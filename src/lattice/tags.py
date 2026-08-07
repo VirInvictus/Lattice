@@ -33,6 +33,33 @@ _RG_TRACK_SUFFIXES = ("replaygain_track_gain", "r128_track_gain")
 _RG_ALBUM_SUFFIXES = ("replaygain_album_gain", "r128_album_gain")
 
 
+# The canonical POPM star bytes (WMP convention). foobar2000, Winamp, MusicBee,
+# and rerate.py all write these exact bytes regardless of the frame's email, so
+# they map to whole stars for any email; only non-canonical bytes fall through
+# to normalize_rating's magnitude guess (which would call byte 196 "3.84 stars"
+# and make a `rating >= 4` playlist miss every 4-star MP3).
+_POPM_BYTE_MAP = {1: 1.0, 64: 2.0, 128: 3.0, 196: 4.0, 255: 5.0}
+
+
+def _popm_stars(byte: int) -> float | None:
+    rating = _POPM_BYTE_MAP.get(byte)
+    return rating if rating is not None else normalize_rating(byte)
+
+
+def _tag_rating(key: str, val) -> float | None:
+    """Decode one rating-ish tag value, scale-aware. FMPS_* tags store 0.0-1.0
+    floats by spec, which normalize_rating's magnitude heuristic would read as
+    a sub-one star count, so they get an explicit x5 scale."""
+    if "fmps_" in key:
+        try:
+            f = float(str(val))
+        except ValueError, TypeError:
+            return None
+        if 0.0 <= f <= 1.0:
+            return f * 5.0
+    return normalize_rating(val)
+
+
 def _rg_flags(keys) -> tuple[bool, bool]:
     kl = [str(k).lower() for k in keys]
     has_track = any(k.endswith(s) for k in kl for s in _RG_TRACK_SUFFIXES)
@@ -175,21 +202,24 @@ def get_all_tags(file_path: str) -> TagBundle:
                 )
 
             if hasattr(tags, "get"):
+                # Pass the frame itself, not frame.text: _first_text's list
+                # branch would take text[0] and silently drop the rest of a
+                # multi-valued frame before its "/" join could run.
                 tit2 = tags.get("TIT2")
                 if tit2:
-                    title = _first_text(tit2.text)
+                    title = _first_text(tit2)
                 tpe1 = tags.get("TPE1")
                 tpe2 = tags.get("TPE2")
                 if tpe2:
-                    artist = _first_text(tpe2.text)
+                    artist = _first_text(tpe2)
                 elif tpe1:
-                    artist = _first_text(tpe1.text)
+                    artist = _first_text(tpe1)
                 trck = tags.get("TRCK")
                 if trck:
                     trackno = _parse_track_number(trck.text)
                 talb = tags.get("TALB")
                 if talb:
-                    album = _first_text(talb.text)
+                    album = _first_text(talb)
 
             if hasattr(tags, "getall"):
                 tcon = tags.getall("TCON")
@@ -199,15 +229,12 @@ def get_all_tags(file_path: str) -> TagBundle:
                 # Rating: POPM (prefer WMP, then any) / TXXX
                 for popm in tags.getall("POPM"):
                     if getattr(popm, "email", "") == "Windows Media Player 9 Series":
-                        wmp_map = {1: 1.0, 64: 2.0, 128: 3.0, 196: 4.0, 255: 5.0}
-                        rating = wmp_map.get(popm.rating)
-                        if rating is None:
-                            rating = normalize_rating(popm.rating)
+                        rating = _popm_stars(popm.rating)
                         break
                 if rating is None:
                     for popm in tags.getall("POPM"):
                         if popm.rating > 0:
-                            rating = normalize_rating(popm.rating)
+                            rating = _popm_stars(popm.rating)
                             break
                 if rating is None:
                     for txxx in tags.getall("TXXX"):
@@ -215,7 +242,7 @@ def get_all_tags(file_path: str) -> TagBundle:
                         if "rating" in desc or desc in ("rate", "score", "stars"):
                             val = txxx.text[0] if txxx.text else None
                             if _looks_numeric(val):
-                                rating = normalize_rating(val)
+                                rating = _tag_rating(desc, val)
                                 break
 
         elif isinstance(audio, MP4):
@@ -233,7 +260,7 @@ def get_all_tags(file_path: str) -> TagBundle:
                 if "rate" in kl or "rating" in kl:
                     v = v[0] if isinstance(v, list) else v
                     if _looks_numeric(v):
-                        rating = normalize_rating(v)
+                        rating = _tag_rating(kl, v)
                         break
 
         elif isinstance(audio, (FLAC, OggVorbis, OggOpus)):
@@ -258,7 +285,7 @@ def get_all_tags(file_path: str) -> TagBundle:
                 ):
                     val = val[0] if isinstance(val, list) else val
                     if _looks_numeric(val):
-                        rating = normalize_rating(val)
+                        rating = _tag_rating(key.lower(), val)
                         break
 
         elif isinstance(audio, ASF):
@@ -279,7 +306,7 @@ def get_all_tags(file_path: str) -> TagBundle:
                 if "rating" in key.lower():
                     val = val[0] if isinstance(val, list) else val
                     if _looks_numeric(val):
-                        rating = normalize_rating(val)
+                        rating = _tag_rating(key.lower(), val)
                         break
 
         # Fallback: generic tag iteration for album/genre if still missing

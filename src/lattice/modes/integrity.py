@@ -306,8 +306,12 @@ def _mutagen_header_info(path: Path) -> dict[str, Any]:
             "bitrate_kbps": int((getattr(info, "bitrate", 0) or 0) / 1000),
             "sample_rate_hz": getattr(info, "sample_rate", None),
             "mode": getattr(info, "mode", None),
-            "vbr_mode": getattr(info, "bitrate_mode", None).__class__.__name__
-            if getattr(info, "bitrate_mode", None)
+            # mutagen's BitrateMode is a custom int-enum without .name; str()
+            # gives "BitrateMode.CBR", so take the member after the dot.
+            # __class__.__name__ rendered every mode as the literal
+            # "BitrateMode". UNKNOWN (0) is falsy and stays None.
+            "vbr_mode": str(bm).rpartition(".")[2]
+            if (bm := getattr(info, "bitrate_mode", None))
             else None,
         }
     except Exception:
@@ -390,7 +394,7 @@ def _format_row_meta(row: dict[str, Any]) -> str:
         parts.append(f"{row['sample_rate_hz']}Hz")
     if row.get("duration_s"):
         parts.append(f"{row['duration_s']}s")
-    if row.get("vbr_mode") and row["vbr_mode"] != "None":
+    if row.get("vbr_mode"):
         parts.append(row["vbr_mode"])
     return "  ".join(parts)
 
@@ -440,12 +444,14 @@ def _run_decode_scan(
     counts = {tier: 0 for tier in TIER_ORDER}
     results: list[dict[str, Any]] = []
 
+    # --verbose overrides --quiet before the progress bar is built, so the two
+    # flags together don't produce a barless run that still prints the summary.
+    if verbose:
+        quiet = False
+
     pbar = _make_pbar(len(targets), f"Scanning {label}", quiet)
     ex: ThreadPoolExecutor | None = None
     futures: dict = {}
-
-    if verbose:
-        quiet = False
     # CORRUPT and SUSPECT are always listed; METADATA and OK only when the user
     # asks (keeps a clean library's report short and bounds memory on big runs).
     list_benign = verbose or not only_errors

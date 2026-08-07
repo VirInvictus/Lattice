@@ -1,10 +1,12 @@
 import os
+import re
 import shutil
 import struct
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # cleaner.py lives in scripts/ (outside the lattice package); add it to the path
 # so its helpers can be imported. Filesystem ops are exercised against tempfile
@@ -302,6 +304,62 @@ class SurvivorRenameTests(_TreeCase):
         self.assertEqual(apply_stats["renamed"], 1)
         self.assertEqual(dry_stats, apply_stats)
         self.assertEqual(dry_targets, apply_targets)
+
+
+class RenamedSurvivorDryRunParityTests(unittest.TestCase):
+    """Pass 1's survivor rename must not hide the artist from Passes 2-4 in a
+    dry-run: the old name lands in run.removed, but the bytes survive under
+    the new name, so the preview must still report the album consolidation,
+    name normalization, and tag scanning an apply run performs."""
+
+    def _build(self, base: Path) -> None:
+        _make_dir(base, "Drive‐By Truckers/Album", {"01.flac": b"x", "02.flac": b"y"})
+        _make_dir(base, "Drive‐By Truckers/album", {"03.flac": b"z"})
+        # The ascii variant merges away; same.flac is an identical-bytes
+        # collision that gets dropped, so Pass 4 must not preview-scan it.
+        _make_dir(base, "Drive-By Truckers/Album", {"same.flac": b"x"})
+        (base / "Drive‐By Truckers" / "Album" / "same.flac").write_bytes(b"x")
+
+    def _stats_from_log(self, log_path: Path) -> dict[str, int]:
+        text = log_path.read_text(encoding="utf-8")
+        block = text.split("--- SUMMARY ---")[-1].split("CLEANUP RUN END")[0]
+        stats = {}
+        for line in block.splitlines():
+            m = re.search(r"(\w+): (\d+)\s*$", line)
+            if m:
+                stats[m.group(1)] = int(m.group(2))
+        return stats
+
+    def _run_main(self, base: Path, dry: bool) -> dict[str, int]:
+        argv = [
+            "cleaner.py",
+            str(base),
+            "--normalize-names",
+            "--normalize-filenames",
+            "--normalize-tags",
+        ]
+        if dry:
+            argv.append("--dry-run")
+        with mock.patch.object(sys, "argv", argv):
+            self.assertEqual(cleaner.main(), 0)
+        return self._stats_from_log(base / "cleanup.log")
+
+    def test_dry_run_stats_match_apply(self):
+        with tempfile.TemporaryDirectory() as td:
+            dry_base = Path(td) / "dry"
+            apply_base = Path(td) / "apply"
+            self._build(dry_base)
+            self._build(apply_base)
+            dry_stats = self._run_main(dry_base, dry=True)
+            apply_stats = self._run_main(apply_base, dry=False)
+            # The apply run really did rename the survivor and merge under it.
+            merged = apply_base / "Drive-By Truckers" / "Album"
+            self.assertTrue((merged / "03.flac").is_file())
+            self.assertFalse((apply_base / "Drive‐By Truckers").exists())
+            # 2 groups: the artist variants and the Album/album variants the
+            # old dry-run never saw once the survivor was renamed.
+            self.assertEqual(apply_stats["groups"], 2)
+            self.assertEqual(dry_stats, apply_stats)
 
 
 class CoverResolutionTests(_TreeCase):

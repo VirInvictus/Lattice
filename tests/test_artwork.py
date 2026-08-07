@@ -1,9 +1,17 @@
+import contextlib
+import io
 import os
+import shutil
 import struct
 import tempfile
 import unittest
+from pathlib import Path
 
-from lattice.modes.artwork import _get_image_size, run_art_quality_audit
+from lattice.modes.artwork import (
+    _get_image_size,
+    run_art_quality_audit,
+    run_extract_art,
+)
 
 
 def _png(width, height):
@@ -68,6 +76,56 @@ class ArtQualityAuditTests(unittest.TestCase):
                 text = f.read()
             self.assertIn("Below floor: 1", text)
             self.assertIn("300x300", text)
+
+
+class ExtractArtDryRunTests(unittest.TestCase):
+    """Dry-run over a temp album whose MP3 carries a synthetic embedded cover."""
+
+    def _album_with_embedded_art(self, tmp: str) -> str:
+        from mutagen.id3 import APIC, ID3
+
+        fixture = str(
+            Path(__file__).parent
+            / "fixtures"
+            / "library"
+            / "Cursive"
+            / "Domestica"
+            / "01 - The Casualty.mp3"
+        )
+        album = os.path.join(tmp, "Artist", "Album")
+        os.makedirs(album)
+        track = os.path.join(album, "track.mp3")
+        shutil.copy2(fixture, track)
+        id3 = ID3(track)
+        id3.add(
+            APIC(
+                encoding=3,
+                mime="image/jpeg",
+                type=3,
+                desc="Cover",
+                data=_jpeg(600, 600),
+            )
+        )
+        id3.save(track)
+        return album
+
+    def test_quiet_suppresses_dry_run_lines_and_nothing_is_written(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            album = self._album_with_embedded_art(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                run_extract_art(tmp, quiet=True, dry_run=True)
+            self.assertEqual(out.getvalue(), "")
+            self.assertFalse(os.path.exists(os.path.join(album, "cover.jpg")))
+
+    def test_dry_run_still_announces_when_not_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            album = self._album_with_embedded_art(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                run_extract_art(tmp, quiet=False, dry_run=True)
+            self.assertIn("[dry-run] Would extract art", out.getvalue())
+            self.assertFalse(os.path.exists(os.path.join(album, "cover.jpg")))
 
 
 if __name__ == "__main__":

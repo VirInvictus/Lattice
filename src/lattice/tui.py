@@ -185,16 +185,6 @@ def _out_note(path: str | None) -> str:
     return f"Report written to {os.path.abspath(path)}" if path else ""
 
 
-def _prompt_path(label: str, default: str = ".") -> str | None:
-    """Prompt for a filesystem path, expanding ~ and making absolute. None when
-    cancelled or left blank with no default (a blank answer is never silently
-    absolutized into the CWD)."""
-    raw = _prompt_str(label, default)
-    if raw is None or not raw.strip():
-        return None
-    return os.path.abspath(os.path.expanduser(raw))
-
-
 def _prompt_int(label: str, default: int) -> int:
     prompt = label
     while True:

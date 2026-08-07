@@ -50,6 +50,16 @@ What's done, what's next, what's deferred. Sequenced for maximum utility as a st
 - [x] **Multi-Root Scanning**: `--root` is repeatable; several libraries scan together in one pass and de-dupe a repeated path. Cross-library duplicate detection groups an album that lives in two libraries, with each entry prefixed by its root's basename. An optional `library_roots` array in the JSON config supplies default roots; the first-run prompt still saves only the single `library_root`. (v4.6.0)
 - [x] **Configurable Path Layout**: A `layout` config key (and `--layout`) sets the pattern Lattice uses to recover artist/album/genre from a path, so a genre-first tree (`{genre}/{artist}/{album}`) is fully supported; genre now falls back to the path like artist/album already did. Default stays `{artist}/{album}`. Pairs with the `genre_foldermap.py` companion script that builds such a tree. (v4.7.0)
 
+## Bug sweep 2026-08-07 (v4.10.2 + companion bumps)
+
+A full-repo review (package, TUI, modes, all seven companions) by three research passes, every finding verified against the code before fixing, all fixes regression-tested (suite 462 to 487). Details live in `patchnotes.md` under v4.10.2, retag.py v1.1.3, cleaner.py v1.3.4, genre_foldermap.py v1.4.1, and replaygain.py v1.2.2.
+
+- [x] Package: POPM canonical-byte and FMPS rating scales, multi-valued ID3 join, BitrateMode row label, division-rule validation, wings `--paths` duplicate attribution, layout-aware stats album count, root-level-file layout fallback, `relpath_under("/")`, `--quiet --verbose` bar, quiet dry-run art extraction, `~` expansion for a hand-edited single root, CLI `isdir` root validation.
+- [x] cleaner.py: dry-run parity for Pass 1 survivor renames across Passes 2-4; dropped duplicates excluded from the Pass 4 preview; unparseable images can no longer win a cover collision on size.
+- [x] genre_foldermap.py: cross-device refusal predicted in dry-run and checked before any mkdir; multi-disc collisions flagged once; emptied genre folders pruned after `--refile-mismatched`.
+- [x] retag.py: stale ID3v1 genre byte defeats `is_noop`.
+- Noted, deliberately unchanged: nested-bracket suffixes in the audit's fuzzy dedup; the non-TTY confirmation auto-skip convention; the double filesystem walk (count then scan) and the serial tag reads in `generate_playlist` (candidate consolidations, not bugs).
+
 ## Found Bugs
 
 - [x] **FOUND BUG (2026-07-03): library submenu ran `stty sane` under the persistent curses screen.** `_library_submenu` called `_reset_terminal()` unconditionally after every selection; under the v4.10.0 session screen that re-enabled echo/canonical mode, so the next prompt echoed keystrokes over the TUI and `getch()` only saw input after Enter. `_menu_session` and `_run_with_capture` had the `_SCREEN is None` gate; the submenu path was missed in the T7 rework, and the T7 pty verification drove a main-menu flow so it never hit the submenu. Surfaced by the v4.10.1 carry-back smoke test (menu → submenu → prompt → Esc). **Fixed (v4.10.1):** at the source, matching cquarry: `utils._reset_terminal` returns early while a session screen is published (`_SHARED_SCREEN`), so every call site is safe at once; `tests/test_utils.py` pins both the guard and the post-session behavior, and the pty smoke passes with one alternate-screen enter/leave.

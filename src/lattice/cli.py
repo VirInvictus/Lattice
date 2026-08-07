@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         # otherwise fall back to the configured/default layout. (The mode flags
         # are a single argparse mutually-exclusive group, so picking more than
         # one mode is already rejected at parse time.)
-        if getattr(args, "layout", None) is None and hasattr(args, "layout"):
+        if args.layout is None:
             args.layout = get_layout()
 
         # Every named root (positional + each --root) is scanned together;
@@ -232,7 +232,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from lattice.config import get_library_roots, set_library_root
 
-            config_roots = [r for r in get_library_roots() if r and os.path.exists(r)]
+            # isdir, not exists: a root that is now a plain file would "scan"
+            # zero files silently. The TUI already validates with isdir.
+            config_roots = [r for r in get_library_roots() if r and os.path.isdir(r)]
             if config_roots:
                 root = config_roots
             elif sys.stdin.isatty():

@@ -1,5 +1,46 @@
 # Lattice Patch Notes
 
+## v4.10.2 (2026-08-07)
+
+Full-repo bug sweep (package, TUI, and all seven companions reviewed; every fix below is regression-tested; suite 462 to 487). Three fixes change report values on purpose, called out first.
+
+- **Behavior change: canonical POPM bytes read as whole stars for any rater email.** The bytes 1/64/128/196/255 (the WMP convention that foobar2000, Winamp, MusicBee, and `rerate.py` all write) only mapped to 1-5 stars when the frame's email was exactly "Windows Media Player 9 Series"; any other email fell into the linear 0-255 scale, so byte 196 read as 3.84 stars and a `rating >= 4` playlist missed every 4-star MP3 rerate.py had just fixed. The canonical bytes now map to whole stars regardless of email; non-canonical bytes still use the linear scale.
+- **Behavior change: FMPS_Rating tags read on their real 0-1 scale.** `FMPS_Rating=0.8` (4 of 5 stars, a documented Vorbis/TXXX convention) was read as 0.8 stars by the magnitude heuristic. Keys containing `fmps_` now scale 0.0-1.0 by five; everything else is unchanged.
+- **Behavior change: multi-valued ID3 title/artist/album keep every value.** The readers passed `frame.text` into `_first_text`, whose list branch took the first element before the "/" join could run, so a multi-valued TPE1 read as "Artist One" instead of "Artist One/Artist Two" (TCON already joined; now they agree).
+- **Fix: `--verbose` MP3 rows print the real bitrate mode.** The row metadata took the enum's class name, so every CBR/VBR/ABR file printed the literal "BitrateMode"; it now prints the member ("CBR", "VBR", "ABR").
+- **Fix: smart-playlist rules that divide by a field validate correctly.** `validate_rule` probes the rule against all-zero dummy metadata, so `bitrate / duration > 200` died with "division by zero" before the walk even though real tracks never carry zero duration. Division by the dummy zeros is now treated as data-dependent, not structural.
+- **Fix: `--all-wings --paths` lists every directory of a duplicated album.** When the same (artist, album) lives in two folders their songs merge into one wing entry, but the path annotation was last-wins, misattributing the merged track list to a single folder. It now lists all contributing paths ("; "-joined).
+- **Fix: layout-aware album counting in `--stats`.** Albums were counted by raw path depth, which undercounted flat layouts and counted a loose file's artist folder as an album on a `{genre}/{artist}/{album}` tree. A directory now counts when the layout's `{album}` slot is actually filled.
+- **Fix: a file directly at the scan root no longer defeats the "Unknown Artist" fallback.** `parse_layout` filled the first layout slot with a present-but-empty string for root-level files, so `parsed.get("artist", "Unknown Artist")` returned "" instead of falling back.
+- **Fix: `relpath_under` handles a root of "/".** The prefix check built `"//"` and never matched, so scanning from the filesystem root returned absolute paths where every other root returns relative ones.
+- **Fix: `--quiet --verbose` shows the progress bar.** The decode scanners built the bar before `--verbose` flipped `quiet` off, producing a barless run that still printed the full verbose report.
+- **Fix: `--extractArt --dry-run --quiet` is quiet.** The dry-run announcement line ignored `--quiet`, unlike its real-run sibling.
+- **Fix: a hand-edited `library_root` expands `~` like the plural form.** `get_library_root()` and the singular fallback in `get_library_roots()` returned the raw string, so a hand-written `"~/Music"` failed the CLI/TUI existence filters and the app re-prompted as if unconfigured.
+- **Fix: the CLI validates configured roots with `isdir`, matching the TUI.** `os.path.exists` accepted a root that had become a plain file, silently "scanning" zero files where the TUI correctly re-prompts.
+- Cleanup: dead `DEFAULT_STATS_OUTPUT` constant and unused `_prompt_path` TUI helper removed; an impossible `!= "None"` string guard dropped; the always-true `hasattr(args, "layout")` condition simplified.
+- Known limitations noted, deliberately unchanged: the audit's fuzzy-duplicate normalizer does not strip nested-bracket suffixes like `(Deluxe [Remastered])`, and blind non-TTY confirmation auto-skip in replaygain/apestrip remains the documented convention.
+
+## retag.py v1.1.3 (2026-08-07)
+
+- **Fix: a stale ID3v1 genre byte now defeats the noop check.** `is_noop` verified TCON, APEv2, and `TXXX:GENRE` but never the trailing ID3v1 block, one of the "hidden genre spots" the tool exists to clear: a file whose TCON already matched kept its stale v1 genre forever. The v1 genre byte is now compared against what the refresh would write; a file with no v1 tag at all is still a noop (nothing stale to clear, and a write would only mint a v1 tag nobody asked for).
+
+## cleaner.py v1.3.4 (2026-08-07)
+
+- **Fix: a Pass 1 survivor rename no longer hides the artist from Passes 2-4 in a dry-run.** The renamed survivor's old path lands in the virtual `removed` set, and Passes 2 (album consolidation), 3 (name normalization), and 4 (tag scan) all skipped it, so `--dry-run` under-reported work `--apply` then performed (the headline `JAY‐Z` example triggered it). Rename origins are now recognized as surviving (their bytes live on under the new name) and previewed at their current on-disk path; a new end-to-end test drives `main()` dry and apply over identical trees and asserts identical stats.
+- **Fix: Pass 4's dry-run no longer tag-scans files an earlier pass dropped.** The tag walk ignored the virtual `removed` set, so an exact-duplicate file (`DROP DUPE`) was still previewed and counted, inflating the dry-run's scanned/rewritten stats over the apply run's.
+- **Fix: an unparseable image can no longer win a cover collision on byte size.** When exactly one colliding cover parses as an image, the parseable one now wins; the larger-bytes fallback applies only when both parse (the pixel comparison) or neither does.
+
+## genre_foldermap.py v1.4.1 (2026-08-07)
+
+- **Fix: the dry-run now predicts cross-device refusals.** The mv-only guard (refuse instead of letting `shutil.move` degrade to copy+delete) only ran on `--apply`, so a library spanning a mount point previewed clean "would move" lines for moves the real run then refused. The check runs in both modes, against the destination's nearest existing ancestor.
+- **Fix: a refused cross-device move leaves no stray directories.** The destination tree was `mkdir`-ed before the refusal check; the check now runs first and `mkdir` only happens for a real, accepted move.
+- **Fix: a multi-disc album's destination collision is flagged once, not once per disc.** The COLLISION branch now records the rejection like the DEST EXISTS branch always did.
+- **Fix: a genre folder emptied by `--refile-mismatched` is pruned.** Moving the last artist out of a genre left the empty genre folder behind forever (only the artist level was pruned, unlike revert's upward prune). Emptied genre folders are now removed; the library root and the staging inbox (documented to stay in place) never are.
+
+## replaygain.py v1.2.2 (2026-08-07)
+
+- Docs: the `-y/--yes` help now states the confirmation prompt is auto-skipped when stdin is not a TTY (the shared companion convention apestrip.py already documented).
+
 ## genre_foldermap.py v1.4.0 (2026-08-06)
 
 Built for the library-wide genre audit: retag first, then make the folders follow.

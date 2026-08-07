@@ -80,7 +80,7 @@ try:
 except ImportError:  # tag normalization (--normalize-tags) needs mutagen
     MUTAGEN_OK = False
 
-__version__ = "1.3.3"
+__version__ = "1.3.4"
 
 # Containers whose title/album/artist/albumartist the tag pass can rewrite. Other
 # AUDIO_EXT members (.wav/.aac/.alac/.ape/.wv/.aiff) carry no handled tag layout
@@ -421,6 +421,18 @@ class Run:
             return
         src.rename(dst)
 
+    def _survives(self, p: Path) -> bool:
+        """Dry-run: does p's content still exist somewhere after the virtual
+        ops so far? True for untouched paths and for rename/move origins (the
+        bytes live on under a new name, so later passes must still preview
+        them, at their current on-disk path); False for merged-away or
+        unlinked paths. Always True during an apply run (both sets empty)."""
+        lineage = (p, *p.parents)
+        if not any(q in self.removed for q in lineage):
+            return True
+        alive = set(self.created.values())
+        return any(q in alive for q in lineage)
+
 
 def find_groups(directory: Path, run: Run) -> list[list[Path]]:
     """Find groups of subdirs whose names normalize to the same key."""
@@ -519,6 +531,11 @@ def merge_dir(source: Path, target: Path, run: Run) -> None:
                         tgt_px = image_pixels(run._real(target_item))
                         if src_px is not None and tgt_px is not None:
                             source_wins = (src_px, src_size) > (tgt_px, tgt_size)
+                        elif (src_px is None) != (tgt_px is None):
+                            # Exactly one side parses as an image: it wins. A
+                            # larger-but-unparseable blob must not replace a
+                            # legitimate cover on byte count alone.
+                            source_wins = src_px is not None
                         else:
                             source_wins = src_size > tgt_size
                         if source_wins:
@@ -658,20 +675,30 @@ def normalize_tree(root: Path, run: Run, do_folders: bool, do_files: bool) -> No
     so captured paths stay valid through an apply run. Rename-only: merging is
     Passes 1-2' job. `--normalize-names` drives folders, `--normalize-filenames`
     drives files; either may run alone."""
+    alive_origins = set(run.created.values())
     for dirpath, _dirnames, filenames in list(os.walk(root, topdown=False)):
         d = Path(dirpath)
         # Dry-run: skip folders (and their contents) an earlier pass merged
-        # away; the apply run would not find them here.
-        if d in run.removed or any(parent in run.removed for parent in d.parents):
+        # away; the apply run would not find them here. A folder Pass 1
+        # *renamed* survives (its bytes live on under the new name), so its
+        # subtree is still previewed, at its current on-disk path.
+        if not run._survives(d):
             continue
         if do_files:
             for fn in sorted(filenames):
                 if fn.startswith("."):
                     continue
                 fp = d / fn
+                if not run._survives(fp):
+                    continue  # dry-run: dropped as an exact duplicate
                 if fp.suffix.lower() in AUDIO_EXT:
                     _normalize_file_name(fp, run)
-        if do_folders and d != root and not d.name.startswith("."):
+        if (
+            do_folders
+            and d != root
+            and not d.name.startswith(".")
+            and d not in alive_origins  # already renamed by an earlier pass
+        ):
             _normalize_folder_name(d, run)
 
 
@@ -892,6 +919,8 @@ def normalize_tags(run: Run) -> None:
     for f in sorted(run.root.rglob("*")):
         if not f.is_file():
             continue
+        if not run._survives(f):
+            continue  # dry-run: dropped or merged away by an earlier pass
         ext = f.suffix.lower()
         if ext not in AUDIO_EXT and ext not in TAGGABLE_EXT:
             continue
@@ -1021,11 +1050,15 @@ def main() -> int:
             consolidate_group(group, context="artists", run=run)
 
         run.log("\n--- PASS 2: album-level consolidation per artist ---")
+        # run._survives, not `p not in run.removed`: a survivor Pass 1 renamed
+        # is in `removed` under its old name but its albums still need
+        # consolidation; the apply run finds it via a plain iterdir. The
+        # dry-run previews it at its current on-disk (pre-rename) path.
         artists = sorted(
             (
                 p
                 for p in root.iterdir()
-                if p.is_dir() and not p.name.startswith(".") and p not in run.removed
+                if p.is_dir() and not p.name.startswith(".") and run._survives(p)
             ),
             key=lambda p: p.name.lower(),
         )

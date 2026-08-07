@@ -6,6 +6,7 @@ from lattice.utils import (
     format_rating,
     clean_song_name,
     parse_layout,
+    relpath_under,
     _looks_numeric,
     color,
     green,
@@ -85,9 +86,23 @@ class ParseLayoutTests(unittest.TestCase):
         self.assertEqual(got, {"artist": "X", "album": "Y"})
 
     def test_flat_file_partial(self):
+        # A root-level file fills no slots at all: a present-but-empty artist
+        # would defeat callers' .get("artist", "Unknown Artist") fallbacks.
         got = parse_layout("song.mp3", "{artist}/{album}")
-        self.assertEqual(got.get("artist"), "")
-        self.assertNotIn("album", got)
+        self.assertEqual(got, {})
+
+
+class RelpathUnderTests(unittest.TestCase):
+    def test_single_root(self):
+        self.assertEqual(relpath_under("/lib/Artist/Album", "/lib"), "Artist/Album")
+
+    def test_filesystem_root(self):
+        # A root of "/" already ends with the separator; the prefix must not
+        # become "//" (which no ordinary path starts with).
+        self.assertEqual(relpath_under("/lib/Artist", "/"), "lib/Artist")
+
+    def test_unowned_path_returned_verbatim(self):
+        self.assertEqual(relpath_under("/other/x", "/lib"), "/other/x")
 
 
 class LooksNumericTests(unittest.TestCase):
