@@ -239,6 +239,22 @@ class CmdBuildRebuildTests(unittest.TestCase):
         self.assertIn("No new artists", out)
         self.assertEqual(self.map_path.read_text(encoding="utf-8"), first)
 
+    def test_multi_genre_count_excludes_other_comment_rows(self):
+        # The count used to be "rows starting with #", which also swept up the
+        # EXCLUDED and no-genre-tags comments and called them multi-genre.
+        rc, out = self._build(
+            [
+                FakeAD("AFI", "Post-Hardcore"),
+                FakeAD("AFI", "Punk"),  # the only genuinely multi-genre artist
+                FakeAD("Deftones", "Alternative Metal"),
+                FakeAD("Various Artists", "Pop"),
+                FakeAD("Various Artists", "Rock"),
+                FakeAD("Untagged Act", ""),
+            ]
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("1 artist(s) carry multiple genres", out)
+
     def test_genuinely_new_artist_still_appends(self):
         self._build([FakeAD("AFI", "Post-Hardcore")])
         rc, out = self._build(
@@ -354,7 +370,9 @@ class CmdApplyTests(unittest.TestCase):
         os.chmod(self.album / "01 - Xtal.flac", 0o444)
         rec = self.RecAD(str(self.album), "Aphex Twin", "Ambient")
         rc, out = self._apply([rec])
-        self.assertEqual(rc, 0)
+        # Nonzero on a failed retag, matching retag.py/rerate.py/replaygain.py:
+        # apply used to exit 0 no matter how many writes failed.
+        self.assertEqual(rc, 1)
         self.assertIn("retagged 0 album(s)", out)
         self.assertIn("1 retag error(s)", out)
         self.assertIn("ERR", self._log_text())

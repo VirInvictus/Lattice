@@ -170,6 +170,53 @@ class MainTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("cannot open log file", out)
 
+    def test_dry_run_reports_the_same_read_errors_as_apply(self):
+        # read_remaps used to swallow every read failure as "no changes", so a
+        # dry-run claimed 0 errors on files the apply run then reported.
+        bad = self._mp3("broken.mp3", 127)
+        Path(bad).write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x7f" + b"\xff" * 64)
+
+        _dry_changes, dry_error = rerate.read_remaps(bad)
+        _apply_changes, apply_error = rerate.rerate_file(bad)
+        self.assertIsNotNone(dry_error)
+        self.assertIsNotNone(apply_error)
+
+        rc, out = self._run_main([self.root, "--dry-run"])
+        self.assertEqual(rc, 1)
+        self.assertIn("1 error(s)", out)
+
+
+class ReadRemapsTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._tmp.name, "track.mp3")
+        shutil.copy(MP3_SRC, self.path)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_returns_changes_and_no_error(self):
+        tags = ID3(self.path)
+        tags.add(POPM(email="DeaDBeeF", rating=127, count=0))
+        tags.save(self.path)
+        changes, error = rerate.read_remaps(self.path)
+        self.assertIsNone(error)
+        self.assertEqual([(c[1], c[2]) for c in changes], [(127, 64)])
+
+    def test_missing_id3_is_not_an_error(self):
+        empty = os.path.join(self._tmp.name, "bare.mp3")
+        Path(empty).write_bytes(b"\xff\xfb\x90\x00" * 64)
+        changes, error = rerate.read_remaps(empty)
+        self.assertEqual(changes, [])
+        self.assertIsNone(error)
+
+    def test_read_is_non_mutating(self):
+        tags = ID3(self.path)
+        tags.add(POPM(email="DeaDBeeF", rating=127, count=0))
+        tags.save(self.path)
+        rerate.read_remaps(self.path)
+        self.assertEqual(ID3(self.path).getall("POPM")[0].rating, 127)
+
 
 if __name__ == "__main__":
     unittest.main()

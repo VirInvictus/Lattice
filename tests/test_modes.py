@@ -31,6 +31,7 @@ from lattice.modes.audit import (
 )
 from lattice.modes.artwork import run_missing_art
 from lattice.modes.playlists import generate_playlist
+from lattice.utils import count_audio_files
 
 FIXTURE = str(Path(__file__).parent / "fixtures" / "library")
 
@@ -293,6 +294,56 @@ class ScanGenreFallbackTests(unittest.TestCase):
             self.assertEqual(dirs[0].genre, "Jazz")
             self.assertEqual(dirs[0].artist, "Miles Davis")
             self.assertEqual(dirs[0].album, "Kind of Blue")
+
+
+class ScanDeterminismTests(unittest.TestCase):
+    """A directory's files are read in sorted order, so a tie in the dominant
+    artist/album/genre counts always breaks the same way and the songs list is
+    stable. os.walk hands back readdir order, which made both a coin flip."""
+
+    class _Pbar:
+        def update(self, n: int = 1) -> None:
+            pass
+
+    def test_tied_artist_breaks_toward_first_filename(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            d = root / "Split" / "Album"
+            d.mkdir(parents=True)
+            for name in ("02.mp3", "01.mp3"):
+                (d / name).write_text("x")
+            by_name = {
+                "01.mp3": SimpleNamespace(artist="Alpha", album="A", genre="G"),
+                "02.mp3": SimpleNamespace(artist="Beta", album="A", genre="G"),
+            }
+
+            def _tags(path):
+                return by_name[os.path.basename(path)]
+
+            with mock.patch.object(library_mod, "get_all_tags", _tags):
+                dirs = library_mod._scan_album_dirs(
+                    [str(root)], "{artist}/{album}", self._Pbar()
+                )
+            self.assertEqual(len(dirs), 1)
+            # A 1-1 tie: _most_common keeps the first-inserted key, so the
+            # alphabetically-first file's artist wins on every run.
+            self.assertEqual(dirs[0].artist, "Alpha")
+            self.assertEqual([s[0] for s in dirs[0].songs], ["01.mp3", "02.mp3"])
+
+    def test_progress_counts_every_file_once(self):
+        # The pbar moved from the per-file loop into read_tags_concurrent;
+        # the total it reports must not have changed.
+        class _Counting:
+            def __init__(self):
+                self.n = 0
+
+            def update(self, n: int = 1) -> None:
+                self.n += n
+
+        pbar = _Counting()
+        dirs = library_mod._scan_album_dirs([FIXTURE], "{artist}/{album}", pbar)
+        self.assertEqual(pbar.n, sum(len(d.songs) for d in dirs))
+        self.assertEqual(pbar.n, count_audio_files([FIXTURE]))
 
 
 if __name__ == "__main__":

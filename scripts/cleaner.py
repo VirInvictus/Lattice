@@ -80,7 +80,7 @@ try:
 except ImportError:  # tag normalization (--normalize-tags) needs mutagen
     MUTAGEN_OK = False
 
-__version__ = "1.3.4"
+__version__ = "1.3.5"
 
 # Containers whose title/album/artist/albumartist the tag pass can rewrite. Other
 # AUDIO_EXT members (.wav/.aac/.alac/.ape/.wv/.aiff) carry no handled tag layout
@@ -1029,13 +1029,19 @@ def main() -> int:
             return 1
 
     log_path = Path(args.log_path) if args.log_path else root / "cleanup.log"
-    run = Run(
-        root,
-        log_path,
-        dry_run=args.dry_run,
-        normalize_tags=args.normalize_tags,
-        artist_depth=artist_depth,
-    )
+    try:
+        run = Run(
+            root,
+            log_path,
+            dry_run=args.dry_run,
+            normalize_tags=args.normalize_tags,
+            artist_depth=artist_depth,
+        )
+    except OSError as e:
+        # Run opens the log in its constructor; an unwritable path used to be a
+        # bare traceback. rerate.py/replaygain.py report and exit 1.
+        print(f"error: cannot open log file {log_path}: {e}", file=sys.stderr)
+        return 1
 
     try:
         run.log("=" * 70)

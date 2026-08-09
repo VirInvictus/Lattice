@@ -1,6 +1,6 @@
 # Lattice Application Specification
 
-**Version:** 4.10.2  
+**Version:** 4.11.0  
 **Language:** Python 3.14+  
 **Dependencies:** mutagen, tqdm  
 **License:** MIT
@@ -31,7 +31,7 @@ The codebase is structured as a proper Python package (`src/lattice/`) managed b
 - `tui.py`: Full-screen interactive curses interface.
 - `tags.py`: Extraction logic (`TagBundle`) over mutagen.
 - `utils.py`: Shared utilities (progress bars, terminal formatting).
-- `config.py`: Default constants, the default path-extraction `layout`, and persistent library root configuration (`~/.config/lattice/config.json`).
+- `config.py`: Default constants, the default path-extraction `layout`, the tag-read worker count (`tag_workers`), and persistent library root configuration (`~/.config/lattice/config.json`).
 - `modes/`: The individual operation features (e.g., `library.py`, `integrity.py`, `artwork.py`).
 
 ### 2.2 Tag Reading
@@ -45,8 +45,23 @@ The canonical POPM bytes (1/64/128/196/255) map to whole stars regardless of
 the frame's rater email; `FMPS_Rating`-style tags are read on their 0.0-1.0
 scale; other values fall back to a magnitude heuristic (0-5, 0-10, 0-100,
 0-255).
+A file may carry several rating-ish keys at once (`rating` alongside
+`album rating`, `love rating`, or a tagger's private key). Selection is
+ranked, never first-match: the standard names win, an album-level rating ranks
+last because it is not the track's rating, and ties break alphabetically. This
+is a correctness requirement, not a preference: mutagen builds a Vorbis
+comment's key list from a set, so first-match selection made the reported
+rating depend on the interpreter's hash seed and vary between runs.
 When a file is missing an artist, album, or genre tag, that field is recovered
 from the file's path according to the configured `layout`.
+
+Tag reads are serial by default. Threading them is a measured regression
+(mutagen decodes in Python, so the GIL is held for everything but the file
+open), but it can pay off on storage where an open genuinely blocks, so the
+worker count is tunable: the `tag_workers` config key or the
+`LATTICE_TAG_WORKERS` environment variable, as an integer or `auto`. This is
+independent of `--workers`, which sizes the subprocess pool in the integrity
+modes and is unaffected.
 
 ### 2.3 Supported Formats
 

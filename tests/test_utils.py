@@ -1,5 +1,10 @@
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
+import lattice.config as config
 import lattice.utils as utils
 from lattice.utils import (
     normalize_rating,
@@ -195,6 +200,92 @@ class ResetTerminalSessionGuardTests(unittest.TestCase):
         ):
             utils._reset_terminal()
         run.assert_called_once()
+
+
+class TagWorkersTests(unittest.TestCase):
+    """Tag reads are serial by default (mutagen parses under the GIL, so a pool
+    measured slower on local storage) but stay tunable for volumes where an
+    open really blocks."""
+
+    def setUp(self):
+        self._saved = os.environ.pop("LATTICE_TAG_WORKERS", None)
+
+    def tearDown(self):
+        os.environ.pop("LATTICE_TAG_WORKERS", None)
+        if self._saved is not None:
+            os.environ["LATTICE_TAG_WORKERS"] = self._saved
+
+    def test_default_is_serial(self):
+        with mock.patch.object(config, "load_config", return_value={}):
+            self.assertEqual(config.get_tag_workers(), 1)
+
+    def test_env_overrides_config(self):
+        os.environ["LATTICE_TAG_WORKERS"] = "6"
+        with mock.patch.object(config, "load_config", return_value={"tag_workers": 2}):
+            self.assertEqual(config.get_tag_workers(), 6)
+
+    def test_config_key_used_when_no_env(self):
+        with mock.patch.object(config, "load_config", return_value={"tag_workers": 4}):
+            self.assertEqual(config.get_tag_workers(), 4)
+
+    def test_auto_scales_with_cpus_and_caps(self):
+        os.environ["LATTICE_TAG_WORKERS"] = "auto"
+        with mock.patch.object(config.os, "cpu_count", return_value=2):
+            self.assertEqual(config.get_tag_workers(), 4)
+        with mock.patch.object(config.os, "cpu_count", return_value=64):
+            self.assertEqual(config.get_tag_workers(), 16)
+
+    def test_garbage_falls_back_to_default(self):
+        os.environ["LATTICE_TAG_WORKERS"] = "not-a-number"
+        with mock.patch.object(config, "load_config", return_value={}):
+            self.assertEqual(config.get_tag_workers(), 1)
+
+    def test_zero_and_negative_mean_serial(self):
+        with mock.patch.object(config, "load_config", return_value={}):
+            for v in ("0", "-4"):
+                os.environ["LATTICE_TAG_WORKERS"] = v
+                self.assertEqual(config.get_tag_workers(), 1)
+
+    def test_map_concurrent_is_correct_either_way(self):
+        paths = [f"p{i}" for i in range(20)]
+        expected = {p: p.upper() for p in paths}
+        for workers in (1, 8):
+            self.assertEqual(
+                utils.map_concurrent(str.upper, paths, workers=workers), expected
+            )
+
+
+class FindCoverFileTests(unittest.TestCase):
+    """_has_cover_file is the boolean form of _find_cover_file; the art-quality
+    audit needs the path, so the COVER_NAMES lookup lives in one place."""
+
+    def _dir(self, td, *names):
+        for n in names:
+            (Path(td) / n).write_bytes(b"")
+        return td
+
+    def test_matches_case_insensitively(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._dir(td, "Folder.JPG")
+            self.assertEqual(utils._find_cover_file(td), os.path.join(td, "Folder.JPG"))
+            self.assertTrue(utils._has_cover_file(td))
+
+    def test_none_when_no_cover(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._dir(td, "01.mp3", "notes.txt")
+            self.assertIsNone(utils._find_cover_file(td))
+            self.assertFalse(utils._has_cover_file(td))
+
+    def test_pick_is_deterministic_across_several_covers(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._dir(td, "front.png", "cover.jpg", "album.jpeg")
+            # Sorted, so a directory carrying more than one recognized name
+            # does not depend on readdir order.
+            self.assertEqual(os.path.basename(utils._find_cover_file(td)), "album.jpeg")
+
+    def test_unreadable_directory_is_none(self):
+        self.assertIsNone(utils._find_cover_file("/nonexistent-lattice-dir"))
+        self.assertFalse(utils._has_cover_file("/nonexistent-lattice-dir"))
 
 
 if __name__ == "__main__":

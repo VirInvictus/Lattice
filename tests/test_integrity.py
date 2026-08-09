@@ -1,7 +1,15 @@
+import os
+import tempfile
+import time
 import unittest
+from pathlib import Path
+from unittest import mock
 
+import lattice.modes.integrity as integrity_mod
 from lattice.modes.integrity import (
     classify_decode,
+    run_mp3_mode,
+    _find_files_by_ext_path,
     TIER_OK,
     TIER_METADATA,
     TIER_SUSPECT,
@@ -112,6 +120,96 @@ class Mp3HeaderInfoTests(unittest.TestCase):
         )
         meta = _mutagen_header_info(fixture)
         self.assertEqual(meta.get("vbr_mode"), "CBR")
+
+
+class FindFilesByExtTests(unittest.TestCase):
+    """The integrity file walk must agree with utils.iter_audio_dirs, which
+    every other mode uses: hidden directories are pruned, and the order is
+    stable so two scans of one library produce comparable reports."""
+
+    def _tree(self, td: str) -> None:
+        for rel in (
+            "Zed/Album/02.mp3",
+            "Zed/Album/01.mp3",
+            "Abe/Album/01.mp3",
+            ".testing/Copy/01.mp3",
+            "Abe/.stash/01.mp3",
+        ):
+            p = Path(td) / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"")
+
+    def test_hidden_dirs_pruned(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._tree(td)
+            found = _find_files_by_ext_path([td], ".mp3")
+            rels = {str(p.relative_to(td)) for p in found}
+            self.assertEqual(
+                rels,
+                {
+                    os.path.join("Zed", "Album", "02.mp3"),
+                    os.path.join("Zed", "Album", "01.mp3"),
+                    os.path.join("Abe", "Album", "01.mp3"),
+                },
+            )
+
+    def test_results_are_sorted(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._tree(td)
+            found = [str(p) for p in _find_files_by_ext_path([td], ".mp3")]
+            self.assertEqual(found, sorted(found))
+
+    def test_explicit_file_root_still_accepted(self):
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "track.mp3"
+            f.write_bytes(b"")
+            self.assertEqual(_find_files_by_ext_path([str(f)], ".mp3"), [f])
+
+
+class DecodeReportOrderTests(unittest.TestCase):
+    """Rows come back in as_completed order, so the report sections sort by
+    path; without that, two runs over an unchanged library produced
+    differently-ordered reports that could not be diffed."""
+
+    def test_ok_section_is_path_sorted(self):
+        names = ["Abe", "Mid", "Zed"]
+        # Sleep longest for the alphabetically-first directory, so with a pool
+        # the futures complete in exactly reverse-sorted order. Without the
+        # sort in _section the report comes out Zed/Mid/Abe and this fails;
+        # relying on scheduling luck would have made the guard meaningless.
+        delay = {n: (len(names) - i) * 0.02 for i, n in enumerate(names)}
+        real = integrity_mod._scan_one_file
+
+        def slow(path, ffmpeg_path, *, enrich=False):
+            time.sleep(delay.get(Path(path).parent.name, 0.0))
+            return real(path, ffmpeg_path, enrich=enrich)
+
+        with tempfile.TemporaryDirectory() as td:
+            for name in names:
+                p = Path(td) / name / "01.mp3"
+                p.parent.mkdir(parents=True)
+                p.write_bytes(b"")
+            out = Path(td) / "report.txt"
+            # A nonexistent --ffmpeg makes every file skip its decode and land
+            # in OK, which --no-only-errors then lists; no decoder needed.
+            with mock.patch.object(integrity_mod, "_scan_one_file", slow):
+                rc = run_mp3_mode(
+                    [td],
+                    str(out),
+                    len(names),
+                    os.path.join(td, "no-such-ffmpeg"),
+                    only_errors=False,
+                    verbose=False,
+                    quiet=True,
+                )
+            self.assertEqual(rc, 0)
+            listed = [
+                ln.strip()
+                for ln in out.read_text(encoding="utf-8").splitlines()
+                if ln.startswith("  ") and ln.strip().endswith("01.mp3")
+            ]
+            self.assertEqual(listed, sorted(listed))
+            self.assertEqual(len(listed), 3)
 
 
 if __name__ == "__main__":

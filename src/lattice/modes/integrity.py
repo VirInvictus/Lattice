@@ -278,7 +278,12 @@ def _find_ffmpeg(explicit_path: str | None) -> str | None:
 def _find_files_by_ext_path(roots, ext: str) -> list[Path]:
     """Collect files matching `ext` across one or more roots (each a directory or
     a single file), as Path objects. Roots are normalized to absolute paths so a
-    later relpath against the same roots lines up."""
+    later relpath against the same roots lines up.
+
+    Hidden directories are pruned to match utils.iter_audio_dirs: every other
+    mode skips them, so an integrity scan was the one place a `.testing/` copy
+    of an album got decoded. Directories and filenames are walked in sorted
+    order so the same library yields the same file list twice running."""
     out: list[Path] = []
     for r in as_roots(roots):
         p = Path(r)
@@ -286,8 +291,9 @@ def _find_files_by_ext_path(roots, ext: str) -> list[Path]:
             if p.suffix.lower() == ext:
                 out.append(p)
             continue
-        for dirpath, _, files in os.walk(r):
-            for fn in files:
+        for dirpath, dirs, files in os.walk(r):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for fn in sorted(files):
                 if os.path.splitext(fn)[1].lower() == ext:
                     out.append(Path(dirpath) / fn)
     return out
@@ -494,7 +500,10 @@ def _run_decode_scan(
             return
         handle.write(f"{tier} ({len(rows)})\n")
         handle.write("-" * 40 + "\n")
-        for r in rows:
+        # Sorted by path: rows arrive in as_completed order, so without this two
+        # scans of an unchanged library produced differently-ordered reports and
+        # could not be diffed. (run_flac_mode already sorted its sections.)
+        for r in sorted(rows, key=lambda row: row["path"]):
             rel = relpath_under(r["path"], roots)
             meta = _format_row_meta(r) if enrich else ""
             if compact:

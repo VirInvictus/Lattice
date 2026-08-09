@@ -5,9 +5,11 @@ import unittest
 from pathlib import Path
 
 from lattice.tags import (
+    _best_rating,
     _first_text,
     _parse_track_number,
     _popm_stars,
+    _rating_rank,
     _rg_flags,
     _tag_rating,
     get_all_tags,
@@ -20,6 +22,15 @@ FIXTURE_MP3 = str(
     / "Cursive"
     / "Domestica"
     / "01 - The Casualty.mp3"
+)
+
+FIXTURE_FLAC = str(
+    Path(__file__).parent
+    / "fixtures"
+    / "library"
+    / "Aphex Twin"
+    / "Selected Ambient Works"
+    / "01 - Xtal.flac"
 )
 
 
@@ -152,6 +163,71 @@ class ReplayGainFlagsTests(unittest.TestCase):
 
     def test_no_replaygain(self):
         self.assertEqual(_rg_flags(["TIT2", "TALB"]), (False, False))
+
+
+class BestRatingTests(unittest.TestCase):
+    """A file can carry several rating-ish keys. mutagen's VCommentDict.keys()
+    is built from a set, so its order is hash-randomized per process; taking
+    the first match made such a file report a different rating on every run.
+    The candidates are ranked instead."""
+
+    def test_track_rating_beats_album_rating(self):
+        # The real shape: an Opus file with both "rating" (the track's, 4) and
+        # "album rating" (90 -> 4.5). The track rating is the right answer, and
+        # it must win whichever order the container yields.
+        pairs = [("rating", "4"), ("album rating", "90")]
+        self.assertEqual(_best_rating(pairs), 4.0)
+        self.assertEqual(_best_rating(list(reversed(pairs))), 4.0)
+
+    def test_order_never_changes_the_answer(self):
+        import itertools
+
+        pairs = [("album rating", "90"), ("_custom_rating", "8"), ("rating", "4")]
+        results = {_best_rating(list(p)) for p in itertools.permutations(pairs)}
+        self.assertEqual(results, {4.0})
+
+    def test_non_numeric_candidate_is_skipped(self):
+        # A "love rating" of "L" is not a star count; the numeric one is used.
+        self.assertEqual(_best_rating([("love rating", "L"), ("rating", "5")]), 5.0)
+
+    def test_no_numeric_candidate_is_none(self):
+        self.assertIsNone(_best_rating([("love rating", "L")]))
+
+    def test_empty_is_none(self):
+        self.assertIsNone(_best_rating([]))
+
+    def test_empty_list_value_does_not_raise(self):
+        self.assertIsNone(_best_rating([("rating", [])]))
+
+    def test_fmps_scale_still_applies(self):
+        self.assertEqual(_best_rating([("fmps_rating", "0.8")]), 4.0)
+
+    def test_rank_orders_standard_then_other_then_album(self):
+        self.assertLess(_rating_rank("rating"), _rating_rank("_custom_rating"))
+        self.assertLess(_rating_rank("_custom_rating"), _rating_rank("album rating"))
+        self.assertLess(_rating_rank("rating"), _rating_rank("score"))
+
+
+class VorbisRatingSelectionTests(unittest.TestCase):
+    """End-to-end over a real FLAC: the conflicting-keys case reads the same
+    value regardless of how mutagen orders the comment keys."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._tmp.name, "track.flac")
+        shutil.copy(FIXTURE_FLAC, self.path)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_album_rating_does_not_win(self):
+        from mutagen.flac import FLAC
+
+        audio = FLAC(self.path)
+        audio["RATING"] = ["4"]
+        audio["ALBUM RATING"] = ["90"]
+        audio.save()
+        self.assertEqual(get_all_tags(self.path).rating, 4.0)
 
 
 if __name__ == "__main__":

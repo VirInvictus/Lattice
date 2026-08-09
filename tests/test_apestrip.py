@@ -738,5 +738,44 @@ class MainTests(unittest.TestCase):
         self.assertIn("1 error(s)", out)
 
 
+class IterMp3sTests(unittest.TestCase):
+    """The walk prunes hidden directories, matching rerate.py and
+    replaygain.py. apestrip is the destructive one, so a `.testing/` working
+    copy of an album must not be rewritten behind the user's back."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        for rel in (
+            "Zed/Album/02.mp3",
+            "Zed/Album/01.mp3",
+            "Abe/Album/01.mp3",
+            ".testing/Copy/01.mp3",
+            "Abe/.stash/01.mp3",
+            "Abe/Album/cover.jpg",
+        ):
+            p = Path(self.root) / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_hidden_dirs_pruned(self):
+        found = {os.path.relpath(p, self.root) for p in apestrip._iter_mp3s(self.root)}
+        self.assertEqual(
+            found,
+            {
+                os.path.join("Zed", "Album", "02.mp3"),
+                os.path.join("Zed", "Album", "01.mp3"),
+                os.path.join("Abe", "Album", "01.mp3"),
+            },
+        )
+
+    def test_walk_order_is_sorted(self):
+        found = list(apestrip._iter_mp3s(self.root))
+        self.assertEqual(found, sorted(found))
+
+
 if __name__ == "__main__":
     unittest.main()

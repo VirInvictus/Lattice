@@ -94,7 +94,7 @@ from mutagen.id3 import (
     TDRC,
 )
 
-__version__ = "1.1.2"
+__version__ = "1.2.0"
 
 # APE key (lowercased) -> simple ID3 text frame class. Genre/Rating/Comment/cover/
 # lyrics are handled out of band; every other *text* item is preserved via a
@@ -631,7 +631,11 @@ def process_file(
 
 
 def _iter_mp3s(root: str):
-    for dirpath, _, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune hidden dirs (.testing/ album copies etc.), like rerate.py and
+        # replaygain.py. This is the destructive one, so scanning a hidden
+        # working copy was the worst place for the inconsistency to live.
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for fn in sorted(filenames):
             if fn.lower().endswith(AUDIO_EXT):
                 yield os.path.join(dirpath, fn)
@@ -684,7 +688,15 @@ def main() -> int:
         return 1
 
     log_path = args.log_path or os.path.join(root, "apestrip.log")
-    log_fh = None if args.dry_run else open(log_path, "a", encoding="utf-8")
+    log_fh = None
+    if not args.dry_run:
+        try:
+            log_fh = open(log_path, "a", encoding="utf-8")
+        except OSError as e:
+            # rerate.py/replaygain.py report this and exit 1; an unwritable log
+            # path used to be a bare traceback here.
+            print(f"error: cannot open log file {log_path}: {e}", file=sys.stderr)
+            return 1
 
     def log(msg: str) -> None:
         print(msg)

@@ -2,7 +2,7 @@ import re
 import os
 import json
 
-VERSION = "4.10.2"
+VERSION = "4.11.0"
 
 DEFAULT_LIBRARY_OUTPUT = "music_library.txt"
 DEFAULT_FLAC_OUTPUT = "flac_errors.txt"
@@ -82,6 +82,37 @@ def get_layout() -> str:
     set (e.g. "{genre}/{artist}/{album}" for a genre-first library), else
     DEFAULT_LAYOUT. Lets a user pin a non-default tree shape once by hand."""
     return load_config().get("layout") or DEFAULT_LAYOUT
+
+
+# Thread count for tag reads (stats, tag/bitrate/ReplayGain audits, duplicates).
+# Serial by default: mutagen parses tags in Python, so the GIL is held for all
+# but the file open, and on local storage a pool costs more than it saves —
+# measured 1.4-1.5x SLOWER than serial across a 9.6k-file NVMe/ntfs-3g library.
+# The pool is kept rather than deleted because the picture inverts where an
+# open really blocks (SMB/NFS shares, spinning disks, a sleeping external
+# drive): there the overlap is free latency-hiding. Gated on the storage, not
+# on a file count — concurrency loses at every library size on fast local
+# disks, so a "big library => go parallel" rule would pick the slow path
+# exactly where it hurts most.
+DEFAULT_TAG_WORKERS = 1
+
+
+def get_tag_workers() -> int:
+    """Tag-read thread count: LATTICE_TAG_WORKERS wins over the `tag_workers`
+    config key, else DEFAULT_TAG_WORKERS. "auto" means two per CPU (capped at
+    16); 1 or less means serial. An unparseable value falls back to the default
+    rather than failing a scan."""
+    raw = os.environ.get("LATTICE_TAG_WORKERS")
+    if raw is None:
+        raw = load_config().get("tag_workers")
+    if raw is None:
+        return DEFAULT_TAG_WORKERS
+    if str(raw).strip().lower() == "auto":
+        return max(1, min(16, (os.cpu_count() or 4) * 2))
+    try:
+        return max(1, int(raw))
+    except ValueError, TypeError:
+        return DEFAULT_TAG_WORKERS
 
 
 def get_library_roots() -> list[str]:

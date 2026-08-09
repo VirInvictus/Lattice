@@ -7,6 +7,8 @@ from collections import defaultdict
 from lattice.utils import (
     is_audio,
     _has_cover_file,
+    _find_cover_file,
+    _make_pbar,
     iter_audio_dirs,
     as_roots,
     relpath_under,
@@ -338,9 +340,6 @@ def run_art_quality_audit(
         print("ERROR: mutagen is required for art quality auditing.", file=sys.stderr)
         return 2
 
-    from lattice.config import COVER_NAMES
-    from lattice.utils import _make_pbar
-
     roots = as_roots(root)
     issues: list[dict[str, str]] = []
 
@@ -358,17 +357,7 @@ def run_art_quality_audit(
     for dirpath in dirs_with_audio:
         pbar.update(1)
 
-        try:
-            dir_files = os.listdir(dirpath)
-        except OSError:
-            continue
-
-        folder_art_path = None
-        for f in dir_files:
-            if f.lower() in COVER_NAMES:
-                folder_art_path = os.path.join(dirpath, f)
-                break
-
+        folder_art_path = _find_cover_file(dirpath)
         art_data = None
         source = ""
 

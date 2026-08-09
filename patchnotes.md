@@ -1,5 +1,43 @@
 # Lattice Patch Notes
 
+## v4.11.0 (2026-08-09)
+
+Second full-repo sweep on top of v4.10.2 (suite 487 to 520). One fix corrects a defect that made report values non-reproducible between runs, and one performance finding reverses a long-standing default; both are called out first.
+
+- **Behavior change: ratings are selected by rank, not by whichever key the container happened to yield first.** A file can carry several rating-ish keys at once (`rating` beside `album rating`, `love rating`, or a tagger's private `_custom_rating`). `get_all_tags` took the first match and stopped, and mutagen builds a Vorbis comment's key list from a `set`, whose iteration order is randomized per process by Python's hash seed. **The same FLAC/Opus file therefore reported a different rating on different runs**: 41 files in a 9,589-file library were affected, so `--playlist "rating >= 4"` and the `--stats` rating histogram silently disagreed with themselves between invocations. Candidates are now ranked (the standard names first, an album-level rating last because it is not the track's rating, alphabetical ties), which also fixes `album rating` outranking a real track rating. Applied to all four container branches (ID3 TXXX, MP4, Vorbis, ASF); verified stable across eight hash seeds and byte-identical across whole-library runs.
+- **Behavior change: tag reads are serial by default, and the worker count is now tunable.** The concurrent tag read was never a win: mutagen decodes in Python, so the GIL is held for everything except the file open, and the per-task handoff costs more than the overlap saves. Measured with hyperfine on a 9,589-file NVMe library, serial is 1.41x faster for `--stats` (9.6s vs 15.3s user CPU) and 1.49x faster for `--auditTags`; `--stats` wall clock drops from 16.3s to 11.4s. The pool is kept rather than removed, because the picture inverts where an open genuinely blocks (SMB/NFS shares, spinning disks): set the `tag_workers` config key or the `LATTICE_TAG_WORKERS` environment variable to an integer or `auto` to opt back in. Gated on the storage rather than on a file count, since concurrency loses at every library size on fast local disk. `--workers` in the integrity modes is a different pool (flac/ffmpeg subprocesses, which do release the GIL) and is unchanged.
+- **Fix: integrity modes no longer scan hidden directories.** `--testFLAC`, `--testMP3`, `--testOpus`, `--testWAV`, and `--testWMA` walked with a bare `os.walk`, while every other mode goes through `iter_audio_dirs` and prunes dot-directories. A scratch tree with a `.hidden/` copy measured 7 files found against the package's own 3, so a `.testing/` working copy of an album was decoded on every integrity run. The walk now prunes and is sorted.
+- **Fix: MP3/Opus/WAV/WMA report rows are ordered by path.** Rows were appended in `as_completed` order and written unsorted, so two scans of an unchanged library produced differently-ordered reports that could not be diffed. `run_flac_mode` already sorted its sections; the decode scanner now matches.
+- **Fix: a tie in a directory's dominant artist/album/genre breaks the same way every run.** `_scan_album_dirs` iterated `os.walk`'s raw readdir order, so a directory whose files split evenly between two artists picked its headline name by coin flip. Filenames are now sorted before the tally.
+- **Fix: `--auditArtQuality` picks the same cover twice running.** A directory holding more than one recognized cover name took whichever `os.listdir` returned first. The lookup is now shared with `_has_cover_file` through `utils._find_cover_file` and is sorted.
+- Fix: an empty-list tag value no longer raises. The rating readers did `val[0] if isinstance(val, list) else val`, which raised `IndexError` on an empty list rather than reading as absent.
+- Cleanup: `stats.py` had four copies of `import lattice.utils as utils` inside one function (hoisted to module scope, which preserves the deferred `IN_TUI` lookup they existed for), a dead `fsize = 0` assignment, and an inline extension test where `is_audio` already exists.
+- Tests: 33 new, covering hidden-directory pruning in the integrity walk, decode-report ordering (the guard forces reverse-completion order rather than trusting scheduling luck), rating rank selection and its permutation-invariance, the tag-worker knob, the shared cover lookup, and scan tie-break determinism. Suite at 520.
+- Verification: `--library`, `--ai-library`, `--all-wings`, `--playlist`, `--stats`, and `--auditTags` were diffed against a v4.10.2 baseline over the real 9,589-file library and are byte-identical apart from the intended rating corrections.
+
+## apestrip.py v1.2.0 (2026-08-09)
+
+- **Behavior change: hidden directories are pruned.** The walk descended into dot-directories, unlike `rerate.py` and `replaygain.py`, which both prune and document `.testing/` album copies as the reason. This is the destructive companion, so a hidden working copy was the worst place for the inconsistency to sit. Directory and file order is now sorted too, so a run's worklist is deterministic.
+- Fix: an unwritable log path is reported instead of raising. `open()` on the log was unguarded, so a bad `--log` produced a traceback where `rerate.py` and `replaygain.py` print `error: cannot open log file` and exit 1.
+
+## rerate.py v1.1.0 (2026-08-09)
+
+- **Fix: a dry-run reports the same read errors as the apply run.** `read_remaps` caught every exception and returned a bare `[]`, so an unreadable MP3 counted as "no changes" and the dry-run summary claimed zero errors on files the apply run then reported as failures. It now returns `(changes, error)`, the same shape `rerate_file` returns, and distinguishes a missing ID3 header (not an error) from a genuine read failure. The two paths share one `_popm_changes` helper so they cannot drift again.
+- Note for callers: `read_remaps` returns a tuple now, not a list.
+
+## genre_tidy.py v1.3.0 (2026-08-09)
+
+- **Behavior change: `apply` exits 1 when any album failed to retag.** It returned 0 unconditionally, so a wrapper script could not tell a clean run from one where every write failed. `retag.py`, `rerate.py`, and `replaygain.py` all already returned nonzero on error; `apply` now matches.
+- Fix: `build`'s "N artist(s) carry multiple genres" count is accurate. It counted every row beginning with `#`, which also swept up the `EXCLUDED` compilation comments and the "no genre tags found" comments, so the number bore little relation to the artists actually worth reviewing. It is now counted from the reduced artists that genuinely carry more than one genre.
+
+## cleaner.py v1.3.5 (2026-08-09)
+
+- Fix: an unwritable log path is reported instead of raising. `Run` opens the log in its constructor, so a bad `--log` produced a traceback; it now prints `error: cannot open log file` and exits 1, matching the other companions.
+
+## retag.py v1.1.4 (2026-08-09)
+
+- Fix: an unwritable `--log` path is reported instead of raising, matching the other companions.
+
 ## v4.10.2 (2026-08-07)
 
 Full-repo bug sweep (package, TUI, and all seven companions reviewed; every fix below is regression-tested; suite 462 to 487). Three fixes change report values on purpose, called out first.

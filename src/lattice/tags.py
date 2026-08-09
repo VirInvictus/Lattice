@@ -46,6 +46,44 @@ def _popm_stars(byte: int) -> float | None:
     return rating if rating is not None else normalize_rating(byte)
 
 
+# Rating tag names in preference order. A file can carry several rating-ish
+# keys at once (Picard and foobar exports add "album rating"; some players add
+# "love rating" or a "_custom_rating"), and taking whichever the container
+# yielded first made the answer depend on the process's hash seed: mutagen's
+# VCommentDict.keys() is built from a set, so a Vorbis/FLAC/Opus file's key
+# order is randomized per run. 41 files in a 9.6k library read a different
+# rating on each scan that way, which quietly changed `rating >= 4` playlists
+# and the stats histogram between runs. An album-level rating is never the
+# track's rating, so it ranks last rather than being trusted on a coin flip.
+_RATING_PREFERRED = ("rating", "fmps_rating", "score", "stars", "rate")
+
+
+def _rating_rank(key: str) -> tuple[int, str]:
+    """Sort key for rating candidates: the standard names first (in
+    _RATING_PREFERRED order), then anything else, then album-level keys. Ties
+    break alphabetically, so the pick never depends on iteration order."""
+    if key in _RATING_PREFERRED:
+        return (0, f"{_RATING_PREFERRED.index(key):02d}")
+    if "album" in key:
+        return (2, key)
+    return (1, key)
+
+
+def _best_rating(candidates) -> float | None:
+    """Decode the best rating from (lowercased key, value) pairs. Non-numeric
+    values (a "love rating" of "L") are skipped, as before; the difference is
+    that the surviving candidates are ranked instead of first-wins."""
+    for key, val in sorted(candidates, key=lambda c: _rating_rank(c[0])):
+        if _looks_numeric(val):
+            return _tag_rating(key, val)
+    return None
+
+
+def _unwrap(val):
+    """First element of a mutagen multi-value list, or the value itself."""
+    return val[0] if isinstance(val, list) and val else val
+
+
 def _tag_rating(key: str, val) -> float | None:
     """Decode one rating-ish tag value, scale-aware. FMPS_* tags store 0.0-1.0
     floats by spec, which normalize_rating's magnitude heuristic would read as
@@ -237,13 +275,14 @@ def get_all_tags(file_path: str) -> TagBundle:
                             rating = _popm_stars(popm.rating)
                             break
                 if rating is None:
+                    txxx_candidates = []
                     for txxx in tags.getall("TXXX"):
                         desc = (txxx.desc or "").lower()
                         if "rating" in desc or desc in ("rate", "score", "stars"):
-                            val = txxx.text[0] if txxx.text else None
-                            if _looks_numeric(val):
-                                rating = _tag_rating(desc, val)
-                                break
+                            txxx_candidates.append(
+                                (desc, txxx.text[0] if txxx.text else None)
+                            )
+                    rating = _best_rating(txxx_candidates)
 
         elif isinstance(audio, MP4):
             title = _first_text(tags.get("\xa9nam"))
@@ -255,13 +294,12 @@ def get_all_tags(file_path: str) -> TagBundle:
                 if v:
                     genre = _first_text(v)
                     break
+            mp4_candidates = []
             for k, v in tags.items():
                 kl = k.lower() if isinstance(k, str) else str(k).lower()
                 if "rate" in kl or "rating" in kl:
-                    v = v[0] if isinstance(v, list) else v
-                    if _looks_numeric(v):
-                        rating = _tag_rating(kl, v)
-                        break
+                    mp4_candidates.append((kl, _unwrap(v)))
+            rating = _best_rating(mp4_candidates)
 
         elif isinstance(audio, (FLAC, OggVorbis, OggOpus)):
             keys = {k.lower(): k for k in tags.keys()}
@@ -277,16 +315,12 @@ def get_all_tags(file_path: str) -> TagBundle:
                 album = _first_text(tags[keys["album"]])
             if "genre" in keys:
                 genre = _first_text(tags[keys["genre"]])
+            vorbis_candidates = []
             for key, val in tags.items():
-                if (
-                    "rating" in key.lower()
-                    or "score" in key.lower()
-                    or "stars" in key.lower()
-                ):
-                    val = val[0] if isinstance(val, list) else val
-                    if _looks_numeric(val):
-                        rating = _tag_rating(key.lower(), val)
-                        break
+                kl = key.lower()
+                if "rating" in kl or "score" in kl or "stars" in kl:
+                    vorbis_candidates.append((kl, _unwrap(val)))
+            rating = _best_rating(vorbis_candidates)
 
         elif isinstance(audio, ASF):
             name_map = {k_name.lower(): k_name for k_name in tags.keys()}
@@ -302,12 +336,12 @@ def get_all_tags(file_path: str) -> TagBundle:
                 album = _first_text(tags.get(key_name))
             if key_name := name_map.get("wm/genre"):
                 genre = _first_text(tags.get(key_name))
+            asf_candidates = []
             for key, val in tags.items():
-                if "rating" in key.lower():
-                    val = val[0] if isinstance(val, list) else val
-                    if _looks_numeric(val):
-                        rating = _tag_rating(key.lower(), val)
-                        break
+                kl = key.lower()
+                if "rating" in kl:
+                    asf_candidates.append((kl, _unwrap(val)))
+            rating = _best_rating(asf_candidates)
 
         # Fallback: generic tag iteration for album/genre if still missing
         if album is None or genre is None:

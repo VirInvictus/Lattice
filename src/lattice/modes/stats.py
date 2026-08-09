@@ -1,15 +1,17 @@
 import os
 from collections import Counter, defaultdict
 
+from lattice import utils
 from lattice.utils import (
     count_audio_files,
+    is_audio,
     _make_pbar,
     iter_audio_dirs,
     as_roots,
     parse_layout,
     read_tags_concurrent,
 )
-from lattice.config import AUDIO_EXTENSIONS, DEFAULT_LAYOUT
+from lattice.config import DEFAULT_LAYOUT
 
 # =====================================
 # Mode: Library statistics
@@ -67,13 +69,9 @@ def run_stats(
 
     total_files = count_audio_files(roots)
     if total_files == 0:
-        import lattice.utils as utils
-
         if not quiet and not utils.IN_TUI:
             print(f"No audio files found under: {', '.join(roots)}")
         return ""
-
-    import lattice.utils as utils
 
     if not quiet and not utils.IN_TUI:
         print(f"Scanning {total_files} files under: {', '.join(roots)}")
@@ -101,7 +99,7 @@ def run_stats(
         (os.path.join(dirpath, f), src_root)
         for src_root, dirpath, _dirs, files in iter_audio_dirs(roots)
         for f in sorted(files)
-        if os.path.splitext(f)[1].lower() in AUDIO_EXTENSIONS
+        if is_audio(f)
     ]
     tags = read_tags_concurrent([e[0] for e in entries], pbar=pbar)
     pbar.close()
@@ -115,7 +113,7 @@ def run_stats(
             total_size += fsize
             format_sizes[ext] += fsize
         except OSError:
-            fsize = 0
+            pass
 
         t = tags[filepath]
 
@@ -253,13 +251,9 @@ def run_stats(
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as out_file:
             out_file.write(report)
-        import lattice.utils as utils
-
         if not quiet and not utils.IN_TUI:
             print(f"\nStatistics written to: {out_path}")
     else:
-        import lattice.utils as utils
-
         if not quiet and not utils.IN_TUI:
             print()
             print(report)

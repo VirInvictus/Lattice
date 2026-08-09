@@ -42,7 +42,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-__version__ = "1.2.3"
+__version__ = "1.3.0"
 
 # Folds curly quotes, dash variants, and case so artist/genre strings compare
 # the way a human reads them. Mirrors audit._norm_key / cleaner.normalize_name;
@@ -309,7 +309,14 @@ def cmd_build(args) -> int:
     rows = build_rows(reduced)
     map_path.parent.mkdir(parents=True, exist_ok=True)
     map_path.write_text("\n".join(TSV_HEADER + rows) + "\n", encoding="utf-8")
-    flagged = sum(1 for r in rows if r.startswith("#"))
+    # Counted from the reduced artists, not from rows starting with "#": that
+    # also swept up the EXCLUDED and "no genre tags" comments and reported them
+    # as multi-genre artists.
+    flagged = sum(
+        1
+        for key, (_display, genres) in reduced.items()
+        if key not in EXCLUDED_ARTISTS and len(genres) > 1
+    )
     print(f"Wrote {len(reduced)} artists to {map_path}.")
     print(f"  {flagged} artist(s) carry multiple genres (commented with counts).")
     print("Trim any stray genres, then: genre_tidy.py apply <library> --dry-run")
@@ -430,7 +437,9 @@ def cmd_apply(args) -> int:
     if stats["errors"]:
         print(f"  {stats['errors']} retag error(s) — see log.")
     print(f"Log: {log_path}")
-    return 0
+    # Nonzero when any album failed to retag, matching retag.py, rerate.py and
+    # replaygain.py; apply used to exit 0 no matter how many writes failed.
+    return 1 if stats["errors"] else 0
 
 
 def main() -> int:

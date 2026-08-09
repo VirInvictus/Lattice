@@ -44,7 +44,7 @@ from datetime import datetime
 
 from mutagen.id3 import ID3, ID3NoHeaderError
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 
 # DeaDBeeF byte -> foobar/WMP byte that both players read as the same stars.
 # The map is deliberately closed. DeaDBeeF writes ~stars*63.75 (1*->64, 2*->127,
@@ -61,20 +61,32 @@ def remap_popm(rating: int) -> int | None:
     return REMAP.get(rating)
 
 
-def read_remaps(filepath: str) -> list[tuple[str, int, int]]:
-    """The POPM remaps that *would* be applied to one MP3, as
-    (email, old_byte, new_byte). Reads only; never mutates, saves, or raises.
-    Shared by the dry-run preview and rerate_file so both see the same changes."""
-    try:
-        tags = ID3(filepath)
-    except Exception:
-        return []
+def _popm_changes(tags, *, mutate: bool = False) -> list[tuple[str, int, int]]:
+    """Remappable POPM frames of a loaded ID3 tag, as (email, old, new). With
+    mutate=True the frames' rating bytes are rewritten in place. Shared by the
+    dry-run preview and the apply path so the two can't diverge."""
     changes: list[tuple[str, int, int]] = []
     for popm in tags.getall("POPM"):
         new = remap_popm(popm.rating)
         if new is not None:
             changes.append((getattr(popm, "email", ""), popm.rating, new))
+            if mutate:
+                popm.rating = new
     return changes
+
+
+def read_remaps(filepath: str) -> tuple[list[tuple[str, int, int]], str | None]:
+    """The POPM remaps that *would* be applied to one MP3, as (changes, error) —
+    the same shape rerate_file returns. Reads only; never mutates, saves, or
+    raises. Returning a bare [] on a read failure made a dry-run report zero
+    errors on files the apply run then reported as unreadable."""
+    try:
+        tags = ID3(filepath)
+    except ID3NoHeaderError:
+        return [], None  # no ID3 tag, so no POPM to remap
+    except Exception as e:
+        return [], f"read failed: {e}"
+    return _popm_changes(tags), None
 
 
 def rerate_file(filepath: str) -> tuple[list[tuple[str, int, int]], str | None]:
@@ -88,12 +100,7 @@ def rerate_file(filepath: str) -> tuple[list[tuple[str, int, int]], str | None]:
         return [], None  # no ID3 tag, so no POPM to remap
     except Exception as e:
         return [], f"read failed: {e}"
-    changes: list[tuple[str, int, int]] = []
-    for popm in tags.getall("POPM"):
-        new = remap_popm(popm.rating)
-        if new is not None:
-            changes.append((getattr(popm, "email", ""), popm.rating, new))
-            popm.rating = new
+    changes = _popm_changes(tags, mutate=True)
     if changes:
         try:
             # v2.3 + refreshed ID3v1, same broad compatibility retag.py uses.
@@ -166,7 +173,7 @@ def main() -> int:
                 path = os.path.join(dirpath, f)
                 rel = os.path.relpath(path, root)
                 if args.dry_run:
-                    changes, error = read_remaps(path), None
+                    changes, error = read_remaps(path)
                 else:
                     changes, error = rerate_file(path)
                 if error:

@@ -10,6 +10,7 @@ from lattice.config import (
     COVER_NAMES,
     RE_CLEAN_PREFIX,
     RE_CLEAN_PATTERNS,
+    get_tag_workers,
 )
 
 try:
@@ -172,10 +173,12 @@ def count_audio_files(root) -> int:
 
 
 def default_tag_workers() -> int:
-    """Thread count for tag reads. Tag parsing is largely I/O-bound (open the
-    file, read a header), so a small pool overlaps that latency without
-    oversubscribing; capped to stay friendly on shared/network filesystems."""
-    return max(1, min(16, (os.cpu_count() or 4) * 2))
+    """Thread count for tag reads, from config.get_tag_workers (serial unless
+    the user opts in). Tag parsing is NOT the I/O-bound job it looks like:
+    mutagen decodes in Python, so the GIL is held for everything but the open,
+    and a pool measured 1.4-1.5x slower than serial on local storage. See
+    config.DEFAULT_TAG_WORKERS for when raising it pays off."""
+    return get_tag_workers()
 
 
 def map_concurrent(fn, paths, pbar=None, workers: int | None = None) -> dict:
@@ -246,13 +249,23 @@ def has_tool(name: str) -> bool:
     return shutil.which(name) is not None
 
 
+def _find_cover_file(directory: str) -> str | None:
+    """Path of the first cover-art file in `directory` (case-insensitive match
+    against COVER_NAMES), or None. Sorted, so a directory carrying more than one
+    cover name always yields the same pick."""
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return None
+    for name in names:
+        if name.lower() in COVER_NAMES:
+            return os.path.join(directory, name)
+    return None
+
+
 def _has_cover_file(directory: str) -> bool:
     """Case-insensitive check for existing cover art files in a directory."""
-    try:
-        existing = {f.lower() for f in os.listdir(directory)}
-    except OSError:
-        return False
-    return bool(existing & COVER_NAMES)
+    return _find_cover_file(directory) is not None
 
 
 def parse_layout(rel_path: str, layout: str) -> dict:

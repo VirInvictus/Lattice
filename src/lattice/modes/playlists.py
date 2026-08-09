@@ -182,25 +182,31 @@ def generate_playlist(
 
     for src_root, dirpath, _dirs, files in iter_audio_dirs(roots):
         # Sort files to keep album tracks in order
-        for f in sorted(files):
-            if is_audio(f):
-                filepath = os.path.join(dirpath, f)
-                rel_path = os.path.relpath(filepath, src_root)
-                parsed = parse_layout(rel_path, layout)
-                t = get_all_tags(filepath)
+        audio = sorted(f for f in files if is_audio(f))
+        if not audio:
+            continue
 
-                if _evaluate_rule(rule, t, parsed):
-                    # For .m3u, we can write #EXTINF if we have duration and title
-                    duration = int(t.duration_s) if t.duration_s else -1
-                    artist = t.artist or parsed.get("artist", "Unknown")
-                    title = t.title or f
-                    display = f"{artist} - {title}" if artist != "Unknown" else title
+        # Read serially, like _scan_album_dirs: a thread pool here measured
+        # worse, not better (mutagen's parsing holds the GIL, so only the file
+        # opens overlap and the per-task handoff dominates).
+        for f in audio:
+            filepath = os.path.join(dirpath, f)
+            rel_path = os.path.relpath(filepath, src_root)
+            parsed = parse_layout(rel_path, layout)
+            t = get_all_tags(filepath)
 
-                    playlist_entries.append(f"#EXTINF:{duration},{display}")
-                    # Use absolute paths for the playlist
-                    playlist_entries.append(filepath)
+            if _evaluate_rule(rule, t, parsed):
+                # For .m3u, we can write #EXTINF if we have duration and title
+                duration = int(t.duration_s) if t.duration_s else -1
+                artist = t.artist or parsed.get("artist", "Unknown")
+                title = t.title or f
+                display = f"{artist} - {title}" if artist != "Unknown" else title
 
-                pbar.update(1)
+                playlist_entries.append(f"#EXTINF:{duration},{display}")
+                # Use absolute paths for the playlist
+                playlist_entries.append(filepath)
+
+            pbar.update(1)
 
     pbar.close()
 

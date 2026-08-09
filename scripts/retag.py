@@ -25,7 +25,7 @@ from mutagen.asf import ASF
 from mutagen.id3 import ID3, TCON, ID3NoHeaderError, ParseID3v1
 from mutagen.mp4 import MP4
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 # Only formats whose genre containers are handled below. Raw ADTS .aac is
 # intentionally excluded: it has no standard tag container to write a genre to.
@@ -206,7 +206,15 @@ def main() -> int:
         print(f"[!] Directory not found: {target_dir}", file=sys.stderr)
         return 1
 
-    log_fh = open(args.log_path, "a", encoding="utf-8") if args.log_path else None
+    log_fh = None
+    if args.log_path:
+        try:
+            log_fh = open(args.log_path, "a", encoding="utf-8")
+        except OSError as e:
+            # Matches rerate.py/replaygain.py: an unwritable log path is a
+            # reported error, not a traceback.
+            print(f"error: cannot open log file {args.log_path}: {e}", file=sys.stderr)
+            return 1
 
     def log(msg: str) -> None:
         print(msg)

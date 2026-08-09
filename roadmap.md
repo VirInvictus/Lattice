@@ -50,6 +50,27 @@ What's done, what's next, what's deferred. Sequenced for maximum utility as a st
 - [x] **Multi-Root Scanning**: `--root` is repeatable; several libraries scan together in one pass and de-dupe a repeated path. Cross-library duplicate detection groups an album that lives in two libraries, with each entry prefixed by its root's basename. An optional `library_roots` array in the JSON config supplies default roots; the first-run prompt still saves only the single `library_root`. (v4.6.0)
 - [x] **Configurable Path Layout**: A `layout` config key (and `--layout`) sets the pattern Lattice uses to recover artist/album/genre from a path, so a genre-first tree (`{genre}/{artist}/{album}`) is fully supported; genre now falls back to the path like artist/album already did. Default stays `{artist}/{album}`. Pairs with the `genre_foldermap.py` companion script that builds such a tree. (v4.7.0)
 
+## Bug sweep 2026-08-09 (v4.11.0 + companion bumps)
+
+A second full-repo review on top of v4.10.2, every finding verified against the code before fixing and regression-tested (suite 487 to 520). Details live in `patchnotes.md` under v4.11.0, apestrip.py v1.2.0, rerate.py v1.1.0, genre_tidy.py v1.3.0, cleaner.py v1.3.5, and retag.py v1.1.4.
+
+- [x] Package: ranked rating selection (the hash-seed defect below), hidden-directory pruning in the integrity walk, path-ordered decode reports, deterministic dominant-artist tie-break, deterministic cover pick, empty-list tag value no longer raises, `stats.py` import and dead-assignment cleanup.
+- [x] Package: tag reads serial by default, with `tag_workers` / `LATTICE_TAG_WORKERS` to opt back in.
+- [x] apestrip.py: hidden directories pruned, sorted walk, guarded log open.
+- [x] rerate.py: dry-run reports the same read errors as apply, via a shared `_popm_changes`.
+- [x] genre_tidy.py: `apply` exits nonzero on retag failures; `build`'s multi-genre count no longer includes the EXCLUDED and no-genre comment rows.
+- [x] cleaner.py, retag.py: guarded log open.
+- Method note worth reusing: the equivalence check built a v4.10.2 baseline tree with `git show HEAD:...` in the scratchpad, held `tags.py` identical on both sides, and diffed six modes over the real library. Beware that if the baseline tree is missing, `PYTHONPATH=<gone> python -m lattice` silently falls back to the stale `~/.local` install and the diff means nothing.
+
+### Found bug: ratings varied between runs (2026-08-09)
+
+- [x] **FOUND BUG: rating reads depended on the interpreter's hash seed.** `get_all_tags` picked the first rating-ish key it saw and stopped, but mutagen builds a Vorbis comment's key list with `list(set(...))`, so key order is randomized per process. Any file carrying more than one rating-ish key (`rating` beside `album rating`, `love rating`, or a private `_custom_rating`) therefore reported a different rating on different runs: **41 files in the 9,589-file real library**, silently changing `--playlist "rating >= 4"` membership and the `--stats` histogram between invocations. It also let an album-level rating outrank the track's own. **Fixed (v4.11.0):** candidates are ranked rather than first-match (`_RATING_PREFERRED` / `_rating_rank` / `_best_rating`), applied to all four container branches; `tests/test_tags.py` pins permutation-invariance and the album-rating precedence, and the fix was verified stable across eight hash seeds and byte-identical over whole-library runs.
+
+### Performance finding: threading tag reads is a regression (2026-08-09)
+
+- [x] **Measured, then reverted.** Concurrent tag reads were proposed as the sweep's biggest win and turned out to cost more than they saved: mutagen decodes in Python, so the GIL is held for everything but the file open. With hyperfine on the real library, serial beat concurrent 1.39x for `--library`, 1.41x for `--stats`, and 1.49x for `--auditTags` (roughly 9.5s against 15.2s of user CPU). The first A/B run appeared to show a 2x speedup purely because the second invocation had a warm page cache; wall clock on this machine swings by tens of seconds under load, so **measure user CPU and warm up first**. `_scan_album_dirs` and `generate_playlist` stay serial with the numbers recorded in a comment; `stats.py` and `audit.py` keep the pool but default to serial via `config.DEFAULT_TAG_WORKERS`. The integrity modes are unaffected and genuinely benefit, because they spawn flac/ffmpeg subprocesses that do release the GIL.
+- Open question, untested: whether concurrency wins on a spinning disk or a network share. Dropping the page cache needs root, so this was never measured cold; the `tag_workers` knob exists so that case can be tried without a code change.
+
 ## Bug sweep 2026-08-07 (v4.10.2 + companion bumps)
 
 A full-repo review (package, TUI, modes, all seven companions) by three research passes, every finding verified against the code before fixing, all fixes regression-tested (suite 462 to 487). Details live in `patchnotes.md` under v4.10.2, retag.py v1.1.3, cleaner.py v1.3.4, genre_foldermap.py v1.4.1, and replaygain.py v1.2.2.

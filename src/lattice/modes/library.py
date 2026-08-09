@@ -45,9 +45,20 @@ def _scan_album_dirs(roots, layout: str, pbar) -> list[_AlbumDir]:
     """Walk one or more roots, collapsing each audio directory to an `_AlbumDir`.
     The layout is parsed against whichever root the directory lives under, so
     multi-root scans key artist/album off the correct relative path."""
+    # Read serially, on purpose. Routing these through read_tags_concurrent —
+    # whether one pool per directory or one for the whole scan — measured
+    # ~76% MORE user CPU on a 9.6k-file library (14.1s -> 24.7s): mutagen's
+    # parsing holds the GIL, so nothing but the file opens can overlap, and the
+    # per-task handoff costs more than it saves. Don't "optimize" this again
+    # without measuring CPU time; wall clock on a warm page cache is far too
+    # noisy to tell you anything.
     results: list[_AlbumDir] = []
     for root, dirpath, _dirs, files in iter_audio_dirs(roots):
-        audio_in_dir = [f for f in files if is_audio(f)]
+        # Sorted, so a tie in the counts below always breaks the same way
+        # (_most_common keeps the first-inserted key) — os.walk hands back
+        # readdir order, which made a two-artist directory's dominant name a
+        # coin flip between runs.
+        audio_in_dir = sorted(f for f in files if is_audio(f))
         if not audio_in_dir:
             continue
 
