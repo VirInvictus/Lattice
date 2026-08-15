@@ -216,6 +216,15 @@ def tag_fold(s: str) -> str:
     return " ".join(s.translate(_TAG_FOLD).split())
 
 
+def _base_artist(raw: str) -> str:
+    folded = tag_fold(raw)
+    m = _FEAT_RE.search(folded)
+    if m is None:
+        return folded
+    # "Bonnie 'Prince' Billy feat. Tim O'Brien" -> "Bonnie 'Prince' Billy"
+    return folded[: m.start()].strip()
+
+
 def canon_track_artist(raw: str, canonical: str) -> str:
     """Track-level artist for a file under a folder whose artist is `canonical`.
     Collapses the band name to `canonical` but keeps a trailing guest credit
@@ -703,7 +712,9 @@ def normalize_tree(root: Path, run: Run, do_folders: bool, do_files: bool) -> No
 
 
 def _planned_tag_values(
-    cur: dict[str, list[str] | None], authority: str | None
+    cur: dict[str, list[str] | None],
+    authority: str | None,
+    global_artist_authority: dict[str, str] | None = None,
 ) -> dict[str, list[str]]:
     """Given the current title/album/artist/albumartist value lists (None =
     field absent), return only the fields whose values should change. Title and
@@ -722,6 +733,14 @@ def _planned_tag_values(
 
     artist = cur.get("artist")
     albumartist = cur.get("albumartist")
+
+    # If the file isn't in a renamed/merged artist folder, use the global authority if available.
+    if not authority and global_artist_authority and artist and artist[0]:
+        base = _base_artist(artist[0])
+        norm_base = normalize_name(base)
+        if norm_base in global_artist_authority:
+            authority = global_artist_authority[norm_base]
+
     if authority:
         # Deliberate collapse: under a merged/renamed artist folder the
         # surviving folder name IS the artist, so a multi-valued artist tag
@@ -848,7 +867,12 @@ def _open_for_tags(path: Path, ext: str):
     return None
 
 
-def normalize_file_tags(path: Path, authority: str | None, run: Run) -> None:
+def normalize_file_tags(
+    path: Path,
+    authority: str | None,
+    run: Run,
+    global_artist_authority: dict[str, str] | None = None,
+) -> None:
     """Typographically normalize title/album (and artist/albumartist, restamped to
     `authority` when set) on one file. No-op when nothing changes. Multi-format."""
     ext = path.suffix.lower()
@@ -865,7 +889,7 @@ def normalize_file_tags(path: Path, authority: str | None, run: Run) -> None:
         run.log(f"    SKIP (no ID3 header; tags in APEv2/ID3v1 only?): {rel}")
         return
     cur, apply = opened
-    out = _planned_tag_values(cur, authority)
+    out = _planned_tag_values(cur, authority, global_artist_authority)
     if not out:
         return
 
@@ -906,6 +930,25 @@ def normalize_tags(run: Run) -> None:
         for folder in folders
     }
 
+    # Build a library-wide global artist authority from all artist-level folders.
+    # If multiple unmerged folders normalize to the same name (e.g. they are in
+    # different parent directories), pick the one with the most files.
+    global_artist_authority: dict[str, str] = {}
+    artist_folders: dict[str, list[Path]] = {}
+    for p in run.root.rglob("*"):
+        if not p.is_dir() or not run._survives(p):
+            continue
+        if run._is_artist_level(p):
+            key = normalize_name(p.name)
+            artist_folders.setdefault(key, []).append(p)
+
+    for key, paths in artist_folders.items():
+        if len(paths) == 1:
+            global_artist_authority[key] = paths[0].name
+        else:
+            paths_sorted = sorted(paths, key=lambda p: (-file_count(p), p.name))
+            global_artist_authority[key] = paths_sorted[0].name
+
     def resolve_authority(p: Path) -> str | None:
         for parent in p.parents:
             name = authority_map.get(os.path.realpath(parent))
@@ -934,7 +977,7 @@ def normalize_tags(run: Run) -> None:
             continue
         run.stats["tag_files_scanned"] += 1
         scanned += 1
-        normalize_file_tags(f, resolve_authority(f), run)
+        normalize_file_tags(f, resolve_authority(f), run, global_artist_authority)
         if show_progress and scanned % 250 == 0:
             print(
                 f"\r  tags: {scanned} scanned, {run.stats['tags_rewritten']} changed",
@@ -1098,6 +1141,8 @@ def main() -> int:
             run.log(f"  {k}: {v}")
         run.log(f"CLEANUP RUN END [{mode}]")
         run.log("=" * 70 + "\n")
+        
+        print(f"Cleanup run complete ({mode}). See {log_path} for details.")
     finally:
         run.close()
 
