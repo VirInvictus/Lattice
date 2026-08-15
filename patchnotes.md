@@ -1,5 +1,13 @@
 # Lattice Patch Notes
 
+## v4.12.0 (2026-08-15)
+
+- Added global artist tag authority logic to `cleaner.py` (Pass 4). The tag normalization pass now scans all artist-level folders across the entire library to build a global canonical map. Any track whose artist tag normalizes to a known canonical artist folder (handling case, punctuation, and guest credits correctly via a new `_base_artist` helper) will have its artist and albumartist tags rewritten to perfectly match the casing of the canonical folder. This unifies artist names even across different genre boundaries.
+- `cleaner.py` now explicitly outputs a summary line (`Cleanup run complete (APPLY). See ... for details.`) on stdout when it finishes, resolving silent completion behavior.
+
+## cleaner.py v1.4.0 (2026-08-15)
+- **Feature:** Tag normalization (Pass 4) uses a global map of artist folders as the tag authority. Tracks featuring guest credits (e.g. `Artist feat. Guest`) are correctly matched to the base `Artist` folder.
+- **Fix:** Added a terminal `print` notification when the script concludes, ensuring the user is informed of completion rather than seeing a silent exit.
 ## v4.11.0 (2026-08-09)
 
 Second full-repo sweep on top of v4.10.2 (suite 487 to 520). One fix corrects a defect that made report values non-reproducible between runs, and one performance finding reverses a long-standing default; both are called out first.
