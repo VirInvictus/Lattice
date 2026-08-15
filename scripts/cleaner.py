@@ -1141,7 +1141,7 @@ def main() -> int:
             run.log(f"  {k}: {v}")
         run.log(f"CLEANUP RUN END [{mode}]")
         run.log("=" * 70 + "\n")
-        
+
         print(f"Cleanup run complete ({mode}). See {log_path} for details.")
     finally:
         run.close()
