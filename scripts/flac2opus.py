@@ -119,11 +119,12 @@ def convert_and_verify(flac_path: str, bitrate: int, deps: dict, dry_run: bool) 
         opus_audio[k] = v
 
     # Copy pictures
+    pictures = opus_audio.get("metadata_block_picture", [])
     for pic in flac_audio.pictures:
         b64 = base64.b64encode(pic.write()).decode("ascii")
-        if "metadata_block_picture" not in opus_audio:
-            opus_audio["metadata_block_picture"] = []
-        opus_audio["metadata_block_picture"].append(b64)
+        pictures.append(b64)
+    if pictures:
+        opus_audio["metadata_block_picture"] = pictures
 
     opus_audio.save()
 
