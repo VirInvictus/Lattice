@@ -1074,9 +1074,19 @@ def main() -> int:
         "'{genre}/{artist}/{album}')",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run all normalization passes (--normalize-names, --normalize-filenames, --normalize-tags)",
+    )
+    parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
     args = parser.parse_args()
+
+    if args.all:
+        args.normalize_names = True
+        args.normalize_filenames = True
+        args.normalize_tags = True
 
     root = Path(args.directory).resolve()
     if not root.is_dir():

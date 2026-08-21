@@ -1,8 +1,14 @@
 # Lattice Patch Notes
 
+## v4.14.0 (2026-08-21)
+- `cleaner.py` now supports an `--all` flag to run all normalization passes concurrently.
+
 ## v4.13.0 (2026-08-21)
 
 - Added tag deduplication to `cleaner.py` (Pass 4). Tags displaying as `A / A` or `A, A` (often remnants of flattened multi-value tags) are now automatically merged down to their unique values during `--normalize-tags`. Substrings are also resolved (e.g. `Title (feat. Artist) / Title` correctly becomes `Title (feat. Artist)`). This cleanly fixes cases where ffmpeg or other tools accidentally join ID3v1 and ID3v2 tags.
+
+## cleaner.py v1.6.0 (2026-08-21)
+- **Feature:** Added `--all` flag to easily enable all normalization passes at once (--normalize-names, --normalize-filenames, --normalize-tags).
 
 ## cleaner.py v1.5.0 (2026-08-21)
 - **Feature:** Added `tag_dedupe` function to properly clean up and deduplicate identical or substring multi-value tags (e.g. `Title / Title`) during tag normalization.
