@@ -471,16 +471,16 @@ class TagFoldTests(unittest.TestCase):
     def test_tag_dedupe(self):
         self.assertEqual(
             cleaner.tag_dedupe("The Documentary 2 / The Documentary 2"),
-            "The Documentary 2"
+            "The Documentary 2",
         )
         self.assertEqual(cleaner.tag_dedupe("Intro / Intro"), "Intro")
         self.assertEqual(
             cleaner.tag_dedupe("On Me (feat. Kendrick Lamar) / On Me"),
-            "On Me (feat. Kendrick Lamar)"
+            "On Me (feat. Kendrick Lamar)",
         )
         self.assertEqual(
             cleaner.tag_dedupe("The Game / The Game feat. DeJ Loaf & Sha Sha"),
-            "The Game feat. DeJ Loaf & Sha Sha"
+            "The Game feat. DeJ Loaf & Sha Sha",
         )
         self.assertEqual(cleaner.tag_dedupe("A / B"), "A / B")
         self.assertEqual(cleaner.tag_dedupe("The Game ; The Game"), "The Game")
@@ -1057,5 +1057,3 @@ class AsfCaseVariantTests(unittest.TestCase):
         self.assertNotIn("wm/albumtitle", fake)
         self.assertEqual(fake["WM/AlbumTitle"], ["Old's"])
         self.assertTrue(fake.saved)
-
-

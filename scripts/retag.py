@@ -142,7 +142,9 @@ def apply_genres(filepath: str, new_genres: list[str]) -> bool:
             audio = mutagen.File(filepath)
             if audio is None:
                 print(
-                    ui.error(f"  [!] Failed to tag {os.path.basename(filepath)}: mutagen could not read the file"),
+                    ui.error(
+                        f"  [!] Failed to tag {os.path.basename(filepath)}: mutagen could not read the file"
+                    ),
                     file=sys.stderr,
                 )
                 return False
@@ -173,7 +175,10 @@ def apply_genres(filepath: str, new_genres: list[str]) -> bool:
     except Exception as e:
         # stderr, so a caller capturing output (genre_tidy) sees the failure
         # on the error stream instead of buried in the normal log lines.
-        print(ui.error(f"  [!] Failed to tag {os.path.basename(filepath)}: {e}"), file=sys.stderr)
+        print(
+            ui.error(f"  [!] Failed to tag {os.path.basename(filepath)}: {e}"),
+            file=sys.stderr,
+        )
         return False
 
 
@@ -199,7 +204,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    ui.print_header("retag.py - Universal Genre Rewriter" + (" [DRY RUN]" if args.dry_run else ""))
+    ui.print_header(
+        "retag.py - Universal Genre Rewriter" + (" [DRY RUN]" if args.dry_run else "")
+    )
 
     target_dir = args.directory
     genres = args.genres
@@ -215,7 +222,10 @@ def main() -> int:
         except OSError as e:
             # Matches rerate.py/replaygain.py: an unwritable log path is a
             # reported error, not a traceback.
-            print(ui.error(f"error: cannot open log file {args.log_path}: {e}"), file=sys.stderr)
+            print(
+                ui.error(f"error: cannot open log file {args.log_path}: {e}"),
+                file=sys.stderr,
+            )
             return 1
 
     def log(msg: str) -> None:
@@ -232,7 +242,9 @@ def main() -> int:
         updated = 0
         failed = 0
         unchanged = 0
-        for f in ui.tqdm(sorted(os.listdir(target_dir)), desc=ui.info("Processing files")):
+        for f in ui.tqdm(
+            sorted(os.listdir(target_dir)), desc=ui.info("Processing files")
+        ):
             ext = os.path.splitext(f)[1].lower()
             if ext not in AUDIO_EXTENSIONS:
                 if ext in UNSUPPORTED_AUDIO:

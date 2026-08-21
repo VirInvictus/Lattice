@@ -604,7 +604,10 @@ def execute(
     # One prune pass after ALL moves (a source dir is only removable once every
     # album inside it has moved out), deepest-first so a nested source empties
     # before its parent is considered.
-    for d in ui.tqdm(sorted(source_artist_dirs, key=lambda p: len(p.parts), reverse=True), desc=ui.info("Pruning emptied directories")):
+    for d in ui.tqdm(
+        sorted(source_artist_dirs, key=lambda p: len(p.parts), reverse=True),
+        desc=ui.info("Pruning emptied directories"),
+    ):
         runner.prune_empty(d)
     # A genre folder emptied by moving its last artist out (--refile-mismatched)
     # is pruned too, like revert's upward prune; never the library root itself,
@@ -657,7 +660,10 @@ def revert(manifest_path: Path, dry_run: bool, quiet: bool) -> int:
             prune_parents.add(dstp.parent)
         # Clear out the genre/artist/album dirs vacated by the revert, walking
         # up from each and stopping at the first still-populated ancestor.
-        for d in ui.tqdm(sorted(prune_parents, key=lambda p: len(p.parts), reverse=True), desc=ui.info("Pruning directories")):
+        for d in ui.tqdm(
+            sorted(prune_parents, key=lambda p: len(p.parts), reverse=True),
+            desc=ui.info("Pruning directories"),
+        ):
             runner.prune_up(d)
         _print_summary(runner.stats, dry_run, label="revert", quiet=quiet)
     return 0
@@ -674,8 +680,10 @@ def _print_summary(
     verb = "Would" if dry_run else "Done:"
     print()
     print(
-        ui.info(f"{verb} {label} — " +
-        (", ".join(f"{k}={v}" for k, v in stats.items()) or "nothing"))
+        ui.info(
+            f"{verb} {label} — "
+            + (", ".join(f"{k}={v}" for k, v in stats.items()) or "nothing")
+        )
     )
 
 
@@ -713,7 +721,9 @@ def cmd_map(args) -> int:
         print()
 
     if not moves:
-        print(ui.info("No moves to make (everything already in place, or filtered out)."))
+        print(
+            ui.info("No moves to make (everything already in place, or filtered out).")
+        )
         return 0
 
     manifest = (
@@ -801,7 +811,10 @@ def main() -> int:
     parser.add_argument("--quiet", action="store_true", help="Minimize output")
     args = parser.parse_args()
 
-    ui.print_header("genre_foldermap.py - Genre Restructurer" + (" [DRY RUN]" if not args.apply else ""))
+    ui.print_header(
+        "genre_foldermap.py - Genre Restructurer"
+        + (" [DRY RUN]" if not args.apply else "")
+    )
 
     if args.revert:
         return revert(

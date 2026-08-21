@@ -297,7 +297,11 @@ def cmd_build(args) -> int:
             if k not in present and k not in EXCLUDED_ARTISTS
         }
         if not new:
-            print(ui.info(f"No new artists; {map_path} unchanged ({len(present)} artists)."))
+            print(
+                ui.info(
+                    f"No new artists; {map_path} unchanged ({len(present)} artists)."
+                )
+            )
             return 0
         added = build_rows(new)
         stamp = datetime.now().date().isoformat()
@@ -320,8 +324,12 @@ def cmd_build(args) -> int:
         if key not in EXCLUDED_ARTISTS and len(genres) > 1
     )
     print(ui.info(f"Wrote {len(reduced)} artists to {map_path}."))
-    print(ui.info(f"  {flagged} artist(s) carry multiple genres (commented with counts)."))
-    print(ui.info("Trim any stray genres, then: genre_tidy.py apply <library> --dry-run"))
+    print(
+        ui.info(f"  {flagged} artist(s) carry multiple genres (commented with counts).")
+    )
+    print(
+        ui.info("Trim any stray genres, then: genre_tidy.py apply <library> --dry-run")
+    )
     return 0
 
 
@@ -363,7 +371,10 @@ def cmd_apply(args) -> int:
         log.write(f"map: {map_path}  ({len(entries)} artists)")
         log.write("=" * 70)
 
-        for ad in ui.tqdm(sorted(album_dirs, key=lambda a: a.path), desc=ui.info("Applying genre changes")):
+        for ad in ui.tqdm(
+            sorted(album_dirs, key=lambda a: a.path),
+            desc=ui.info("Applying genre changes"),
+        ):
             rel = os.path.relpath(ad.path, directory)
             if norm(ad.artist) in EXCLUDED_ARTISTS:
                 stats["excluded"] += 1
@@ -425,17 +436,31 @@ def cmd_apply(args) -> int:
         log.close()
 
     verb = "would retag" if args.dry_run else "retagged"
-    print(ui.info(f"\n{verb} {stats['retagged']} album(s); {stats['ok']} already compliant."))
+    print(
+        ui.info(
+            f"\n{verb} {stats['retagged']} album(s); {stats['ok']} already compliant."
+        )
+    )
     if stats["unmapped"]:
         print(ui.info(f"  {stats['unmapped']} album(s) skipped (artist not in map)."))
     if stats["skipped_blank"]:
-        print(ui.info(f"  {stats['skipped_blank']} album(s) skipped (artist genre blanked)."))
+        print(
+            ui.info(
+                f"  {stats['skipped_blank']} album(s) skipped (artist genre blanked)."
+            )
+        )
     if stats["excluded"]:
         print(
-            ui.info(f"  {stats['excluded']} album(s) skipped (compilation / various-artists).")
+            ui.info(
+                f"  {stats['excluded']} album(s) skipped (compilation / various-artists)."
+            )
         )
     if stats["unsupported"]:
-        print(ui.info(f"  {stats['unsupported']} album(s) skipped (no format retag can write)."))
+        print(
+            ui.info(
+                f"  {stats['unsupported']} album(s) skipped (no format retag can write)."
+            )
+        )
     if stats["errors"]:
         print(ui.info(f"  {stats['errors']} retag error(s) — see log."))
     print(ui.info(f"Log: {log_path}"))
@@ -505,10 +530,12 @@ def main() -> int:
     a.set_defaults(func=cmd_apply)
 
     args = parser.parse_args()
-    
+
     is_dry = getattr(args, "dry_run", False)
-    ui.print_header("genre_tidy.py - Genre Folder Cleaner" + (" [DRY RUN]" if is_dry else ""))
-    
+    ui.print_header(
+        "genre_tidy.py - Genre Folder Cleaner" + (" [DRY RUN]" if is_dry else "")
+    )
+
     return args.func(args)
 
 

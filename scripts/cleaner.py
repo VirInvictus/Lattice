@@ -225,7 +225,7 @@ def tag_dedupe(s: str) -> str:
             parts = [p.strip() for p in s.split(sep) if p.strip()]
             if not parts:
                 continue
-            
+
             # 1. Exact case-insensitive deduplication
             unique = []
             seen = set()
@@ -234,17 +234,17 @@ def tag_dedupe(s: str) -> str:
                 if lower not in seen:
                     seen.add(lower)
                     unique.append(p)
-            
+
             if len(unique) == 1:
                 return unique[0]
-                
+
             # 2. Substring deduplication (keep the longest)
             unique.sort(key=len, reverse=True)
             survivors = []
             for p in unique:
                 if not any(p.lower() in surv.lower() for surv in survivors):
                     survivors.append(p)
-            
+
             # Join the remaining unique parts back together
             return sep.join(survivors)
     return s
@@ -380,7 +380,7 @@ class Run:
         if msg.startswith("\n"):
             self.log_file.write("\n")
             msg = msg.lstrip("\n")
-            
+
         if msg:
             disp_msg = msg
             if msg.startswith("--- PASS"):
@@ -1119,7 +1119,9 @@ def main() -> int:
             return 1
 
     log_path = Path(args.log_path) if args.log_path else root / "cleanup.log"
-    ui.print_header(f"cleaner.py - Fragmented Album Consolidator{' [DRY RUN]' if args.dry_run else ''}")
+    ui.print_header(
+        f"cleaner.py - Fragmented Album Consolidator{' [DRY RUN]' if args.dry_run else ''}"
+    )
     print(f"Target: {root}")
     print(f"Log path: {log_path}\n")
 

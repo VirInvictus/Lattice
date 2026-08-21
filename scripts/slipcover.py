@@ -26,16 +26,28 @@ import ui
 
 __version__ = "1.0.0"
 
+
 def _import_lattice():
     """Import lattice dependencies lazily."""
     try:
-        sys.path.insert(0, str(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))))
-        from lattice.utils import iter_audio_dirs, _find_cover_file, is_audio
-        from lattice.config import AUDIO_EXTENSIONS
-        from lattice.tags import FLAC, MutagenFile, Picture, MP4, HAVE_MUTAGEN_MP3, MUTAGEN_MP3
-        from lattice.modes.artwork import _ART_EXTRACTORS
-        from mutagen.id3 import ID3, APIC, ID3NoHeaderError
+        sys.path.insert(
+            0,
+            str(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))),
+        )
+        from mutagen.id3 import APIC, ID3, ID3NoHeaderError
         from mutagen.mp4 import MP4Cover
+
+        from lattice.config import AUDIO_EXTENSIONS
+        from lattice.modes.artwork import _ART_EXTRACTORS
+        from lattice.tags import (
+            FLAC,
+            HAVE_MUTAGEN_MP3,
+            MP4,
+            MUTAGEN_MP3,
+            MutagenFile,
+            Picture,
+        )
+        from lattice.utils import _find_cover_file, is_audio, iter_audio_dirs
     except ImportError as e:
         print(
             f"error: could not import lattice ({e}).\n"
@@ -44,7 +56,7 @@ def _import_lattice():
             file=sys.stderr,
         )
         sys.exit(2)
-        
+
     return {
         "iter_audio_dirs": iter_audio_dirs,
         "find_cover": _find_cover_file,
@@ -60,7 +72,7 @@ def _import_lattice():
         "ID3": ID3,
         "APIC": APIC,
         "ID3NoHeaderError": ID3NoHeaderError,
-        "MP4Cover": MP4Cover
+        "MP4Cover": MP4Cover,
     }
 
 
@@ -70,7 +82,7 @@ def has_embedded_art(filepath: str, ext: str, deps: dict) -> bool:
         return False
     try:
         return extractor(filepath) is not None
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -84,9 +96,11 @@ def embed_art(filepath: str, img_data: bytes, mime: str, ext: str, deps: dict) -
             except deps["ID3NoHeaderError"]:
                 tags = deps["ID3"]()
             tags.delall("APIC")
-            tags.add(deps["APIC"](encoding=3, mime=mime, type=3, desc="", data=img_data))
+            tags.add(
+                deps["APIC"](encoding=3, mime=mime, type=3, desc="", data=img_data)
+            )
             tags.save(filepath, v2_version=3, v1=2)
-            
+
         elif ext == ".flac":
             audio = deps["FLAC"](filepath)
             audio.clear_pictures()
@@ -96,7 +110,7 @@ def embed_art(filepath: str, img_data: bytes, mime: str, ext: str, deps: dict) -
             pic.data = img_data
             audio.add_picture(pic)
             audio.save()
-            
+
         elif ext in (".opus", ".ogg"):
             audio = deps["MutagenFile"](filepath)
             if audio is None:
@@ -109,21 +123,28 @@ def embed_art(filepath: str, img_data: bytes, mime: str, ext: str, deps: dict) -
             audio.pop("metadata_block_picture", None)
             audio["metadata_block_picture"] = [b64]
             audio.save()
-            
+
         elif ext in (".m4a", ".mp4"):
             audio = deps["MP4"](filepath)
             audio.pop("covr", None)
-            fmt = deps["MP4Cover"].FORMAT_PNG if mime == "image/png" else deps["MP4Cover"].FORMAT_JPEG
+            fmt = (
+                deps["MP4Cover"].FORMAT_PNG
+                if mime == "image/png"
+                else deps["MP4Cover"].FORMAT_JPEG
+            )
             covr = deps["MP4Cover"](img_data, imageformat=fmt)
             audio["covr"] = [covr]
             audio.save()
-            
+
         else:
             return False
-            
+
         return True
-    except Exception as e:
-        print(ui.error(f"  [!] Failed to embed art in {os.path.basename(filepath)}: {e}"), file=sys.stderr)
+    except Exception as e:  # noqa: BLE001
+        print(
+            ui.error(f"  [!] Failed to embed art in {os.path.basename(filepath)}: {e}"),
+            file=sys.stderr,
+        )
         return False
 
 
@@ -144,7 +165,8 @@ def main() -> int:
         help="Append a timestamped record of each change to this file",
     )
     parser.add_argument(
-        "--yes", "-y",
+        "--yes",
+        "-y",
         action="store_true",
         help="Skip the confirmation prompt on a real run",
     )
@@ -153,7 +175,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    ui.print_header("slipcover.py - Cover Art Embedder" + (" [DRY RUN]" if args.dry_run else ""))
+    ui.print_header(
+        "slipcover.py - Cover Art Embedder" + (" [DRY RUN]" if args.dry_run else "")
+    )
 
     target_dir = os.path.abspath(args.directory)
     if not os.path.isdir(target_dir):
@@ -161,34 +185,34 @@ def main() -> int:
         return 1
 
     deps = _import_lattice()
-    
+
     # Identify default log path
     log_path = args.log_path or os.path.join(target_dir, "slipcover.log")
-    
+
     # 1. Scan phase
     # Find all audio files lacking art in directories that possess a folder image.
-    worklist: list[tuple[str, str, bytes, str]] = [] # (filepath, ext, img_data, mime)
-    
+    worklist: list[tuple[str, str, bytes, str]] = []  # (filepath, ext, img_data, mime)
+
     print(ui.info("Scanning for audio files missing embedded art..."))
-    
+
     for _root, dirpath, _dirs, files in deps["iter_audio_dirs"](target_dir):
         audio_files = [f for f in files if deps["is_audio"](f)]
         if not audio_files:
             continue
-            
+
         cover_file = deps["find_cover"](dirpath)
         if not cover_file:
             continue
-            
+
         # Read the folder image data once per folder
         img_data = None
         mime = None
-        
+
         for f in audio_files:
             ext = os.path.splitext(f)[1].lower()
             if ext not in deps["ART_EXTRACTORS"]:
                 continue
-                
+
             filepath = os.path.join(dirpath, f)
             if not has_embedded_art(filepath, ext, deps):
                 if img_data is None:
@@ -197,17 +221,26 @@ def main() -> int:
                             img_data = cf.read()
                         mime = mimetypes.guess_type(cover_file)[0] or "image/jpeg"
                     except OSError as e:
-                        print(ui.error(f"  [!] Failed to read cover image {cover_file}: {e}"), file=sys.stderr)
+                        print(
+                            ui.error(
+                                f"  [!] Failed to read cover image {cover_file}: {e}"
+                            ),
+                            file=sys.stderr,
+                        )
                         break
-                        
+
                 worklist.append((filepath, ext, img_data, mime))
-                
+
     if not worklist:
         print(ui.success("No files need cover art embedded."))
         return 0
-        
-    print(ui.info(f"Found {len(worklist)} file(s) missing embedded art in directories with folder images."))
-    
+
+    print(
+        ui.info(
+            f"Found {len(worklist)} file(s) missing embedded art in directories with folder images."
+        )
+    )
+
     # 2. Confirmation phase
     if not args.dry_run and not args.yes and sys.stdin.isatty():
         print("Files to modify (showing up to 20):")
@@ -215,7 +248,7 @@ def main() -> int:
             print(f"  {filepath}")
         if len(worklist) > 20:
             print(f"  ... and {len(worklist) - 20} more")
-            
+
         if not input("Proceed? [y/N] ").strip().lower().startswith("y"):
             print("Aborted.")
             return 0
@@ -224,15 +257,18 @@ def main() -> int:
     log_fh = None
     if not args.dry_run:
         try:
-            log_fh = open(log_path, "a", encoding="utf-8")
+            log_fh = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
         except OSError as e:
-            print(ui.error(f"error: cannot open log file {log_path}: {e}"), file=sys.stderr)
+            print(
+                ui.error(f"error: cannot open log file {log_path}: {e}"),
+                file=sys.stderr,
+            )
             return 1
 
     def log(msg: str) -> None:
         ui.tqdm.write(msg)
         if log_fh is not None:
-            ts = datetime.now().isoformat(timespec="seconds")
+            ts = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
             log_fh.write(f"[{ts}] {msg}\n")
 
     if not args.dry_run:
@@ -243,7 +279,11 @@ def main() -> int:
     failed = 0
 
     try:
-        pbar = ui.tqdm(worklist, desc=ui.info("Embedding art")) if not args.dry_run else worklist
+        pbar = (
+            ui.tqdm(worklist, desc=ui.info("Embedding art"))
+            if not args.dry_run
+            else worklist
+        )
         for filepath, ext, img_data, mime in pbar:
             if args.dry_run:
                 ui.tqdm.write(ui.dry_run(f"would embed {mime} into {filepath}"))
@@ -264,10 +304,10 @@ def main() -> int:
     verb = "Would update" if args.dry_run else "Updated"
     tail = f"  {failed} file(s) failed." if failed else ""
     print(ui.success(f"{verb} {updated} file(s).{tail}"))
-    
+
     if not args.dry_run:
         print(ui.info(f"Log: {log_path}"))
-        
+
     return 1 if failed else 0
 
 

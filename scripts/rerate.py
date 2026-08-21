@@ -133,7 +133,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    ui.print_header("rerate.py - ID3 Rating Normalizer" + (" [DRY RUN]" if args.dry_run else ""))
+    ui.print_header(
+        "rerate.py - ID3 Rating Normalizer" + (" [DRY RUN]" if args.dry_run else "")
+    )
 
     root = args.directory
     if not os.path.isdir(root):
@@ -166,7 +168,9 @@ def main() -> int:
         log(f"RERATE RUN START [{mode}]: {root}   map: {REMAP}")
         log("=" * 70)
 
-        for dirpath, subdirs, files in ui.tqdm(os.walk(root), desc=ui.info("Scanning directories")):
+        for dirpath, subdirs, files in ui.tqdm(
+            os.walk(root), desc=ui.info("Scanning directories")
+        ):
             # Prune hidden dirs (.testing/ album copies etc.), like replaygain.
             subdirs[:] = sorted(d for d in subdirs if not d.startswith("."))
             for f in sorted(files):

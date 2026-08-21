@@ -689,7 +689,9 @@ def main() -> int:
         return 1
 
     log_path = args.log_path or os.path.join(root, "apestrip.log")
-    ui.print_header(f"apestrip.py - APEv2 Tag Stripper{' [DRY RUN]' if args.dry_run else ''}")
+    ui.print_header(
+        f"apestrip.py - APEv2 Tag Stripper{' [DRY RUN]' if args.dry_run else ''}"
+    )
     print(f"Target: {root}")
     print(f"Migrate metadata: {'Yes' if args.keep_metadata else 'No'}\n")
 
@@ -707,14 +709,16 @@ def main() -> int:
         ui.tqdm.write(msg)
         if log_fh is not None:
             ts = datetime.now().isoformat(timespec="seconds")
-            log_fh.write(f"[{ts}] {ui.color(msg, '')}\n") # write uncolored to log
+            log_fh.write(f"[{ts}] {ui.color(msg, '')}\n")  # write uncolored to log
 
     try:
         # Planning pass: build the worklist without writing.
         worklist: list[FileResult] = []
         # Pre-scan for progress bar
-        mp3_files = list(ui.tqdm(_iter_mp3s(root), desc=ui.info("Scanning directories"), leave=False))
-        
+        mp3_files = list(
+            ui.tqdm(_iter_mp3s(root), desc=ui.info("Scanning directories"), leave=False)
+        )
+
         for path in ui.tqdm(mp3_files, desc=ui.info("Analyzing tags")):
             r = process_file(
                 path,
