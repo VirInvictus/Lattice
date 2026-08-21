@@ -7,24 +7,33 @@ If a folder image exists, it scans the audio files. For any audio file missing
 embedded art, it embeds the folder image into the file. Files that already have
 embedded art are left alone.
 
+If an album lacks cover art entirely (no folder image and no embedded art):
+  - `--report` will print a list of these completely bare directories.
+  - `--fetch` will query the iTunes Search API using the album's artist/album tags,
+    download the highest-resolution cover available as `cover.jpg`, and then embed it.
+
 Destructive: writes tags in place. Preview with --dry-run.
 
 Usage:
     ./slipcover.py /path/to/library
     ./slipcover.py /path/to/album --dry-run
-    ./slipcover.py /path/to/library --log ~/slipcover.log
+    ./slipcover.py /path/to/library --report
+    ./slipcover.py /path/to/library --fetch
 """
 
 import argparse
 import base64
+import json
 import mimetypes
 import os
 import sys
+import urllib.parse
+import urllib.request
 from datetime import datetime
 
 import ui
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def _import_lattice():
@@ -34,20 +43,20 @@ def _import_lattice():
             0,
             str(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))),
         )
-        from mutagen.id3 import APIC, ID3, ID3NoHeaderError
-        from mutagen.mp4 import MP4Cover
-
+        from lattice.utils import iter_audio_dirs, _find_cover_file, is_audio
         from lattice.config import AUDIO_EXTENSIONS
-        from lattice.modes.artwork import _ART_EXTRACTORS
         from lattice.tags import (
             FLAC,
-            HAVE_MUTAGEN_MP3,
-            MP4,
-            MUTAGEN_MP3,
             MutagenFile,
             Picture,
+            MP4,
+            HAVE_MUTAGEN_MP3,
+            MUTAGEN_MP3,
+            get_all_tags,
         )
-        from lattice.utils import _find_cover_file, is_audio, iter_audio_dirs
+        from lattice.modes.artwork import _ART_EXTRACTORS
+        from mutagen.id3 import ID3, APIC, ID3NoHeaderError
+        from mutagen.mp4 import MP4Cover
     except ImportError as e:
         print(
             f"error: could not import lattice ({e}).\n"
@@ -73,6 +82,7 @@ def _import_lattice():
         "APIC": APIC,
         "ID3NoHeaderError": ID3NoHeaderError,
         "MP4Cover": MP4Cover,
+        "get_all_tags": get_all_tags,
     }
 
 
@@ -83,6 +93,75 @@ def has_embedded_art(filepath: str, ext: str, deps: dict) -> bool:
     try:
         return extractor(filepath) is not None
     except Exception:  # noqa: BLE001
+        return False
+
+
+def fetch_art_for_dir(
+    dirpath: str, audio_files: list[str], deps: dict, dry_run: bool
+) -> bool:
+    """Fetch cover art from iTunes API using metadata from the first audio file.
+    Returns True if downloaded successfully (or would have in dry-run)."""
+    filepath = os.path.join(dirpath, audio_files[0])
+    tags = deps["get_all_tags"](filepath)
+
+    if not tags or not tags.artist or not tags.album:
+        ui.tqdm.write(
+            ui.warn(
+                f"Skipping fetch for {os.path.basename(dirpath)}: missing artist/album tags"
+            )
+        )
+        return False
+
+    query = urllib.parse.quote(f"{tags.artist} {tags.album}")
+    url = f"https://itunes.apple.com/search?term={query}&entity=album&limit=1"
+    req = urllib.request.Request(url, headers={"User-Agent": f"Lattice/{__version__}"})
+
+    try:
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            results = data.get("results", [])
+            if not results:
+                ui.tqdm.write(
+                    ui.warn(
+                        f"No iTunes artwork found for: {tags.artist} - {tags.album}"
+                    )
+                )
+                return False
+
+            art_url = results[0].get("artworkUrl100")
+            if not art_url:
+                return False
+
+            # Request 600x600 instead of 100x100 thumbnail
+            high_res_url = art_url.replace("100x100bb", "600x600bb")
+
+            if dry_run:
+                ui.tqdm.write(
+                    ui.dry_run(
+                        f"would fetch cover for {tags.artist} - {tags.album} from iTunes"
+                    )
+                )
+                return True
+
+            # Download the image
+            img_req = urllib.request.Request(
+                high_res_url, headers={"User-Agent": f"Lattice/{__version__}"}
+            )
+            with urllib.request.urlopen(img_req) as img_resp:
+                img_data = img_resp.read()
+
+            out_path = os.path.join(dirpath, "cover.jpg")
+            with open(out_path, "wb") as f:
+                f.write(img_data)
+
+            ui.tqdm.write(
+                ui.success(f"Fetched cover.jpg for: {tags.artist} - {tags.album}")
+            )
+            return True
+    except Exception as e:  # noqa: BLE001
+        ui.tqdm.write(
+            ui.error(f"Failed to fetch artwork for {os.path.basename(dirpath)}: {e}")
+        )
         return False
 
 
@@ -154,6 +233,16 @@ def main() -> int:
     )
     parser.add_argument("directory", help="Path to the library or album directory")
     parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Report directories completely missing both folder and embedded art",
+    )
+    parser.add_argument(
+        "--fetch",
+        action="store_true",
+        help="Fetch missing covers from iTunes API and save as cover.jpg",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview the changes per file; write nothing",
@@ -190,10 +279,10 @@ def main() -> int:
     log_path = args.log_path or os.path.join(target_dir, "slipcover.log")
 
     # 1. Scan phase
-    # Find all audio files lacking art in directories that possess a folder image.
     worklist: list[tuple[str, str, bytes, str]] = []  # (filepath, ext, img_data, mime)
+    report_list: list[str] = []
 
-    print(ui.info("Scanning for audio files missing embedded art..."))
+    print(ui.info("Scanning directories..."))
 
     for _root, dirpath, _dirs, files in deps["iter_audio_dirs"](target_dir):
         audio_files = [f for f in files if deps["is_audio"](f)]
@@ -201,6 +290,29 @@ def main() -> int:
             continue
 
         cover_file = deps["find_cover"](dirpath)
+
+        # If no folder image exists, check if ANY file has embedded art
+        if not cover_file:
+            has_embedded = False
+            for f in audio_files:
+                ext = os.path.splitext(f)[1].lower()
+                filepath = os.path.join(dirpath, f)
+                if has_embedded_art(filepath, ext, deps):
+                    has_embedded = True
+                    break
+
+            if not has_embedded:
+                report_list.append(dirpath)
+                if args.fetch:
+                    downloaded = fetch_art_for_dir(
+                        dirpath, audio_files, deps, args.dry_run
+                    )
+                    if downloaded and not args.dry_run:
+                        cover_file = deps["find_cover"](dirpath)
+
+        if args.report:
+            continue
+
         if not cover_file:
             continue
 
@@ -230,6 +342,20 @@ def main() -> int:
                         break
 
                 worklist.append((filepath, ext, img_data, mime))
+
+    # Handle pure report mode
+    if args.report:
+        if not report_list:
+            print(ui.success("No directories are completely missing cover art."))
+        else:
+            print(
+                ui.warn(
+                    f"Found {len(report_list)} directory(ies) completely missing cover art:"
+                )
+            )
+            for d in report_list:
+                print(f"  {d}")
+        return 0
 
     if not worklist:
         print(ui.success("No files need cover art embedded."))

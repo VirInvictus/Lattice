@@ -1,6 +1,10 @@
 # Lattice Patch Notes
 
 ## v4.14.0 (2026-08-21)
+## slipcover.py v1.1.0 (2026-08-21)
+- **Feature:** Added `--fetch` to query the iTunes Search API and automatically download high-resolution cover art for albums completely missing art.
+- **Feature:** Added `--report` to find and report albums completely missing cover art.
+
 ## slipcover.py v1.0.0 (2026-08-21)
 - **New Companion Script:** Added `slipcover.py` to embed existing folder cover art (`cover.jpg`, etc.) into audio files that lack embedded art. Supports MP3, FLAC, Opus, Ogg, and M4A. Idempotent and dry-run capable.
 

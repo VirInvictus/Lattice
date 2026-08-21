@@ -624,11 +624,18 @@ A plain strip leaves the ID3 frames byte for byte; only the APEv2 block is remov
 
 Embeds folder cover art into audio files that are missing embedded art. The mutating companion to `--missingArt`.
 
-When downloading or importing music, you often end up with a high-quality `cover.jpg` sitting alongside the audio files, but the files themselves have no embedded artwork. `slipcover.py` walks your library, finds directories that have a folder image (`cover.jpg`, `cover.png`, etc.) but contain audio files lacking embedded art, and writes the image directly into those files.
+When downloading or importing music, you often end up with a high-quality `cover.jpg` sitting alongside the audio files, but the files themselves have no embedded artwork. `slipcover.py` walks your library, finds directories that have a folder image (`cover.jpg`, `cover.png`, etc.) but contain audio files lacking embedded art, and writes the image directly into those files. If an album is completely missing art (no folder image and no embedded art), you can use `--fetch` to query the iTunes API and download a high-resolution cover automatically. You can also use `--report` to find these completely artless albums.
 
 ```bash
 # Preview what would be embedded
 ./scripts/slipcover.py /path/to/library --dry-run
+
+# Fetch missing covers from iTunes API and save as cover.jpg
+./scripts/slipcover.py /path/to/library --fetch
+
+# Report directories completely missing cover art
+./scripts/slipcover.py /path/to/library --report
+
 
 # Embed the images, prompting before writing
 ./scripts/slipcover.py /path/to/library
