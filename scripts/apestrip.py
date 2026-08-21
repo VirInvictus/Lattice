@@ -55,6 +55,7 @@ import os
 import shutil
 import struct
 import sys
+import ui
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -688,6 +689,10 @@ def main() -> int:
         return 1
 
     log_path = args.log_path or os.path.join(root, "apestrip.log")
+    ui.print_header(f"apestrip.py - APEv2 Tag Stripper{' [DRY RUN]' if args.dry_run else ''}")
+    print(f"Target: {root}")
+    print(f"Migrate metadata: {'Yes' if args.keep_metadata else 'No'}\n")
+
     log_fh = None
     if not args.dry_run:
         try:
@@ -695,19 +700,22 @@ def main() -> int:
         except OSError as e:
             # rerate.py/replaygain.py report this and exit 1; an unwritable log
             # path used to be a bare traceback here.
-            print(f"error: cannot open log file {log_path}: {e}", file=sys.stderr)
+            print(ui.error(f"cannot open log file {log_path}: {e}"), file=sys.stderr)
             return 1
 
     def log(msg: str) -> None:
-        print(msg)
+        ui.tqdm.write(msg)
         if log_fh is not None:
             ts = datetime.now().isoformat(timespec="seconds")
-            log_fh.write(f"[{ts}] {msg}\n")
+            log_fh.write(f"[{ts}] {ui.color(msg, '')}\n") # write uncolored to log
 
     try:
         # Planning pass: build the worklist without writing.
         worklist: list[FileResult] = []
-        for path in _iter_mp3s(root):
+        # Pre-scan for progress bar
+        mp3_files = list(ui.tqdm(_iter_mp3s(root), desc=ui.info("Scanning directories"), leave=False))
+        
+        for path in ui.tqdm(mp3_files, desc=ui.info("Analyzing tags")):
             r = process_file(
                 path,
                 dry_run=True,
@@ -718,7 +726,7 @@ def main() -> int:
                 worklist.append(r)
 
         if not worklist:
-            print("No MP3s with an APEv2 tag found. Nothing to do.")
+            print(ui.success("No MP3s with an APEv2 tag found. Nothing to do."))
             return 0
 
         head = "[DRY RUN] " if args.dry_run else ""

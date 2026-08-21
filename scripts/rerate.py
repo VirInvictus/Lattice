@@ -42,6 +42,7 @@ import os
 import sys
 from datetime import datetime
 
+import ui
 from mutagen.id3 import ID3, ID3NoHeaderError
 
 __version__ = "1.1.0"
@@ -132,16 +133,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    ui.print_header("rerate.py - ID3 Rating Normalizer" + (" [DRY RUN]" if args.dry_run else ""))
+
     root = args.directory
     if not os.path.isdir(root):
-        print(f"error: {root} is not a directory", file=sys.stderr)
+        print(ui.error(f"{root} is not a directory"))
         return 1
 
     log_path = args.log_path or os.path.join(root, "rerate.log")
     try:
         log_fh = open(log_path, "a", encoding="utf-8")
     except OSError as e:
-        print(f"error: cannot open log file {log_path}: {e}", file=sys.stderr)
+        print(ui.error(f"cannot open log file {log_path}: {e}"))
         return 1
 
     def log(msg: str = "") -> None:
@@ -163,7 +166,7 @@ def main() -> int:
         log(f"RERATE RUN START [{mode}]: {root}   map: {REMAP}")
         log("=" * 70)
 
-        for dirpath, subdirs, files in os.walk(root):
+        for dirpath, subdirs, files in ui.tqdm(os.walk(root), desc=ui.info("Scanning directories")):
             # Prune hidden dirs (.testing/ album copies etc.), like replaygain.
             subdirs[:] = sorted(d for d in subdirs if not d.startswith("."))
             for f in sorted(files):
@@ -199,12 +202,12 @@ def main() -> int:
         log_fh.close()
 
     verb = "Would rerate" if args.dry_run else "Rerated"
-    print(f"{verb} {changed} of {scanned} MP3 file(s).")
+    print(ui.info(f"{verb} {changed} of {scanned} MP3 file(s)."))
     for (old, new), n in sorted(by_remap.items()):
-        print(f"  byte {old} -> {new}: {n}")
+        print(ui.info(f"  byte {old} -> {new}: {n}"))
     if errors:
-        print(f"  {errors} error(s) — see log.")
-    print(f"Log: {log_path}")
+        print(ui.warn(f"  {errors} error(s) — see log."))
+    print(ui.info(f"Log: {log_path}"))
     return 1 if errors else 0
 
 

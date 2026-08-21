@@ -42,6 +42,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
+import ui
+
 __version__ = "1.3.0"
 
 # Folds curly quotes, dash variants, and case so artist/genre strings compare
@@ -277,7 +279,7 @@ class _Log:
 def cmd_build(args) -> int:
     directory = Path(args.directory).resolve()
     if not directory.is_dir():
-        print(f"error: {directory} is not a directory", file=sys.stderr)
+        print(ui.error(f"{directory} is not a directory"), file=sys.stderr)
         return 1
 
     map_path = Path(args.map_path) if args.map_path else directory / "genre_map.tsv"
@@ -295,7 +297,7 @@ def cmd_build(args) -> int:
             if k not in present and k not in EXCLUDED_ARTISTS
         }
         if not new:
-            print(f"No new artists; {map_path} unchanged ({len(present)} artists).")
+            print(ui.info(f"No new artists; {map_path} unchanged ({len(present)} artists)."))
             return 0
         added = build_rows(new)
         stamp = datetime.now().date().isoformat()
@@ -303,7 +305,7 @@ def cmd_build(args) -> int:
             "\n".join(existing + ["", f"# --- added {stamp} ---"] + added) + "\n",
             encoding="utf-8",
         )
-        print(f"Appended {len(new)} new artist(s) to {map_path}.")
+        print(ui.info(f"Appended {len(new)} new artist(s) to {map_path}."))
         return 0
 
     rows = build_rows(reduced)
@@ -317,29 +319,29 @@ def cmd_build(args) -> int:
         for key, (_display, genres) in reduced.items()
         if key not in EXCLUDED_ARTISTS and len(genres) > 1
     )
-    print(f"Wrote {len(reduced)} artists to {map_path}.")
-    print(f"  {flagged} artist(s) carry multiple genres (commented with counts).")
-    print("Trim any stray genres, then: genre_tidy.py apply <library> --dry-run")
+    print(ui.info(f"Wrote {len(reduced)} artists to {map_path}."))
+    print(ui.info(f"  {flagged} artist(s) carry multiple genres (commented with counts)."))
+    print(ui.info("Trim any stray genres, then: genre_tidy.py apply <library> --dry-run"))
     return 0
 
 
 def cmd_apply(args) -> int:
     directory = Path(args.directory).resolve()
     if not directory.is_dir():
-        print(f"error: {directory} is not a directory", file=sys.stderr)
+        print(ui.error(f"{directory} is not a directory"), file=sys.stderr)
         return 1
 
     map_path = Path(args.map_path) if args.map_path else directory / "genre_map.tsv"
     if not map_path.exists():
         print(
-            f"error: no map at {map_path}. Run `genre_tidy.py build` first.",
+            ui.error(f"no map at {map_path}. Run `genre_tidy.py build` first."),
             file=sys.stderr,
         )
         return 1
 
     retag_path = Path(__file__).resolve().parent / "retag.py"
     if not retag_path.exists():
-        print(f"error: retag.py not found at {retag_path}", file=sys.stderr)
+        print(ui.error(f"retag.py not found at {retag_path}"), file=sys.stderr)
         return 1
 
     # Sibling module import for the writable-format set: importing (rather
@@ -361,7 +363,7 @@ def cmd_apply(args) -> int:
         log.write(f"map: {map_path}  ({len(entries)} artists)")
         log.write("=" * 70)
 
-        for ad in sorted(album_dirs, key=lambda a: a.path):
+        for ad in ui.tqdm(sorted(album_dirs, key=lambda a: a.path), desc=ui.info("Applying genre changes")):
             rel = os.path.relpath(ad.path, directory)
             if norm(ad.artist) in EXCLUDED_ARTISTS:
                 stats["excluded"] += 1
@@ -423,20 +425,20 @@ def cmd_apply(args) -> int:
         log.close()
 
     verb = "would retag" if args.dry_run else "retagged"
-    print(f"\n{verb} {stats['retagged']} album(s); {stats['ok']} already compliant.")
+    print(ui.info(f"\n{verb} {stats['retagged']} album(s); {stats['ok']} already compliant."))
     if stats["unmapped"]:
-        print(f"  {stats['unmapped']} album(s) skipped (artist not in map).")
+        print(ui.info(f"  {stats['unmapped']} album(s) skipped (artist not in map)."))
     if stats["skipped_blank"]:
-        print(f"  {stats['skipped_blank']} album(s) skipped (artist genre blanked).")
+        print(ui.info(f"  {stats['skipped_blank']} album(s) skipped (artist genre blanked)."))
     if stats["excluded"]:
         print(
-            f"  {stats['excluded']} album(s) skipped (compilation / various-artists)."
+            ui.info(f"  {stats['excluded']} album(s) skipped (compilation / various-artists).")
         )
     if stats["unsupported"]:
-        print(f"  {stats['unsupported']} album(s) skipped (no format retag can write).")
+        print(ui.info(f"  {stats['unsupported']} album(s) skipped (no format retag can write)."))
     if stats["errors"]:
-        print(f"  {stats['errors']} retag error(s) — see log.")
-    print(f"Log: {log_path}")
+        print(ui.info(f"  {stats['errors']} retag error(s) — see log."))
+    print(ui.info(f"Log: {log_path}"))
     # Nonzero when any album failed to retag, matching retag.py, rerate.py and
     # replaygain.py; apply used to exit 0 no matter how many writes failed.
     return 1 if stats["errors"] else 0
@@ -503,6 +505,10 @@ def main() -> int:
     a.set_defaults(func=cmd_apply)
 
     args = parser.parse_args()
+    
+    is_dry = getattr(args, "dry_run", False)
+    ui.print_header("genre_tidy.py - Genre Folder Cleaner" + (" [DRY RUN]" if is_dry else ""))
+    
     return args.func(args)
 
 

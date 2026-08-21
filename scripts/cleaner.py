@@ -65,6 +65,7 @@ import shutil
 import struct
 import sys
 import unicodedata
+import ui
 from datetime import datetime
 from pathlib import Path
 
@@ -376,11 +377,20 @@ class Run:
     def log(self, msg: str = "") -> None:
         ts = datetime.now().isoformat(timespec="seconds")
         prefix = "[DRY] " if self.dry_run else ""
-        # A leading newline (the pass headers) becomes its own blank line, so
-        # the timestamp prefix is never orphaned onto an empty line.
         if msg.startswith("\n"):
             self.log_file.write("\n")
             msg = msg.lstrip("\n")
+            
+        if msg:
+            disp_msg = msg
+            if msg.startswith("--- PASS"):
+                disp_msg = ui.color(msg, ui.BOLD + ui.CYAN)
+            elif " SKIP" in msg:
+                disp_msg = ui.warn(msg.strip())
+            elif " TAG:" in msg or " TAG ERROR" in msg:
+                disp_msg = ui.info(msg.strip())
+            ui.tqdm.write(disp_msg)
+
         line = f"[{ts}] {prefix}{msg}" if msg else ""
         self.log_file.write(line + "\n")
         self.log_file.flush()
@@ -1099,6 +1109,10 @@ def main() -> int:
             return 1
 
     log_path = Path(args.log_path) if args.log_path else root / "cleanup.log"
+    ui.print_header(f"cleaner.py - Fragmented Album Consolidator{' [DRY RUN]' if args.dry_run else ''}")
+    print(f"Target: {root}")
+    print(f"Log path: {log_path}\n")
+
     try:
         run = Run(
             root,
@@ -1169,7 +1183,8 @@ def main() -> int:
         run.log(f"CLEANUP RUN END [{mode}]")
         run.log("=" * 70 + "\n")
 
-        print(f"Cleanup run complete ({mode}). See {log_path} for details.")
+        print(ui.success(f"Cleanup run complete ({mode}). See {log_path} for details."))
+        ui.print_summary(run.stats)
     finally:
         run.close()
 

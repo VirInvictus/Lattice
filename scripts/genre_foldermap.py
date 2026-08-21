@@ -90,6 +90,8 @@ from collections import Counter, namedtuple
 from datetime import datetime
 from pathlib import Path
 
+import ui
+
 __version__ = "1.4.1"
 
 # Path-component characters forbidden on Windows/NTFS/exFAT (the library often
@@ -515,7 +517,7 @@ class Runner:
     def _emit(self, msg: str) -> None:
         if not self.quiet:
             prefix = "[DRY] " if self.dry_run else ""
-            print(f"{prefix}{msg}")
+            ui.tqdm.write(f"{prefix}{msg}")
 
     def _cross_device(self, src: Path, dst: Path) -> bool:
         """Would moving src to dst cross a filesystem boundary? The destination
@@ -597,12 +599,12 @@ def execute(
     root: Path | None = None,
     staging: str | None = None,
 ) -> None:
-    for mv in moves:
+    for mv in ui.tqdm(moves, desc=ui.info("Moving directories")):
         runner.do_move(mv.src, mv.dst, mv.kind)
     # One prune pass after ALL moves (a source dir is only removable once every
     # album inside it has moved out), deepest-first so a nested source empties
     # before its parent is considered.
-    for d in sorted(source_artist_dirs, key=lambda p: len(p.parts), reverse=True):
+    for d in ui.tqdm(sorted(source_artist_dirs, key=lambda p: len(p.parts), reverse=True), desc=ui.info("Pruning emptied directories")):
         runner.prune_empty(d)
     # A genre folder emptied by moving its last artist out (--refile-mismatched)
     # is pruned too, like revert's upward prune; never the library root itself,
@@ -641,7 +643,7 @@ def revert(manifest_path: Path, dry_run: bool, quiet: bool) -> int:
     with Runner(manifest_path.with_suffix(".revert.tsv"), dry_run, quiet) as runner:
         prune_parents: set[Path] = set()
         # Reverse order so nested moves undo cleanly (deepest dst first).
-        for src, dst in reversed(pairs):
+        for src, dst in ui.tqdm(reversed(pairs), desc=ui.info("Reverting moves")):
             srcp, dstp = Path(src), Path(dst)
             if not dstp.exists():
                 runner._emit(f"MISSING (already reverted?): {dstp}")
@@ -655,7 +657,7 @@ def revert(manifest_path: Path, dry_run: bool, quiet: bool) -> int:
             prune_parents.add(dstp.parent)
         # Clear out the genre/artist/album dirs vacated by the revert, walking
         # up from each and stopping at the first still-populated ancestor.
-        for d in sorted(prune_parents, key=lambda p: len(p.parts), reverse=True):
+        for d in ui.tqdm(sorted(prune_parents, key=lambda p: len(p.parts), reverse=True), desc=ui.info("Pruning directories")):
             runner.prune_up(d)
         _print_summary(runner.stats, dry_run, label="revert", quiet=quiet)
     return 0
@@ -672,8 +674,8 @@ def _print_summary(
     verb = "Would" if dry_run else "Done:"
     print()
     print(
-        f"{verb} {label} —",
-        ", ".join(f"{k}={v}" for k, v in stats.items()) or "nothing",
+        ui.info(f"{verb} {label} — " +
+        (", ".join(f"{k}={v}" for k, v in stats.items()) or "nothing"))
     )
 
 
@@ -686,10 +688,10 @@ def looks_like_library(directory: Path) -> bool:
 def cmd_map(args) -> int:
     directory = Path(args.directory).resolve()
     if not directory.is_dir():
-        print(f"error: {directory} is not a directory", file=sys.stderr)
+        print(ui.error(f"{directory} is not a directory"))
         return 1
     if not looks_like_library(directory):
-        print(f"error: {directory} has no subfolders; refusing to run", file=sys.stderr)
+        print(ui.error(f"{directory} has no subfolders; refusing to run"))
         return 1
 
     only = set(args.only_genre) if args.only_genre else None
@@ -705,13 +707,13 @@ def cmd_map(args) -> int:
     )
 
     if issues:
-        print(f"--- {len(issues)} issue(s) flagged for review ---")
+        print(ui.warn(f"--- {len(issues)} issue(s) flagged for review ---"))
         for msg in issues:
-            print(f"  {msg}")
+            print(ui.warn(f"  {msg}"))
         print()
 
     if not moves:
-        print("No moves to make (everything already in place, or filtered out).")
+        print(ui.info("No moves to make (everything already in place, or filtered out)."))
         return 0
 
     manifest = (
@@ -798,6 +800,8 @@ def main() -> int:
     )
     parser.add_argument("--quiet", action="store_true", help="Minimize output")
     args = parser.parse_args()
+
+    ui.print_header("genre_foldermap.py - Genre Restructurer" + (" [DRY RUN]" if not args.apply else ""))
 
     if args.revert:
         return revert(
