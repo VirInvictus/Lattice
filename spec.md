@@ -155,4 +155,5 @@ Because the core `lattice` package is strictly read-only, destructive operations
 
 Notable scripts include:
 - `slipcover.py`: Embeds existing folder cover art (`cover.jpg`, etc.) into audio files lacking embedded art, maintaining parity between the filesystem and embedded metadata.
+- `flac2opus.py`: Converts FLAC files to Opus 128kbps, guaranteeing tag and duration parity before cleanly deleting the original FLAC.
 - `retag.py`, `genre_tidy.py`, `rerate.py`, `cleaner.py`, `genre_foldermap.py`, `replaygain.py`, `apestrip.py`: Various other destructive and state-mutating utilities documented in `CLAUDE.md` and `README.md`.

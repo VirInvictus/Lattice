@@ -1,6 +1,10 @@
 # Lattice Patch Notes
 
 ## v4.14.0 (2026-08-21)
+
+## flac2opus.py v1.0.0 (2026-08-21)
+- **New Companion Script:** Added `flac2opus.py` to recursively find FLAC files, encode them to Opus at 128kbps using `ffmpeg`, verify output quality (duration match) and seamlessly copy metadata tags via Mutagen, and delete the original FLAC files.
+
 ## slipcover.py v1.1.0 (2026-08-21)
 - **Feature:** Added `--fetch` to query the iTunes Search API and automatically download high-resolution cover art for albums completely missing art.
 - **Feature:** Added `--report` to find and report albums completely missing cover art.

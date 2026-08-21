@@ -26,7 +26,7 @@ A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice h
 - Modes: [AI library export](#ai-library-export) · [Genre wings](#genre-wings) · [Multi-root scanning](#multi-root-scanning) · [Integrity checks](#integrity-checks) · [Library statistics](#library-statistics) · [Cover art extraction](#cover-art-extraction) · [Color output](#color-output) · [Supported formats](#supported-formats)
 - [Architecture](#architecture)
 - [Full help output](#full-help-output)
-- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy) · [`genre_foldermap.py`](#genre_foldermappy) · [`replaygain.py`](#replaygainpy) · [`apestrip.py`](#apestrippy) · [`slipcover.py`](#slipcoverpy)
+- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy) · [`genre_foldermap.py`](#genre_foldermappy) · [`replaygain.py`](#replaygainpy) · [`apestrip.py`](#apestrippy) · [`slipcover.py`](#slipcoverpy) · [`flac2opus.py`](#flac2opuspy)
 - [Credits & Acknowledgements](#credits--acknowledgements) · [Support](#support)
 
 ## Why this exists
@@ -642,6 +642,24 @@ When downloading or importing music, you often end up with a high-quality `cover
 ```
 
 Format support matches `--extractArt`: MP3 (ID3 APIC), FLAC, Opus/OGG (Vorbis `METADATA_BLOCK_PICTURE`), and M4A (`covr` atom). The script is idempotent: files that already have embedded art are skipped, so you can run it safely across your entire library to patch up the stragglers. Writes an append-only timestamped log (`<directory>/slipcover.log`). Pass `--yes` to bypass the confirmation prompt.
+
+### `flac2opus.py`
+
+Converts FLAC files to Opus, verifying metadata and quality, then deletes the original FLAC.
+
+```bash
+# Preview the conversions
+./scripts/flac2opus.py /path/to/library --dry-run
+
+# Convert FLAC to Opus at 128kbps and delete the FLAC files
+./scripts/flac2opus.py /path/to/library
+
+# Convert at a different bitrate (e.g., 192kbps)
+./scripts/flac2opus.py /path/to/library --bitrate 192
+```
+
+The script uses `ffmpeg` to encode the Opus file. It is designed to be highly reliable: before deleting the original FLAC, it uses `mutagen` to compare the duration of the new Opus file with the source to guarantee encoding succeeded without truncation. It also uses `mutagen` to copy the Vorbis comments and embedded cover art directly from the FLAC, bypassing ffmpeg's metadata mapping entirely to guarantee a bit-perfect preservation of tags. Requires `ffmpeg` installed in your PATH.
+
 
 ## Credits & Acknowledgements
 
