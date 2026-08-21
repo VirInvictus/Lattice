@@ -70,12 +70,10 @@ from datetime import datetime
 from pathlib import Path
 
 try:
+    import mutagen
     from mutagen.asf import ASF
-    from mutagen.flac import FLAC
     from mutagen.id3 import ID3, ID3NoHeaderError, TALB, TIT2, TPE1, TPE2
     from mutagen.mp4 import MP4
-    from mutagen.oggopus import OggOpus
-    from mutagen.oggvorbis import OggVorbis
 
     MUTAGEN_OK = True
 except ImportError:  # tag normalization (--normalize-tags) needs mutagen
@@ -837,9 +835,10 @@ def _open_for_tags(path: Path, ext: str):
 
         return cur, apply
 
-    vorbis_cls = {".flac": FLAC, ".ogg": OggVorbis, ".opus": OggOpus}.get(ext)
-    if vorbis_cls is not None:
-        tags = vorbis_cls(path)
+    if ext in (".flac", ".ogg", ".opus"):
+        tags = mutagen.File(path)
+        if tags is None:
+            raise ValueError(f"mutagen could not recognize file: {path}")
         keymap = {k.lower(): k for k in tags.keys()}
 
         def get(name):
