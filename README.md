@@ -325,6 +325,36 @@ The `scripts/` directory holds eight standalone maintenance tools. They are **no
 | [`replaygain.py`](#replaygainpy) | Writes ReplayGain 2.0 gain/peak tags (via `rsgain`) | album-by-album |
 | [`apestrip.py`](#apestrippy) | Removes stray APEv2 tags from MP3s (`--keep-metadata` to migrate first) | recursive, MP3-only |
 
+### Importing New Music (The Circuit)
+
+When you download or import a swath of new albums (e.g. to a staging folder like `/mnt/SharedData/Music/Unfiltered`), you should run this standard "circuit" of scripts to ensure the files are transcoded, cleaned, embedded with art, and volume-normalized before moving them to your main library.
+
+```bash
+# 1. Transcode FLACs to Opus 128kbps (saves space, copies tags securely, deletes original FLAC)
+./scripts/flac2opus.py /mnt/SharedData/Music/Unfiltered -y
+
+# 2. Strip Malformed APEv2 Tags (removes hidden APEv2 tags on MP3s that confuse players)
+./scripts/apestrip.py /mnt/SharedData/Music/Unfiltered -y
+
+# 3. Clean and Normalize
+# Note: You MUST pass the --normalize-names, --normalize-tags, and --normalize-filenames flags explicitly.
+# Without these, cleaner.py will only consolidate fragmented album directories, leaving messy filenames and inconsistent tags untouched.
+./scripts/cleaner.py /mnt/SharedData/Music/Unfiltered --normalize-names --normalize-tags --normalize-filenames
+
+# 4. Fetch and Embed Cover Art (queries iTunes for covers missing art, and embeds folder images)
+./scripts/slipcover.py /mnt/SharedData/Music/Unfiltered --fetch -y
+
+# 5. Apply ReplayGain 2.0 (calculates volume peaks and tags the files)
+./scripts/replaygain.py /mnt/SharedData/Music/Unfiltered -y
+```
+
+Once processed, you can confidently merge these albums into your main library (`/mnt/SharedData/Music`). Over time, as your library grows, you may want to periodically maintain the entire tree by running the cleaner on the root:
+
+```bash
+./scripts/cleaner.py /mnt/SharedData/Music --normalize-names --normalize-tags --normalize-filenames
+```
+
+
 ### `retag.py`
 
 > **Destructive: writes genre tags in place.** Always preview with `--dry-run`; pass `--log` to keep an append-only record.
