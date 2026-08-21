@@ -148,3 +148,11 @@ is CORRUPT.
 - **Not a tagger.** It reads metadata; it does not write it.
 - **Not a database.** It walks the filesystem every time; there is no index.
 - **Not a sync tool.** It does not interact with cloud services or devices.
+
+## 6. Companion Scripts
+
+Because the core `lattice` package is strictly read-only, destructive operations are implemented as standalone Python scripts in the `scripts/` directory. These are not installed by `pip` or `pipx`, and are run directly. 
+
+Notable scripts include:
+- `slipcover.py`: Embeds existing folder cover art (`cover.jpg`, etc.) into audio files lacking embedded art, maintaining parity between the filesystem and embedded metadata.
+- `retag.py`, `genre_tidy.py`, `rerate.py`, `cleaner.py`, `genre_foldermap.py`, `replaygain.py`, `apestrip.py`: Various other destructive and state-mutating utilities documented in `CLAUDE.md` and `README.md`.

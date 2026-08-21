@@ -26,7 +26,7 @@ A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice h
 - Modes: [AI library export](#ai-library-export) · [Genre wings](#genre-wings) · [Multi-root scanning](#multi-root-scanning) · [Integrity checks](#integrity-checks) · [Library statistics](#library-statistics) · [Cover art extraction](#cover-art-extraction) · [Color output](#color-output) · [Supported formats](#supported-formats)
 - [Architecture](#architecture)
 - [Full help output](#full-help-output)
-- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy) · [`genre_foldermap.py`](#genre_foldermappy) · [`replaygain.py`](#replaygainpy) · [`apestrip.py`](#apestrippy)
+- [Companion scripts](#companion-scripts) (destructive): [`retag.py`](#retagpy) · [`genre_tidy.py`](#genre_tidypy) · [`rerate.py`](#reratepy) · [`cleaner.py`](#cleanerpy) · [`genre_foldermap.py`](#genre_foldermappy) · [`replaygain.py`](#replaygainpy) · [`apestrip.py`](#apestrippy) · [`slipcover.py`](#slipcoverpy)
 - [Credits & Acknowledgements](#credits--acknowledgements) · [Support](#support)
 
 ## Why this exists
@@ -311,7 +311,7 @@ options:
 
 ## Companion scripts
 
-The `scripts/` directory holds seven standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
+The `scripts/` directory holds eight standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
 
 **Use them with caution.** Have a backup or snapshot first, always preview with `--dry-run`, and read the log before applying. Each writes an append-only timestamped log and is idempotent, so a second run on an already-clean library is a no-op.
 
@@ -619,6 +619,22 @@ Two fields are handled deliberately, never migrated even under `--keep-metadata`
 A plain strip leaves the ID3 frames byte for byte; only the APEv2 block is removed. When `--keep-metadata` actually migrates a field, the ID3 is re-saved as ID3v2.3 with a refreshed ID3v1 (the same player-compatible save `retag.py` uses). The run writes an append-only timestamped log (default `<directory>/apestrip.log`) and is idempotent: a file with no APEv2 tag is left untouched, so a second run on a clean library is a no-op. MP3-only, since the APEv2-over-ID3 conflict is specific to MP3; other formats carry their own authoritative tags and are skipped. Pass `--yes` to skip the prompt (it is auto-skipped when stdin is not a TTY).
 
 **Malformed tags (`--repair-malformed`).** Some rips carry an APEv2 tag that is structurally broken (for example a footer with the `IS_HEADER` bit wrongly set, or junk bytes between the footer and a trailing ID3v1). `mutagen` refuses to load these, so the normal path cannot strip them. By default apestrip **reports** such files (`malformed APEv2 tag (mutagen cannot parse)`) and leaves them alone rather than silently calling them clean. Pass `--repair-malformed` to fix them: apestrip parses the tag straight from the bytes, **but only after proving the footer sits exactly where the header's size field points** (so the cut boundary is a real tag edge, not a chance signature in the audio), then excises the APE block (migrating sole-source fields into ID3 first only if `--keep-metadata` is also given; genre still never migrated, ratings still report-only). The result is written to a temp file, verified (it still decodes and no APE signature survives), and atomically swapped in. The audio frames and the trailing ID3v1 are preserved byte for byte; if any check fails the original is left untouched.
+
+### `slipcover.py`
+
+Embeds folder cover art into audio files that are missing embedded art. The mutating companion to `--missingArt`.
+
+When downloading or importing music, you often end up with a high-quality `cover.jpg` sitting alongside the audio files, but the files themselves have no embedded artwork. `slipcover.py` walks your library, finds directories that have a folder image (`cover.jpg`, `cover.png`, etc.) but contain audio files lacking embedded art, and writes the image directly into those files.
+
+```bash
+# Preview what would be embedded
+./scripts/slipcover.py /path/to/library --dry-run
+
+# Embed the images, prompting before writing
+./scripts/slipcover.py /path/to/library
+```
+
+Format support matches `--extractArt`: MP3 (ID3 APIC), FLAC, Opus/OGG (Vorbis `METADATA_BLOCK_PICTURE`), and M4A (`covr` atom). The script is idempotent: files that already have embedded art are skipped, so you can run it safely across your entire library to patch up the stragglers. Writes an append-only timestamped log (`<directory>/slipcover.log`). Pass `--yes` to bypass the confirmation prompt.
 
 ## Credits & Acknowledgements
 

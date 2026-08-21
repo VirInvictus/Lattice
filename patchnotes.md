@@ -1,6 +1,9 @@
 # Lattice Patch Notes
 
 ## v4.14.0 (2026-08-21)
+## slipcover.py v1.0.0 (2026-08-21)
+- **New Companion Script:** Added `slipcover.py` to embed existing folder cover art (`cover.jpg`, etc.) into audio files that lack embedded art. Supports MP3, FLAC, Opus, Ogg, and M4A. Idempotent and dry-run capable.
+
 - `cleaner.py` now supports an `--all` flag to run all normalization passes concurrently.
 
 ## v4.13.0 (2026-08-21)
