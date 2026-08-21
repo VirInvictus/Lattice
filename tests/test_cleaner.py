@@ -468,6 +468,23 @@ class TagFoldTests(unittest.TestCase):
     def test_broken_hyphen_folded(self):
         self.assertEqual(cleaner.tag_fold("Jay‐Z"), "Jay-Z")
 
+    def test_tag_dedupe(self):
+        self.assertEqual(
+            cleaner.tag_dedupe("The Documentary 2 / The Documentary 2"),
+            "The Documentary 2"
+        )
+        self.assertEqual(cleaner.tag_dedupe("Intro / Intro"), "Intro")
+        self.assertEqual(
+            cleaner.tag_dedupe("On Me (feat. Kendrick Lamar) / On Me"),
+            "On Me (feat. Kendrick Lamar)"
+        )
+        self.assertEqual(
+            cleaner.tag_dedupe("The Game / The Game feat. DeJ Loaf & Sha Sha"),
+            "The Game feat. DeJ Loaf & Sha Sha"
+        )
+        self.assertEqual(cleaner.tag_dedupe("A / B"), "A / B")
+        self.assertEqual(cleaner.tag_dedupe("The Game ; The Game"), "The Game")
+
 
 class CanonTrackArtistTests(unittest.TestCase):
     def test_plain_collapses_to_canonical(self):
@@ -1042,5 +1059,3 @@ class AsfCaseVariantTests(unittest.TestCase):
         self.assertTrue(fake.saved)
 
 
-if __name__ == "__main__":
-    unittest.main()

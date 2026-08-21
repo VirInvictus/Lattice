@@ -80,7 +80,7 @@ try:
 except ImportError:  # tag normalization (--normalize-tags) needs mutagen
     MUTAGEN_OK = False
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 # Containers whose title/album/artist/albumartist the tag pass can rewrite. Other
 # AUDIO_EXT members (.wav/.aac/.alac/.ape/.wv/.aiff) carry no handled tag layout
@@ -214,6 +214,39 @@ def tag_fold(s: str) -> str:
     are preserved (correct typography), matching canonical_render's narrow fold;
     unlike it, curly double quotes go to straight " since tags are not paths."""
     return " ".join(s.translate(_TAG_FOLD).split())
+
+
+def tag_dedupe(s: str) -> str:
+    """Removes 'A / A', 'A / A feat. B', or identical duplicate tag values
+    that can occur when multi-value tags are flattened or double-written."""
+    for sep in (" / ", " // ", " \\\\ ", " ; "):
+        if sep in s:
+            parts = [p.strip() for p in s.split(sep) if p.strip()]
+            if not parts:
+                continue
+            
+            # 1. Exact case-insensitive deduplication
+            unique = []
+            seen = set()
+            for p in parts:
+                lower = p.lower()
+                if lower not in seen:
+                    seen.add(lower)
+                    unique.append(p)
+            
+            if len(unique) == 1:
+                return unique[0]
+                
+            # 2. Substring deduplication (keep the longest)
+            unique.sort(key=len, reverse=True)
+            survivors = []
+            for p in unique:
+                if not any(p.lower() in surv.lower() for surv in survivors):
+                    survivors.append(p)
+            
+            # Join the remaining unique parts back together
+            return sep.join(survivors)
+    return s
 
 
 def _base_artist(raw: str) -> str:
@@ -723,16 +756,16 @@ def _planned_tag_values(
     follow the surviving folder name when `authority` is set (and are created
     if absent, as the artist restamp did before), else a typographic fold."""
     out: dict[str, list[str]] = {}
-    for field in ("title", "album"):
+    for field in ("title", "album", "artist", "albumartist"):
         vals = cur.get(field)
         if vals is None:
             continue
-        folded = [tag_fold(v) for v in vals]
+        folded = [tag_dedupe(tag_fold(v)) for v in vals]
         if folded != vals:
             out[field] = folded
 
-    artist = cur.get("artist")
-    albumartist = cur.get("albumartist")
+    artist = out.get("artist", cur.get("artist"))
+    albumartist = out.get("albumartist", cur.get("albumartist"))
 
     # If the file isn't in a renamed/merged artist folder, use the global authority if available.
     if not authority and global_artist_authority and artist and artist[0]:
@@ -750,13 +783,7 @@ def _planned_tag_values(
             out["artist"] = new_artist
         if albumartist is None or [authority] != albumartist:
             out["albumartist"] = [authority]
-    else:
-        for field, vals in (("artist", artist), ("albumartist", albumartist)):
-            if vals is None:
-                continue
-            folded = [tag_fold(v) for v in vals]
-            if folded != vals:
-                out[field] = folded
+
     return out
 
 

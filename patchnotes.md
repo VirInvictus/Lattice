@@ -1,5 +1,11 @@
 # Lattice Patch Notes
 
+## v4.13.0 (2026-08-21)
+
+- Added tag deduplication to `cleaner.py` (Pass 4). Tags displaying as `A / A` or `A, A` (often remnants of flattened multi-value tags) are now automatically merged down to their unique values during `--normalize-tags`. Substrings are also resolved (e.g. `Title (feat. Artist) / Title` correctly becomes `Title (feat. Artist)`). This cleanly fixes cases where ffmpeg or other tools accidentally join ID3v1 and ID3v2 tags.
+
+## cleaner.py v1.5.0 (2026-08-21)
+- **Feature:** Added `tag_dedupe` function to properly clean up and deduplicate identical or substring multi-value tags (e.g. `Title / Title`) during tag normalization.
 ## v4.12.0 (2026-08-15)
 
 - Added global artist tag authority logic to `cleaner.py` (Pass 4). The tag normalization pass now scans all artist-level folders across the entire library to build a global canonical map. Any track whose artist tag normalizes to a known canonical artist folder (handling case, punctuation, and guest credits correctly via a new `_base_artist` helper) will have its artist and albumartist tags rewritten to perfectly match the casing of the canonical folder. This unifies artist names even across different genre boundaries.
