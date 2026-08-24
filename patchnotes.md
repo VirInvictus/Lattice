@@ -1,5 +1,9 @@
 # Lattice Patch Notes
 
+## v4.15.0 (2026-08-23)
+- **TUI Extraction (`vir-tui`):** The generic CLI/curses interface has been extracted into a shared library, `vir-tui`. Lattice now delegates to `vir-tui` for all interactive menus and text prompts, sharing this layer with `CalibreQuarry`.
+
+
 ## v4.14.0 (2026-08-21)
 
 ## flac2opus.py v1.0.0 (2026-08-21)
