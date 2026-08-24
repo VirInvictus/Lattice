@@ -230,7 +230,10 @@ def write_ai_library(
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("Artist | Album | Genre | Rating | Tracks\n")
         f.write("-" * 50 + "\n")
-        f.writelines(f"{artist} | {album} | {genre} | {rating} | {tracks}\n" for artist, album, genre, rating, tracks in albums)
+        f.writelines(
+            f"{artist} | {album} | {genre} | {rating} | {tracks}\n"
+            for artist, album, genre, rating, tracks in albums
+        )
 
     if not quiet:
         rated = sum(1 for _, _, _, r, _ in albums if r)
