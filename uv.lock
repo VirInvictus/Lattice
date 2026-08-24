@@ -55,7 +55,7 @@ requires-dist = [
     { name = "mutagen", specifier = ">=1.46.0" },
     { name = "pyinstaller", marker = "extra == 'pyinstaller'", specifier = ">=6.0" },
     { name = "tqdm", specifier = ">=4.65.0" },
-    { name = "vir-tui", git = "https://github.com/VirInvictus/vir-tui.git?branch=main" },
+    { name = "vir-tui", git = "https://github.com/VirInvictus/vir-tui.git?rev=main" },
 ]
 provides-extras = ["pyinstaller"]
 
@@ -223,4 +223,4 @@ wheels = [
 [[package]]
 name = "vir-tui"
 version = "2.0.0"
-source = { git = "https://github.com/VirInvictus/vir-tui.git?branch=main#a43f30e5e87ae65a828cf507aef4dcf40f04f640" }
+source = { git = "https://github.com/VirInvictus/vir-tui.git?rev=main#d13ad0ed2c4afc05d0c052d14e644747f1e9e73f" }

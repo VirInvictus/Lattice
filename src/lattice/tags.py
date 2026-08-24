@@ -301,7 +301,7 @@ def get_all_tags(file_path: str) -> TagBundle:
             rating = _best_rating(mp4_candidates)
 
         elif isinstance(audio, (FLAC, OggVorbis, OggOpus)):
-            keys = {k.lower(): k for k in tags}
+            keys = {k.lower(): k for k in tags.keys()}
             if "title" in keys:
                 title = _first_text(tags[keys["title"]])
             if "albumartist" in keys:
@@ -322,7 +322,7 @@ def get_all_tags(file_path: str) -> TagBundle:
             rating = _best_rating(vorbis_candidates)
 
         elif isinstance(audio, ASF):
-            name_map = {k_name.lower(): k_name for k_name in tags}
+            name_map = {k_name.lower(): k_name for k_name in tags.keys()}
             if key_name := name_map.get("title"):
                 title = _first_text(tags.get(key_name))
             if key_name := name_map.get("wm/albumartist") or name_map.get("author"):
