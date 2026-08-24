@@ -1,5 +1,9 @@
 # Lattice Roadmap
 
+## Phase 15: Extraction (2026-08-23)
+- [x] Extract `vir-tui` core into a standalone repository and replace local primitives with the shared dependency.
+# Lattice Roadmap
+
 What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.10.1.
 
 ---
