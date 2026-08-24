@@ -2,28 +2,28 @@ import os
 import re
 import sys
 import unicodedata
-from collections import defaultdict, Counter
+from collections import Counter, defaultdict
+from collections.abc import Sequence
 from difflib import SequenceMatcher
 from typing import NamedTuple
-from collections.abc import Sequence
 
-from lattice.utils import (
-    is_audio,
-    count_audio_files,
-    _make_pbar,
-    iter_audio_dirs,
-    as_roots,
-    relpath_under,
-    read_tags_concurrent,
-    map_concurrent,
-)
-from lattice.tags import HAVE_MUTAGEN_BASE, TagBundle, read_replaygain
 from lattice.config import (
     AUDIO_EXTENSIONS,
-    DEFAULT_DUPLICATES_OUTPUT,
-    DEFAULT_TAG_AUDIT_OUTPUT,
     DEFAULT_BITRATE_AUDIT_OUTPUT,
+    DEFAULT_DUPLICATES_OUTPUT,
     DEFAULT_REPLAYGAIN_AUDIT_OUTPUT,
+    DEFAULT_TAG_AUDIT_OUTPUT,
+)
+from lattice.tags import HAVE_MUTAGEN_BASE, TagBundle, read_replaygain
+from lattice.utils import (
+    _make_pbar,
+    as_roots,
+    count_audio_files,
+    is_audio,
+    iter_audio_dirs,
+    map_concurrent,
+    read_tags_concurrent,
+    relpath_under,
 )
 
 # =====================================

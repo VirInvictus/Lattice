@@ -3,31 +3,34 @@ import os
 import sys
 
 from lattice.config import (
-    VERSION,
-    get_layout,
-    DEFAULT_LIBRARY_OUTPUT,
     DEFAULT_AI_LIBRARY_OUTPUT,
+    DEFAULT_ART_QUALITY_OUTPUT,
+    DEFAULT_BITRATE_AUDIT_OUTPUT,
+    DEFAULT_DUPLICATES_OUTPUT,
     DEFAULT_FLAC_OUTPUT,
+    DEFAULT_LIBRARY_OUTPUT,
+    DEFAULT_MISSING_ART_OUTPUT,
     DEFAULT_MP3_OUTPUT,
     DEFAULT_OPUS_OUTPUT,
+    DEFAULT_PLAYLIST_OUTPUT,
+    DEFAULT_REPLAYGAIN_AUDIT_OUTPUT,
+    DEFAULT_TAG_AUDIT_OUTPUT,
     DEFAULT_WAV_OUTPUT,
     DEFAULT_WMA_OUTPUT,
-    DEFAULT_MISSING_ART_OUTPUT,
-    DEFAULT_ART_QUALITY_OUTPUT,
-    DEFAULT_DUPLICATES_OUTPUT,
-    DEFAULT_TAG_AUDIT_OUTPUT,
-    DEFAULT_BITRATE_AUDIT_OUTPUT,
-    DEFAULT_REPLAYGAIN_AUDIT_OUTPUT,
-    DEFAULT_PLAYLIST_OUTPUT,
+    VERSION,
+    get_layout,
 )
-
-from lattice.modes.library import (
-    write_music_library_tree,
-    write_ai_library,
-    write_all_wings,
-    write_ai_wings,
+from lattice.modes.artwork import (
+    run_art_quality_audit,
+    run_extract_art,
+    run_missing_art,
 )
-from lattice.modes.playlists import generate_playlist
+from lattice.modes.audit import (
+    run_bitrate_audit,
+    run_duplicates,
+    run_replaygain_audit,
+    run_tag_audit,
+)
 from lattice.modes.integrity import (
     run_flac_mode,
     run_mp3_mode,
@@ -35,17 +38,13 @@ from lattice.modes.integrity import (
     run_wav_mode,
     run_wma_mode,
 )
-from lattice.modes.artwork import (
-    run_extract_art,
-    run_missing_art,
-    run_art_quality_audit,
+from lattice.modes.library import (
+    write_ai_library,
+    write_ai_wings,
+    write_all_wings,
+    write_music_library_tree,
 )
-from lattice.modes.audit import (
-    run_duplicates,
-    run_tag_audit,
-    run_bitrate_audit,
-    run_replaygain_audit,
-)
+from lattice.modes.playlists import generate_playlist
 from lattice.modes.stats import run_stats
 from lattice.tui import interactive_menu
 

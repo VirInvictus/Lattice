@@ -10,15 +10,15 @@ FakeTag = namedtuple(
 
 
 def tag(**kw):
-    base = dict(
-        rating=None,
-        genre=None,
-        artist=None,
-        album=None,
-        title=None,
-        duration_s=None,
-        bitrate_kbps=None,
-    )
+    base = {
+        "rating": None,
+        "genre": None,
+        "artist": None,
+        "album": None,
+        "title": None,
+        "duration_s": None,
+        "bitrate_kbps": None,
+    }
     base.update(kw)
     return FakeTag(**base)
 

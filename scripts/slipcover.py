@@ -43,20 +43,21 @@ def _import_lattice():
             0,
             str(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))),
         )
-        from lattice.utils import iter_audio_dirs, _find_cover_file, is_audio
+        from mutagen.id3 import APIC, ID3, ID3NoHeaderError
+        from mutagen.mp4 import MP4Cover
+
         from lattice.config import AUDIO_EXTENSIONS
+        from lattice.modes.artwork import _ART_EXTRACTORS
         from lattice.tags import (
             FLAC,
+            HAVE_MUTAGEN_MP3,
+            MP4,
+            MUTAGEN_MP3,
             MutagenFile,
             Picture,
-            MP4,
-            HAVE_MUTAGEN_MP3,
-            MUTAGEN_MP3,
             get_all_tags,
         )
-        from lattice.modes.artwork import _ART_EXTRACTORS
-        from mutagen.id3 import ID3, APIC, ID3NoHeaderError
-        from mutagen.mp4 import MP4Cover
+        from lattice.utils import _find_cover_file, is_audio, iter_audio_dirs
     except ImportError as e:
         print(
             f"error: could not import lattice ({e}).\n"
@@ -92,7 +93,7 @@ def has_embedded_art(filepath: str, ext: str, deps: dict) -> bool:
         return False
     try:
         return extractor(filepath) is not None
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
 
@@ -158,7 +159,7 @@ def fetch_art_for_dir(
                 ui.success(f"Fetched cover.jpg for: {tags.artist} - {tags.album}")
             )
             return True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ui.tqdm.write(
             ui.error(f"Failed to fetch artwork for {os.path.basename(dirpath)}: {e}")
         )
@@ -219,7 +220,7 @@ def embed_art(filepath: str, img_data: bytes, mime: str, ext: str, deps: dict) -
             return False
 
         return True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(
             ui.error(f"  [!] Failed to embed art in {os.path.basename(filepath)}: {e}"),
             file=sys.stderr,
@@ -383,7 +384,7 @@ def main() -> int:
     log_fh = None
     if not args.dry_run:
         try:
-            log_fh = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
+            log_fh = open(log_path, "a", encoding="utf-8")
         except OSError as e:
             print(
                 ui.error(f"error: cannot open log file {log_path}: {e}"),
@@ -394,7 +395,7 @@ def main() -> int:
     def log(msg: str) -> None:
         ui.tqdm.write(msg)
         if log_fh is not None:
-            ts = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
+            ts = datetime.now().isoformat(timespec="seconds")
             log_fh.write(f"[{ts}] {msg}\n")
 
     if not args.dry_run:

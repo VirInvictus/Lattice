@@ -55,23 +55,21 @@ import os
 import shutil
 import struct
 import sys
-from vir_tui import core as ui
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import cast
 
 from mutagen.apev2 import APENoHeaderError, APEv2
-from mutagen.mp3 import MP3
 from mutagen.id3 import (
     APIC,
     COMM,
     ID3,
-    Frame,
     TALB,
     TBPM,
     TCOM,
     TCOP,
+    TDRC,
     TENC,
     TEXT,
     TIT1,
@@ -83,17 +81,19 @@ from mutagen.id3 import (
     TPOS,
     TPUB,
     TRCK,
-    TSOA,
     TSO2,
+    TSOA,
     TSOP,
     TSOT,
     TSRC,
     TXXX,
     USLT,
+    Frame,
     ID3NoHeaderError,
     ParseID3v1,
-    TDRC,
 )
+from mutagen.mp3 import MP3
+from vir_tui import core as ui
 
 __version__ = "1.2.0"
 
@@ -539,7 +539,7 @@ def plan_file(
     ratings: list[str] = []
     skipped: list[tuple[str, str]] = []
     has_ape_genre = False
-    for key in ape.keys():
+    for key in ape:
         value = ape[key]
         action, payload = classify_ape_field(key)
         if action == "genre":

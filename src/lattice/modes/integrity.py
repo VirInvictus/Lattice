@@ -1,29 +1,29 @@
 import os
 import re
-import sys
-import subprocess
-import time
 import shutil
-from pathlib import Path
+import subprocess
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
-from lattice.utils import (
-    run_proc,
-    has_tool,
-    _make_pbar,
-    green,
-    red,
-    yellow,
-    as_roots,
-    relpath_under,
-)
-from lattice.tags import HAVE_MUTAGEN_MP3, MUTAGEN_MP3
 from lattice.config import (
     DEFAULT_MP3_OUTPUT,
     DEFAULT_OPUS_OUTPUT,
     DEFAULT_WAV_OUTPUT,
     DEFAULT_WMA_OUTPUT,
+)
+from lattice.tags import HAVE_MUTAGEN_MP3, MUTAGEN_MP3
+from lattice.utils import (
+    _make_pbar,
+    as_roots,
+    green,
+    has_tool,
+    red,
+    relpath_under,
+    run_proc,
+    yellow,
 )
 
 # =====================================

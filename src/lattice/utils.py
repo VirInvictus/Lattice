@@ -1,15 +1,15 @@
 import os
-import sys
 import shutil
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from lattice.config import (
     AUDIO_EXTENSIONS,
     COVER_NAMES,
-    RE_CLEAN_PREFIX,
     RE_CLEAN_PATTERNS,
+    RE_CLEAN_PREFIX,
     get_tag_workers,
 )
 
@@ -391,7 +391,7 @@ class _TUIPbar:
 class _FallbackProgress:
     """Simple progress bar for when tqdm is not installed."""
 
-    __slots__ = ("_current", "_total", "_desc", "_quiet")
+    __slots__ = ("_current", "_desc", "_quiet", "_total")
 
     def __init__(self, total: int, desc: str, quiet: bool):
         self._current = 0

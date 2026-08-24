@@ -9,8 +9,8 @@ from pathlib import Path
 # rating bytes, so it is exercised against a copy of the committed fixture MP3.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import rerate  # noqa: E402
-from mutagen.id3 import ID3, POPM, ID3NoHeaderError  # noqa: E402
+import rerate
+from mutagen.id3 import ID3, POPM, ID3NoHeaderError
 
 MP3_SRC = (
     Path(__file__).parent

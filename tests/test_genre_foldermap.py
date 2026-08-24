@@ -14,7 +14,7 @@ from pathlib import Path
 # test_genre_tidy.py, which tests decision logic without the shell-out/scan.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import genre_foldermap as gf  # noqa: E402
+import genre_foldermap as gf
 
 # The scanner yields rows with .path and .genre; only those two fields are read.
 FakeAD = namedtuple("FakeAD", "path genre")
@@ -176,7 +176,7 @@ class BuildPlanTests(unittest.TestCase):
             },
         )
         rec = FakeAD(str(self.root / "J. Cole"), "Conscious Hip Hop")
-        moves, issues, sources = gf.build_plan([rec], self.root)
+        moves, issues, _sources = gf.build_plan([rec], self.root)
         self.assertEqual(issues, [])
         self.assertTrue(all(m.kind == "file" for m in moves))
         dsts = {m.dst for m in moves}

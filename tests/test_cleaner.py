@@ -13,7 +13,7 @@ from unittest import mock
 # trees; normalize_name (a pure helper) is tested directly.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import cleaner  # noqa: E402
+import cleaner
 
 
 class NormalizeNameTests(unittest.TestCase):
@@ -432,8 +432,8 @@ class NormalizeTreeTests(_TreeCase):
         self.assertEqual(run.stats["renamed"], 0)
 
 
-from mutagen.flac import FLAC  # noqa: E402
-from mutagen.id3 import ID3  # noqa: E402
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3
 
 FIXTURES = Path(__file__).parent / "fixtures" / "library"
 MP3_SRC = FIXTURES / "Cursive" / "Domestica" / "01 - The Casualty.mp3"
@@ -620,7 +620,7 @@ class TagWriterTests(_RunCase):
         cleaner.normalize_file_tags(p, None, run)
         run.close()
         f = FLAC(p)
-        self.assertEqual([k for k in f.keys() if k.lower() == "title"], ["title"])
+        self.assertEqual([k for k in f if k.lower() == "title"], ["title"])
         self.assertEqual(f["title"][0], "Cur'ly")  # no duplicate key left
 
     def test_flac_authority_restamp_preserves_feat(self):
@@ -647,7 +647,7 @@ class TagWriterTests(_RunCase):
         run = self._run()
         cleaner.normalize_file_tags(p, None, run)
         run.close()
-        self.assertNotIn("album", [k.lower() for k in FLAC(p).keys()])
+        self.assertNotIn("album", [k.lower() for k in FLAC(p)])
 
 
 class MultiValueTagTests(_RunCase):

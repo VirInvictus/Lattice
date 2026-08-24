@@ -450,7 +450,7 @@ def _safe_iterdir(p: Path) -> list[Path]:
 def _import_lattice():
     try:
         from lattice.modes.library import _scan_album_dirs
-        from lattice.utils import as_roots, count_audio_files, _make_pbar
+        from lattice.utils import _make_pbar, as_roots, count_audio_files
     except ImportError as e:
         print(
             f"error: could not import lattice ({e}).\n"

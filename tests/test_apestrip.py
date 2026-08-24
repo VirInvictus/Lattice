@@ -16,8 +16,8 @@ from pathlib import Path
 # rating policy in one place.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import apestrip  # noqa: E402
-from mutagen.apev2 import (  # noqa: E402
+import apestrip
+from mutagen.apev2 import (
     BINARY,
     EXTERNAL,
     TEXT,
@@ -25,8 +25,8 @@ from mutagen.apev2 import (  # noqa: E402
     APEv2,
     APEValue,
 )
-from mutagen.id3 import COMM, ID3  # noqa: E402
-from mutagen.mp3 import MP3  # noqa: E402
+from mutagen.id3 import COMM, ID3
+from mutagen.mp3 import MP3
 
 FIXTURES = Path(__file__).parent / "fixtures" / "library"
 MP3_SRC = FIXTURES / "Cursive" / "Domestica" / "01 - The Casualty.mp3"

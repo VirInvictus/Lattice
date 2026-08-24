@@ -16,9 +16,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LIB = os.path.join(HERE, "library")
 
 sys.path.insert(0, os.path.join(HERE, "..", "..", "src"))
-from mutagen.flac import FLAC  # noqa: E402
-from mutagen.mp3 import MP3  # noqa: E402
-from mutagen.id3 import TIT2, TPE1, TALB, TCON, TRCK, POPM  # noqa: E402
+from mutagen.flac import FLAC
+from mutagen.id3 import POPM, TALB, TCON, TIT2, TPE1, TRCK
+from mutagen.mp3 import MP3
 
 
 def gen(path, dur, *, lo=False):

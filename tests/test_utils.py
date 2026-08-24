@@ -4,17 +4,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import lattice.config as config
-import lattice.utils as utils
+from lattice import config, utils
 from lattice.utils import (
-    normalize_rating,
-    format_rating,
+    _looks_numeric,
     clean_song_name,
+    color,
+    format_rating,
+    green,
+    normalize_rating,
     parse_layout,
     relpath_under,
-    _looks_numeric,
-    color,
-    green,
 )
 
 

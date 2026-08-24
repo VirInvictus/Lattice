@@ -19,12 +19,12 @@ import os
 import sys
 from datetime import datetime
 
-from vir_tui import core as ui
 import mutagen
 from mutagen.apev2 import APENoHeaderError, APEv2
 from mutagen.asf import ASF
 from mutagen.id3 import ID3, TCON, ID3NoHeaderError, ParseID3v1
 from mutagen.mp4 import MP4
+from vir_tui import core as ui
 
 __version__ = "1.1.4"
 

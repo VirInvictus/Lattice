@@ -1,7 +1,7 @@
 import os
 from typing import NamedTuple
 
-from lattice.utils import normalize_rating, _looks_numeric
+from lattice.utils import _looks_numeric, normalize_rating
 
 
 class TagBundle(NamedTuple):
@@ -127,10 +127,10 @@ def read_replaygain(file_path: str) -> ReplayGainStatus:
 HAVE_MUTAGEN_BASE = False
 try:
     from mutagen import File as MutagenFile
-    from mutagen.flac import FLAC, Picture  # noqa: F401  (re-export)
-    from mutagen.oggvorbis import OggVorbis
-    from mutagen.mp4 import MP4
     from mutagen.asf import ASF
+    from mutagen.flac import FLAC, Picture  # noqa: F401  (re-export)
+    from mutagen.mp4 import MP4
+    from mutagen.oggvorbis import OggVorbis
 
     try:
         from mutagen.oggopus import OggOpus
@@ -178,13 +178,12 @@ def _first_text(val) -> str | None:
 def _parse_track_number(val) -> int | None:
     if val is None:
         return None
-    if isinstance(val, list) and val:
-        if isinstance(val[0], tuple):
-            try:
-                num = int(val[0][0])
-                return num if num > 0 else None
-            except ValueError, IndexError, TypeError:
-                return None
+    if isinstance(val, list) and val and isinstance(val[0], tuple):
+        try:
+            num = int(val[0][0])
+            return num if num > 0 else None
+        except ValueError, IndexError, TypeError:
+            return None
     s = _first_text(val)
     if not s:
         return None
@@ -302,7 +301,7 @@ def get_all_tags(file_path: str) -> TagBundle:
             rating = _best_rating(mp4_candidates)
 
         elif isinstance(audio, (FLAC, OggVorbis, OggOpus)):
-            keys = {k.lower(): k for k in tags.keys()}
+            keys = {k.lower(): k for k in tags}
             if "title" in keys:
                 title = _first_text(tags[keys["title"]])
             if "albumartist" in keys:
@@ -323,7 +322,7 @@ def get_all_tags(file_path: str) -> TagBundle:
             rating = _best_rating(vorbis_candidates)
 
         elif isinstance(audio, ASF):
-            name_map = {k_name.lower(): k_name for k_name in tags.keys()}
+            name_map = {k_name.lower(): k_name for k_name in tags}
             if key_name := name_map.get("title"):
                 title = _first_text(tags.get(key_name))
             if key_name := name_map.get("wm/albumartist") or name_map.get("author"):

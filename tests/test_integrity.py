@@ -7,13 +7,13 @@ from unittest import mock
 
 import lattice.modes.integrity as integrity_mod
 from lattice.modes.integrity import (
+    TIER_CORRUPT,
+    TIER_METADATA,
+    TIER_OK,
+    TIER_SUSPECT,
+    _find_files_by_ext_path,
     classify_decode,
     run_mp3_mode,
-    _find_files_by_ext_path,
-    TIER_OK,
-    TIER_METADATA,
-    TIER_SUSPECT,
-    TIER_CORRUPT,
 )
 
 # Real stderr signatures captured from ffmpeg / libFLAC during the audit.

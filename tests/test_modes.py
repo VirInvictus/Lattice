@@ -17,20 +17,20 @@ from types import SimpleNamespace
 from unittest import mock
 
 import lattice.modes.library as library_mod
+from lattice.modes.artwork import run_missing_art
+from lattice.modes.audit import (
+    run_bitrate_audit,
+    run_duplicates,
+    run_replaygain_audit,
+    run_tag_audit,
+)
 from lattice.modes.library import (
-    write_music_library_tree,
     write_ai_library,
     write_all_wings,
+    write_music_library_tree,
 )
-from lattice.modes.stats import run_stats
-from lattice.modes.audit import (
-    run_duplicates,
-    run_tag_audit,
-    run_bitrate_audit,
-    run_replaygain_audit,
-)
-from lattice.modes.artwork import run_missing_art
 from lattice.modes.playlists import generate_playlist
+from lattice.modes.stats import run_stats
 from lattice.utils import count_audio_files
 
 FIXTURE = str(Path(__file__).parent / "fixtures" / "library")

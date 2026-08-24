@@ -10,7 +10,7 @@ from pathlib import Path
 # the shell-out is untested, its decision logic is).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import genre_tidy as gt  # noqa: E402
+import genre_tidy as gt
 
 FakeAD = namedtuple("FakeAD", "artist genre")
 
@@ -389,7 +389,7 @@ class CmdApplyTests(unittest.TestCase):
         self.assertIn("skipped", out)
         self.assertIn("UNSUPPORTED FORMAT (skipped)", self._log_text())
         # Converges: a second apply reports exactly the same, no retag churn.
-        rc2, out2 = self._apply([rec])
+        _rc2, out2 = self._apply([rec])
         self.assertEqual(out.replace("\r", ""), out2.replace("\r", ""))
 
 

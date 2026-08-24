@@ -25,9 +25,10 @@ def _import_lattice():
             0,
             str(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))),
         )
-        from lattice.utils import iter_audio_dirs
         from mutagen.flac import FLAC
         from mutagen.oggopus import OggOpus
+
+        from lattice.utils import iter_audio_dirs
     except ImportError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(2)
@@ -43,7 +44,7 @@ def convert_and_verify(flac_path: str, bitrate: int, deps: dict, dry_run: bool) 
 
     try:
         flac_audio = deps["FLAC"](flac_path)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ui.tqdm.write(
             ui.error(f"Failed to read FLAC tags for {os.path.basename(flac_path)}: {e}")
         )
@@ -93,7 +94,7 @@ def convert_and_verify(flac_path: str, bitrate: int, deps: dict, dry_run: bool) 
     # Verify and copy tags
     try:
         opus_audio = deps["OggOpus"](opus_path)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ui.tqdm.write(
             ui.error(
                 f"Failed to read resulting Opus for {os.path.basename(flac_path)}: {e}"
@@ -215,7 +216,7 @@ def main() -> int:
     log_fh = None
     if not args.dry_run:
         try:
-            log_fh = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
+            log_fh = open(log_path, "a", encoding="utf-8")
         except OSError as e:
             print(
                 ui.error(f"error: cannot open log file {log_path}: {e}"),
@@ -226,7 +227,7 @@ def main() -> int:
     def log(msg: str) -> None:
         ui.tqdm.write(msg)
         if log_fh is not None:
-            ts = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
+            ts = datetime.now().isoformat(timespec="seconds")
             log_fh.write(f"[{ts}] {msg}\n")
 
     if not args.dry_run:

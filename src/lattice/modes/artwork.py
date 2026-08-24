@@ -1,27 +1,27 @@
-import os
-import sys
 import base64
+import os
 import struct
+import sys
 from collections import defaultdict
 
-from lattice.utils import (
-    is_audio,
-    _has_cover_file,
-    _find_cover_file,
-    _make_pbar,
-    iter_audio_dirs,
-    as_roots,
-    relpath_under,
-)
 from lattice.config import ART_FORMAT_PRIORITY, DEFAULT_MISSING_ART_OUTPUT
 from lattice.tags import (
+    FLAC,
     HAVE_MUTAGEN_BASE,
     HAVE_MUTAGEN_MP3,
-    FLAC,
+    MP4,
+    MUTAGEN_MP3,
     MutagenFile,
     Picture,
-    MUTAGEN_MP3,
-    MP4,
+)
+from lattice.utils import (
+    _find_cover_file,
+    _has_cover_file,
+    _make_pbar,
+    as_roots,
+    is_audio,
+    iter_audio_dirs,
+    relpath_under,
 )
 
 # =====================================

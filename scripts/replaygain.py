@@ -93,8 +93,8 @@ def _import_lattice():
     audio-extension set. Imported lazily so the script gives a useful hint
     instead of a bare traceback when run outside an install / PYTHONPATH=src."""
     try:
-        from lattice.tags import read_replaygain
         from lattice.config import AUDIO_EXTENSIONS
+        from lattice.tags import read_replaygain
     except ImportError as e:
         print(
             f"error: could not import lattice ({e}).\n"
@@ -191,9 +191,9 @@ def read_gain_strings(path: str) -> tuple[str | None, str | None]:
             s = val.decode("utf-8", "replace")
         else:
             s = str(val)
-        if kl.endswith("replaygain_track_gain") or kl.endswith("r128_track_gain"):
+        if kl.endswith(("replaygain_track_gain", "r128_track_gain")):
             track = s
-        elif kl.endswith("replaygain_album_gain") or kl.endswith("r128_album_gain"):
+        elif kl.endswith(("replaygain_album_gain", "r128_album_gain")):
             album = s
     return (track, album)
 

@@ -11,6 +11,7 @@ if len(sys.argv) > 1 and "-c" in sys.argv:
         sys.exit(0)
 
 import multiprocessing
+
 from lattice.cli import main
 from lattice.utils import _reset_terminal
 

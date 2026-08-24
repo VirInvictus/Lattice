@@ -1,36 +1,51 @@
 import os
-from contextlib import contextmanager
-from typing import Any
 
 from vir_tui import (
-    tui_select,
-    reset_terminal,
-    open_screen,
-    close_screen,
+    CancelledError,
     ask,
     ask_yn,
+    close_screen,
+    notify,
+    open_screen,
     prompt_int,
     prompt_out,
+    reset_terminal,
     run_with_capture,
-    CancelledError,
-    notify
+    tui_select,
 )
 
-
-from lattice.modes.integrity import run_flac_mode, run_mp3_mode, run_opus_mode, run_wav_mode, run_wma_mode
-from lattice.modes.artwork import run_extract_art, run_missing_art, run_art_quality_audit
-from lattice.modes.audit import run_duplicates, run_tag_audit, run_bitrate_audit, run_replaygain_audit
-from lattice.modes.stats import run_stats
-from lattice.modes.library import write_music_library_tree, write_ai_library, write_all_wings, write_ai_wings
-from lattice.modes.playlists import generate_playlist
-
-
 from lattice.config import (
+    get_layout,
     get_library_root,
     get_library_roots,
     set_library_root,
-    get_layout,
 )
+from lattice.modes.artwork import (
+    run_art_quality_audit,
+    run_extract_art,
+    run_missing_art,
+)
+from lattice.modes.audit import (
+    run_bitrate_audit,
+    run_duplicates,
+    run_replaygain_audit,
+    run_tag_audit,
+)
+from lattice.modes.integrity import (
+    run_flac_mode,
+    run_mp3_mode,
+    run_opus_mode,
+    run_wav_mode,
+    run_wma_mode,
+)
+from lattice.modes.library import (
+    write_ai_library,
+    write_ai_wings,
+    write_all_wings,
+    write_music_library_tree,
+)
+from lattice.modes.playlists import generate_playlist
+from lattice.modes.stats import run_stats
 
 DEFAULT_FLAC_OUTPUT = "lattice_flac_errors.txt"
 DEFAULT_MP3_OUTPUT = "lattice_mp3_errors.txt"

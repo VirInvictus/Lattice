@@ -11,9 +11,9 @@ from pathlib import Path
 # v4.6.0 "deadbeef trap" fix. (.m4a/MP4 has no fixture and is not covered here.)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import retag  # noqa: E402
-from mutagen.apev2 import APEv2, APENoHeaderError  # noqa: E402
-from mutagen.id3 import ID3, TCON, TXXX, ID3NoHeaderError  # noqa: E402
+import retag
+from mutagen.apev2 import APENoHeaderError, APEv2
+from mutagen.id3 import ID3, TCON, TXXX, ID3NoHeaderError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "library"
 FLAC_SRC = FIXTURES / "Aphex Twin" / "Selected Ambient Works" / "01 - Xtal.flac"

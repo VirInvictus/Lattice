@@ -2,16 +2,16 @@ import os
 from collections import Counter, defaultdict
 
 from lattice import utils
+from lattice.config import DEFAULT_LAYOUT
 from lattice.utils import (
+    _make_pbar,
+    as_roots,
     count_audio_files,
     is_audio,
-    _make_pbar,
     iter_audio_dirs,
-    as_roots,
     parse_layout,
     read_tags_concurrent,
 )
-from lattice.config import DEFAULT_LAYOUT
 
 # =====================================
 # Mode: Library statistics

@@ -1,13 +1,13 @@
 import unittest
 
 from lattice.modes.audit import (
-    _norm_key,
-    _loose_key,
-    _fmt_size,
-    _fmt_duration,
     _cluster_by_duration,
-    _rg_bucket,
     _DirInfo,
+    _fmt_duration,
+    _fmt_size,
+    _loose_key,
+    _norm_key,
+    _rg_bucket,
 )
 from lattice.tags import TagBundle
 

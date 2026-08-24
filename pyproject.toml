@@ -44,3 +44,6 @@ dev = [
 
 [tool.uv.sources]
 vir-tui = { path = "../vir-tui", editable = true }
+
+[tool.ruff]
+lint.extend-ignore = ["DTZ005", "SIM115", "S102", "S112", "SIM102", 'BLE001', 'S110', 'EXE001', 'B017', 'SIM117', 'RUF012', 'PLW1510']

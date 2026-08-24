@@ -13,11 +13,11 @@ from unittest import mock
 # rsgain call is mocked, so these tests never invoke rsgain or mutate a library.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import replaygain  # noqa: E402
-from mutagen.id3 import ID3, TXXX  # noqa: E402
-from mutagen.flac import FLAC  # noqa: E402
+import replaygain
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3, TXXX
 
-from lattice.config import AUDIO_EXTENSIONS as AUDIO_EXTS  # noqa: E402
+from lattice.config import AUDIO_EXTENSIONS as AUDIO_EXTS
 
 FIXTURE = Path(__file__).parent / "fixtures" / "library"
 MP3_SRC = FIXTURE / "Cursive" / "Domestica" / "01 - The Casualty.mp3"

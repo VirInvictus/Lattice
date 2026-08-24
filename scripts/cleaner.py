@@ -65,14 +65,15 @@ import shutil
 import struct
 import sys
 import unicodedata
-from vir_tui import core as ui
 from datetime import datetime
 from pathlib import Path
+
+from vir_tui import core as ui
 
 try:
     import mutagen
     from mutagen.asf import ASF
-    from mutagen.id3 import ID3, ID3NoHeaderError, TALB, TIT2, TPE1, TPE2
+    from mutagen.id3 import ID3, TALB, TIT2, TPE1, TPE2, ID3NoHeaderError
     from mutagen.mp4 import MP4
 
     MUTAGEN_OK = True
@@ -204,7 +205,7 @@ _TAG_FOLD = {
 }
 # The marker needs a real token boundary on its left: a bare \s* is zero-width,
 # which let the "ft" ending "Left"/"Swift"/"Croft" match and corrupt clean tags.
-_FEAT_RE = re.compile(r"(?<!\w)(?:feat\.?|ft\.?|featuring)\s+(.*)$", re.I)
+_FEAT_RE = re.compile(r"(?<!\w)(?:feat\.?|ft\.?|featuring)\s+(.*)$", re.IGNORECASE)
 
 
 def tag_fold(s: str) -> str:
@@ -839,7 +840,7 @@ def _open_for_tags(path: Path, ext: str):
         tags = mutagen.File(path)
         if tags is None:
             raise ValueError(f"mutagen could not recognize file: {path}")
-        keymap = {k.lower(): k for k in tags.keys()}
+        keymap = {k.lower(): k for k in tags}
 
         def get(name):
             key = keymap.get(name)
@@ -875,7 +876,7 @@ def _open_for_tags(path: Path, ext: str):
 
     if ext == ".wma":
         tags = ASF(path)
-        keymap = {k.lower(): k for k in tags.keys()}
+        keymap = {k.lower(): k for k in tags}
         asf = {
             "title": "Title",
             "album": "WM/AlbumTitle",

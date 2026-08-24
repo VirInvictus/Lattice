@@ -3,17 +3,18 @@ import operator
 import os
 import re
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from lattice.utils import (
-    count_audio_files,
-    _make_pbar,
-    is_audio,
-    parse_layout,
-    iter_audio_dirs,
-    as_roots,
-)
 from lattice.tags import get_all_tags
+from lattice.utils import (
+    _make_pbar,
+    as_roots,
+    count_audio_files,
+    is_audio,
+    iter_audio_dirs,
+    parse_layout,
+)
 
 # =====================================
 # Mode: Playlist generation (.m3u)
@@ -221,8 +222,7 @@ def generate_playlist(
     try:
         with open(out_path, "w", encoding="utf-8") as f:
             f.write("#EXTM3U\n")
-            for entry in playlist_entries:
-                f.write(f"{entry}\n")
+            f.writelines(f"{entry}\n" for entry in playlist_entries)
     except OSError as e:
         print(f"Failed to write playlist: {e}", file=sys.stderr)
         return 1

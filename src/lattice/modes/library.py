@@ -1,20 +1,20 @@
 import os
-import sys
 import re
+import sys
 from collections import defaultdict
 from typing import NamedTuple, TextIO
 
+from lattice.tags import TagBundle, get_all_tags
 from lattice.utils import (
-    count_audio_files,
     _make_pbar,
-    is_audio,
-    clean_song_name,
-    format_rating,
-    parse_layout,
-    iter_audio_dirs,
     as_roots,
+    clean_song_name,
+    count_audio_files,
+    format_rating,
+    is_audio,
+    iter_audio_dirs,
+    parse_layout,
 )
-from lattice.tags import get_all_tags, TagBundle
 
 Song = tuple[str, str, TagBundle]  # (filename, filepath, tags)
 ArtistAlbums = dict[str, dict[str, list[Song]]]
@@ -230,8 +230,7 @@ def write_ai_library(
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("Artist | Album | Genre | Rating | Tracks\n")
         f.write("-" * 50 + "\n")
-        for artist, album, genre, rating, tracks in albums:
-            f.write(f"{artist} | {album} | {genre} | {rating} | {tracks}\n")
+        f.writelines(f"{artist} | {album} | {genre} | {rating} | {tracks}\n" for artist, album, genre, rating, tracks in albums)
 
     if not quiet:
         rated = sum(1 for _, _, _, r, _ in albums if r)
