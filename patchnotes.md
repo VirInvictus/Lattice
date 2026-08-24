@@ -1,3 +1,7 @@
+# 4.16.0 (2026-08-24)
+- **Refactor**: Eradicated 1,267 lines of duplicated TUI framework code. Lattice now delegates completely to `vir-tui` v2.0.0.
+- **Dependency**: Pointed `vir-tui` reference to local path for editable testing, then restored remote URL on 2.0.0 bump.
+
 # Lattice Patch Notes
 
 ## v4.15.0 (2026-08-23)
