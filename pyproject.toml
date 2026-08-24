@@ -13,7 +13,7 @@ authors = [
   {name = "vrnvctss"}
 ]
 dependencies = [
-     "vir-tui",
+     "vir-tui @ git+https://github.com/VirInvictus/vir-tui.git@main",
     "mutagen>=1.46.0",
     "tqdm>=4.65.0"
 ]
@@ -26,7 +26,7 @@ pyinstaller = ["pyinstaller>=6.0"]
 
 [tool.hatch.envs.default]
 dependencies = [
-     "vir-tui",
+     "vir-tui @ git+https://github.com/VirInvictus/vir-tui.git@main",
     "pyinstaller>=6.0"
 ]
 
@@ -42,8 +42,6 @@ dev = [
     "pytest-asyncio>=1.4.0",
 ]
 
-[tool.uv.sources]
-vir-tui = { git = "https://github.com/VirInvictus/vir-tui.git", branch = "main" }
 
 [tool.ruff]
 lint.extend-ignore = ["DTZ005", "SIM115", "S102", "S112", "SIM102", 'BLE001', 'S110', 'EXE001', 'B017', 'SIM117', 'RUF012', 'PLW1510']
