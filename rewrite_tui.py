@@ -1,4 +1,13 @@
 import os
+import re
+
+lattice_tui = '/home/bdkl/.gitrepos/Lattice/src/lattice/tui.py'
+with open(lattice_tui, 'r') as f:
+    content = f.read()
+
+# We need to extract the parts that we want to keep.
+# 1. Imports at the top (excluding curses/sys/io/traceback, just keep what's needed for the modes)
+imports = """import os
 from contextlib import contextmanager
 from typing import Any
 
@@ -16,14 +25,24 @@ from vir_tui import (
     notify
 )
 
-
-from lattice.modes.integrity import run_flac_mode, run_mp3_mode, run_opus_mode, run_wav_mode, run_wma_mode
-from lattice.modes.artwork import run_extract_art, run_missing_art, run_art_quality_audit
-from lattice.modes.audit import run_duplicates, run_tag_audit, run_bitrate_audit, run_replaygain_audit
+from lattice.modes.flac import run_flac_mode
+from lattice.modes.mp3 import run_mp3_mode
+from lattice.modes.opus import run_opus_mode
+from lattice.modes.wav import run_wav_mode
+from lattice.modes.wma import run_wma_mode
+from lattice.modes.extract_art import run_extract_art
+from lattice.modes.missing_art import run_missing_art
+from lattice.modes.art_quality import run_art_quality_audit
+from lattice.modes.duplicates import run_duplicates
+from lattice.modes.tags import run_tag_audit
+from lattice.modes.bitrates import run_bitrate_audit
+from lattice.modes.replaygain import run_replaygain_audit
 from lattice.modes.stats import run_stats
-from lattice.modes.library import write_music_library_tree, write_ai_library, write_all_wings, write_ai_wings
-from lattice.modes.playlists import generate_playlist
-
+from lattice.modes.wings import write_all_wings
+from lattice.modes.ai_wings import write_ai_wings
+from lattice.modes.library_tree import write_library_tree
+from lattice.modes.ai_library_export import write_ai_library_export
+from lattice.modes.smart_playlist import write_smart_playlist
 
 from lattice.config import (
     get_library_root,
@@ -46,115 +65,17 @@ DEFAULT_REPLAYGAIN_AUDIT_OUTPUT = "lattice_replaygain_audit.txt"
 
 def _out_note(path: str | None) -> str:
     return f"Report written to {os.path.abspath(path)}" if path else ""
+"""
 
-_MAIN_SECTIONS = [
-    (
-        "LIBRARY",
-        [
-            "Library tree & exports                  \u2192",
-            "Library statistics",
-        ],
-    ),
-    (
-        "INTEGRITY",
-        [
-            "Test FLAC files",
-            "Test MP3 files",
-            "Test Opus files",
-            "Test WAV files",
-            "Test WMA files",
-        ],
-    ),
-    (
-        "ARTWORK",
-        [
-            "Extract cover art",
-            "Report missing art",
-            "Audit art quality",
-        ],
-    ),
-    (
-        "METADATA",
-        [
-            "Find duplicate albums",
-            "Audit tags",
-            "Audit bitrates",
-            "Audit ReplayGain",
-        ],
-    ),
-    (
-        "SETTINGS",
-        [
-            "Change library root",
-        ],
-    ),
-    ("", ["Quit"]),
-]
+# Extract _MAIN_SECTIONS to the end of _LIB_ALIASES
+match = re.search(r'(_MAIN_SECTIONS = \[.*?)def _build_fallback', content, re.DOTALL)
+if not match:
+    print("Could not find sections")
+    exit(1)
+sections_code = match.group(1)
 
-_LIB_SECTIONS = [
-    (
-        "",
-        [
-            "Build music library tree",
-            "AI-readable library export",
-            "Generate all wings (per-genre)",
-            "Generate AI wings (per-genre flat)",
-            "Generate smart playlist (.m3u)",
-        ],
-    ),
-    ("", ["Back to main menu"]),
-]
-
-# Items that get a letter key instead of a number in the fallback menu.
-# Matched on the cleaned label so the mapping follows the sections.
-_LETTER_KEYS = {
-    "Quit": ("q", None),
-    "Back to main menu": ("b", None),
-    "Change library root": ("s", "self"),  # "self": maps to its own (si, ii)
-}
-
-_MAIN_ALIASES: dict[str, tuple | None] = {
-    "l": (0, 0),
-    "lib": (0, 0),
-    "library": (0, 0),
-    "stats": (0, 1),
-    "flac": (1, 0),
-    "mp3": (1, 1),
-    "opus": (1, 2),
-    "wav": (1, 3),
-    "wma": (1, 4),
-    "art": (2, 0),
-    "extract": (2, 0),
-    "missing": (2, 1),
-    "quality": (2, 2),
-    "dup": (3, 0),
-    "dupes": (3, 0),
-    "tags": (3, 1),
-    "audit": (3, 1),
-    "bitrate": (3, 2),
-    "rg": (3, 3),
-    "replaygain": (3, 3),
-    "settings": (4, 0),
-    "config": (4, 0),
-    "c": (4, 0),
-    "quit": None,
-    "exit": None,
-}
-
-_LIB_ALIASES: dict[str, tuple | None] = {
-    "tree": (0, 0),
-    "lib": (0, 0),
-    "ai": (0, 1),
-    "wings": (0, 2),
-    "ai-wings": (0, 3),
-    "playlist": (0, 4),
-    "back": None,
-    "": None,
-}
-
-
-
-
+# Modify dispatch functions to use vir-tui
+dispatch_code = """
 _SEL_CHANGE_ROOT = (4, 0)
 _SEL_QUIT = (5, 0)
 _SEL_LIB_BACK = (1, 0)
@@ -163,7 +84,7 @@ def _select_main(title: str) -> tuple | None:
     return tui_select(title, _MAIN_SECTIONS, aliases=_MAIN_ALIASES, letter_keys=_LETTER_KEYS)
 
 def _select_library() -> tuple | None:
-    return tui_select("Library Tree & Exports", _LIB_SECTIONS, hints="↑↓ Navigate  ⏎ Select  Esc Back", aliases=_LIB_ALIASES, letter_keys=_LETTER_KEYS)
+    return tui_select("Library Tree & Exports", _LIB_SECTIONS, hints="\u2191\u2193 Navigate  \u23ce Select  Esc Back", aliases=_LIB_ALIASES, letter_keys=_LETTER_KEYS)
 
 def interactive_menu() -> int:
     open_screen()
@@ -195,10 +116,10 @@ def _library_submenu(root: str) -> None:
             if result == (0, 0):
                 output = prompt_out("Output file (leave blank for screen)", "").strip()
                 output = os.path.expanduser(output) if output else None
-                run_with_capture("Build music library tree", write_music_library_tree, root, output, quiet=False, footer=_out_note(output))
+                run_with_capture("Build music library tree", write_library_tree, root, output, quiet=False, footer=_out_note(output))
             elif result == (0, 1):
                 output = prompt_out("Output file", "library.txt")
-                run_with_capture("AI-readable library export", write_ai_library, root, output, quiet=False, footer=_out_note(output))
+                run_with_capture("AI-readable library export", write_ai_library_export, root, output, quiet=False, footer=_out_note(output))
             elif result == (0, 2):
                 outdir = prompt_out("Output directory", "wings")
                 run_with_capture("Generate all wings", write_all_wings, root, outdir, quiet=False, footer=f"Wings written to {os.path.abspath(outdir)}")
@@ -207,7 +128,7 @@ def _library_submenu(root: str) -> None:
                 run_with_capture("Generate AI wings", write_ai_wings, root, outdir, quiet=False, footer=f"AI Wings written to {os.path.abspath(outdir)}")
             elif result == (0, 4):
                 output = prompt_out("Output file", "smart_playlist.m3u")
-                run_with_capture("Generate smart playlist (.m3u)", generate_playlist, root, output, quiet=False, footer=_out_note(output))
+                run_with_capture("Generate smart playlist (.m3u)", write_smart_playlist, root, output, quiet=False, footer=_out_note(output))
         except CancelledError:
             continue
 
@@ -327,3 +248,8 @@ def _menu_session() -> int:
                 run_with_capture("Audit ReplayGain", run_replaygain_audit, root, output, verbose=include_ok, quiet=False, footer=_out_note(output))
         except CancelledError:
             continue
+"""
+
+with open(lattice_tui, 'w') as f:
+    f.write(imports + "\n" + sections_code + "\n" + dispatch_code)
+

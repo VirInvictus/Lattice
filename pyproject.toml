@@ -13,7 +13,7 @@ authors = [
   {name = "vrnvctss"}
 ]
 dependencies = [
-    "vir-tui @ git+https://github.com/VirInvictus/vir-tui.git",
+     "vir-tui",
     "mutagen>=1.46.0",
     "tqdm>=4.65.0"
 ]
@@ -26,7 +26,7 @@ pyinstaller = ["pyinstaller>=6.0"]
 
 [tool.hatch.envs.default]
 dependencies = [
-    "vir-tui @ git+https://github.com/VirInvictus/vir-tui.git",
+     "vir-tui",
     "pyinstaller>=6.0"
 ]
 
@@ -41,3 +41,6 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
 ]
+
+[tool.uv.sources]
+vir-tui = { path = "../vir-tui", editable = true }
