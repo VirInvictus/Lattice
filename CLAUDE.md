@@ -81,6 +81,8 @@ Eight standalone helpers live in `scripts/`, **not** part of the `lattice` packa
 
 **Pattern for future destructive helpers.** If you add another mutating helper in `scripts/`, follow the same shape: positional `directory` arg matching `retag.py`, `--dry-run` short-circuiting all destructive ops through a single guard layer, append-only timestamped log to a sensible default path with `--log` override, idempotent on re-run, narrow scope. Document it in README.md under its own "Companion Script: `<name>.py`" section, add a dated entry in `patchnotes.md` (no version bump, since the package didn't change), and add a bullet here.
 
+> **Important:** The generic UI formatting and Curses menu primitives have been extracted to the `vir-tui` shared repository. Lattice relies on this external dependency for its interactive mode.
+
 ## Conventions for this repo
 
 - Lattice is read-only by design: it reads tags, decodes audio, and writes reports/playlists/extracted art. It does not write metadata back to audio files. New modes should respect that boundary.
