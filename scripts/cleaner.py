@@ -65,7 +65,7 @@ import shutil
 import struct
 import sys
 import unicodedata
-import ui
+from vir_tui import core as ui
 from datetime import datetime
 from pathlib import Path
 

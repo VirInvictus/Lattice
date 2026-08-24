@@ -42,7 +42,7 @@ import os
 import sys
 from datetime import datetime
 
-import ui
+from vir_tui import core as ui
 from mutagen.id3 import ID3, ID3NoHeaderError
 
 __version__ = "1.1.0"

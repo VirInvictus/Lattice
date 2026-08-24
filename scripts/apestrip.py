@@ -55,7 +55,7 @@ import os
 import shutil
 import struct
 import sys
-import ui
+from vir_tui import core as ui
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime

@@ -19,7 +19,7 @@ import os
 import sys
 from datetime import datetime
 
-import ui
+from vir_tui import core as ui
 import mutagen
 from mutagen.apev2 import APENoHeaderError, APEv2
 from mutagen.asf import ASF

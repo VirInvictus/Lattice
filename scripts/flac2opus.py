@@ -14,7 +14,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-import ui
+from vir_tui import core as ui
 
 __version__ = "1.0.0"
 

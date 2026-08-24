@@ -90,7 +90,7 @@ from collections import Counter, namedtuple
 from datetime import datetime
 from pathlib import Path
 
-import ui
+from vir_tui import core as ui
 
 __version__ = "1.4.1"
 

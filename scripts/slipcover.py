@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
-import ui
+from vir_tui import core as ui
 
 __version__ = "1.1.0"
 

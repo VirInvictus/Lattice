@@ -42,7 +42,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-import ui
+from vir_tui import core as ui
 
 __version__ = "1.3.0"
 
