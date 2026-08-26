@@ -283,9 +283,9 @@ def parse_layout(rel_path: str, layout: str) -> dict:
     return result
 
 
-# Mirrors tui.py's _TUI_BOX_W and the _CP_FRAME/_CP_HEADER color-pair ids (the
-# TUI initialises those pairs before any mode runs). Mirrored by hand with this
-# cross-reference because utils can't import tui (tui imports utils).
+# Mirrors vir_tui.menu's _TUI_BOX_W and _CP_FRAME/_CP_HEADER color-pair ids
+# (the vir-tui session initialises those pairs before any mode runs). Mirrored
+# by hand because utils can't import the host TUI layer.
 _TUI_BOX_W = 46
 _CP_FRAME = 1
 _CP_HEADER = 3

@@ -7,6 +7,8 @@ these run anywhere. Integrity modes, which shell out to flac/ffmpeg, are not
 exercised here; classify_decode is unit-tested in test_integrity.py.
 """
 
+import contextlib
+import io
 import os
 import re
 import shutil
@@ -53,6 +55,24 @@ class LibraryTreeTests(unittest.TestCase):
         self.assertIn("ALBUM: Selected Ambient Works (Electronic)", text)
         self.assertIn("Xtal", text)
         self.assertIn("[★★★★★ 5.0/5]", text)
+
+    def test_none_output_prints_tree_to_screen(self):
+        """Regression: the TUI's "leave blank for screen" path passes
+        output_file=None; that must render the tree to stdout, not crash on
+        os.path.abspath(None) after the scan completes."""
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            write_music_library_tree(FIXTURE, None, show_genre=True)
+        out = buf.getvalue()
+        self.assertIn("ARTIST: Aphex Twin", out)
+        self.assertIn("ALBUM: Selected Ambient Works (Electronic)", out)
+        self.assertIn("Xtal", out)
+
+    def test_none_output_respects_quiet(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            write_music_library_tree(FIXTURE, None, quiet=True)
+        self.assertEqual(buf.getvalue(), "")
 
 
 class AiLibraryTests(unittest.TestCase):

@@ -1,3 +1,7 @@
+# 4.16.1 (2026-08-25)
+- **Fix**: TUI library-tree scan crashed with `TypeError` when the output prompt was left blank; blank now renders the tree to the results pager like Library Statistics (`write_music_library_tree` accepts `output_file=None`).
+- **Fix**: Progress boxes are back in the TUI. The vir-tui migration dropped the `IN_TUI`/shared-screen wiring from `interactive_menu`, so scans silently fell back to tqdm bars swallowed by the output capture and the screen sat frozen until the pager opened. Uses `session_screen()` from vir-tui 2.1.0.
+
 # 4.16.0 (2026-08-24)
 - **Refactor**: Eradicated 1,267 lines of duplicated TUI framework code. Lattice now delegates completely to `vir-tui` v2.0.0.
 - **Dependency**: Pointed `vir-tui` reference to local path for editable testing, then restored remote URL on 2.0.0 bump.

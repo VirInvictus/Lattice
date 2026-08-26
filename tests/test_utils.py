@@ -287,5 +287,36 @@ class FindCoverFileTests(unittest.TestCase):
         self.assertFalse(utils._has_cover_file("/nonexistent-lattice-dir"))
 
 
+from lattice import utils as lattice_utils
+
+
+class PbarTests(unittest.TestCase):
+    """_make_pbar's branch selection and the curses bar's headless safety."""
+
+    def tearDown(self):
+        lattice_utils.IN_TUI = False
+        lattice_utils.set_shared_screen(None)
+
+    def test_in_tui_selects_curses_bar(self):
+        lattice_utils.IN_TUI = True
+        pbar = lattice_utils._make_pbar(10, "Testing", False)
+        self.assertIsInstance(pbar, lattice_utils._TUIPbar)
+
+    def test_cli_quiet_selects_fallback(self):
+        lattice_utils.IN_TUI = False
+        pbar = lattice_utils._make_pbar(10, "Testing", quiet=True)
+        self.assertIsInstance(pbar, lattice_utils._FallbackProgress)
+
+    def test_tuipbar_counts_survive_headless_draw(self):
+        # draw() swallows curses failures (no tty under the test runner);
+        # counting and close() must work regardless.
+        lattice_utils.IN_TUI = True
+        pbar = lattice_utils._make_pbar(3, "Testing", False)
+        for _ in range(3):
+            pbar.update(1)
+        self.assertEqual(pbar.current, 3)
+        pbar.close()
+
+
 if __name__ == "__main__":
     unittest.main()

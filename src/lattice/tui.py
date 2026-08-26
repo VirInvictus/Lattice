@@ -1,5 +1,7 @@
 import os
 
+from lattice import utils
+
 from vir_tui import (
     CancelledError,
     ask,
@@ -192,12 +194,19 @@ def _select_library() -> tuple | None:
 
 
 def interactive_menu() -> int:
-    open_screen()
+    scr = open_screen()
+    # Restored pre-vir-tui contract: IN_TUI switches modes from captured tqdm
+    # bars (invisible until the pager opens) to the curses progress box, and
+    # _TUIPbar draws into the session's own screen instead of starting one.
+    utils.IN_TUI = scr is not None
+    utils.set_shared_screen(scr)
     try:
         return _menu_session()
     except KeyboardInterrupt:
         return 130
     finally:
+        utils.IN_TUI = False
+        utils.set_shared_screen(None)
         close_screen()
 
 

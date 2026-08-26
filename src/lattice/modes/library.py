@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import sys
@@ -162,12 +163,14 @@ def _write_tree(
 
 def write_music_library_tree(
     root_dir: str | list[str],
-    output_file: str,
+    output_file: str | None,
     *,
     layout: str = "{artist}/{album}",
     quiet: bool = False,
     show_genre: bool = False,
 ) -> None:
+    """Write an ARTIST → ALBUM → SONG tree to `output_file`; None (the TUI's
+    "leave blank for screen" answer, like run_stats) renders to stdout."""
     roots = as_roots(root_dir)
     total_files = count_audio_files(roots)
     if not quiet:
@@ -182,12 +185,21 @@ def write_music_library_tree(
     for ad in album_dirs:
         tree[ad.artist][ad.album].extend(ad.songs)
 
-    output_file = os.path.abspath(output_file)
-    os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
+    buf = io.StringIO()
+    _write_tree(buf, tree, show_genre=show_genre)
+
+    if not output_file:
+        if not quiet:
+            print()
+            print(buf.getvalue())
+        return
+
+    out_path = os.path.abspath(output_file)
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
     try:
-        with open(output_file, "w", encoding="utf-8") as f:
-            _write_tree(f, tree, show_genre=show_genre)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(buf.getvalue())
     except KeyboardInterrupt:
         if not quiet:
             print("\nInterrupted by user. Library scan cancelled.")
