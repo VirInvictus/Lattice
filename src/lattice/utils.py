@@ -2,8 +2,9 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import vir_tui
 
 from lattice.config import (
     AUDIO_EXTENSIONS,
@@ -58,7 +59,7 @@ def _reset_terminal() -> None:
     line discipline — most commonly turning off icrnl so Enter sends \\r
     (displayed as ^M) instead of \\n.  This resets to sane defaults.
     """
-    if _SHARED_SCREEN is not None:
+    if vir_tui.session_screen() is not None:
         # A live curses session owns the terminal state; stty sane here would
         # re-enable echo/canonical mode and break every later getch().
         return
@@ -283,111 +284,6 @@ def parse_layout(rel_path: str, layout: str) -> dict:
     return result
 
 
-# Mirrors vir_tui.menu's _TUI_BOX_W and _CP_FRAME/_CP_HEADER color-pair ids
-# (the vir-tui session initialises those pairs before any mode runs). Mirrored
-# by hand because utils can't import the host TUI layer.
-_TUI_BOX_W = 46
-_CP_FRAME = 1
-_CP_HEADER = 3
-
-# The persistent TUI screen, when an interactive session owns one (published
-# by tui.interactive_menu; see T7). _TUIPbar draws into it instead of
-# initscr()'ing a screen of its own, so a mode's progress no longer tears the
-# session's terminal state down and back up.
-_SHARED_SCREEN = None
-
-
-def set_shared_screen(scr) -> None:
-    global _SHARED_SCREEN
-    _SHARED_SCREEN = scr
-
-
-class _TUIPbar:
-    """A progress bar that renders in a curses box to match the TUI style."""
-
-    # Redraws are throttled (a full-screen erase per file on a 100k-file scan
-    # is visible flicker and wasted work); the final update always draws.
-    _MIN_REDRAW_S = 0.1
-
-    def __init__(self, total: int, desc: str):
-        self.total = total
-        self.desc = desc
-        self.current = 0
-        self._last_draw = 0.0
-        self.draw()
-
-    def update(self, n: int = 1) -> None:
-        self.current += n
-        if (
-            self.current >= self.total
-            or time.monotonic() - self._last_draw >= self._MIN_REDRAW_S
-        ):
-            self.draw()
-
-    def draw(self) -> None:
-        self._last_draw = time.monotonic()
-        try:
-            import curses
-
-            # Draw into the session's persistent screen when one is active.
-            # Without one (a mode invoked outside interactive_menu), initscr()
-            # starts a standalone screen; close() ends that one so what
-            # follows starts from a sane terminal.
-            s = _SHARED_SCREEN
-            if s is None:
-                s = curses.initscr()
-            s.erase()
-            h, w = s.getmaxyx()
-            box_w = _TUI_BOX_W
-            inner = box_w - 2
-            bx = max(0, (w - box_w) // 2)
-            y = max(0, (h - 6) // 2)
-
-            s.addstr(y, bx, "╔" + "═" * inner + "╗", curses.color_pair(_CP_FRAME))
-            s.addstr(y + 1, bx, "║", curses.color_pair(_CP_FRAME))
-            s.addstr(
-                y + 1,
-                bx + 1,
-                f" {self.desc}".ljust(inner),
-                curses.color_pair(_CP_HEADER) | curses.A_BOLD,
-            )
-            s.addstr(y + 1, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME))
-            s.addstr(y + 2, bx, "╠" + "═" * inner + "╣", curses.color_pair(_CP_FRAME))
-
-            percent = self.current / max(1, self.total)
-            bar_len = inner - 10
-            filled = int(bar_len * percent)
-            bar = "█" * filled + "░" * (bar_len - filled)
-            pct_str = f"{int(percent * 100):3d}%"
-
-            s.addstr(y + 3, bx, "║", curses.color_pair(_CP_FRAME))
-            s.addstr(y + 3, bx + 1, f" {bar} {pct_str} ".ljust(inner))
-            s.addstr(y + 3, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME))
-            info = f" {self.current}/{self.total} · Ctrl-C cancels"
-            s.addstr(y + 4, bx, "║", curses.color_pair(_CP_FRAME))
-            s.addstr(y + 4, bx + 1, info[:inner].ljust(inner))
-            s.addstr(y + 4, bx + box_w - 1, "║", curses.color_pair(_CP_FRAME))
-            s.addstr(y + 5, bx, "╚" + "═" * inner + "╝", curses.color_pair(_CP_FRAME))
-            s.refresh()
-        except Exception:
-            # curses.error, or curses missing entirely: progress is cosmetic.
-            pass
-
-    def close(self) -> None:
-        # End the standalone screen draw() started so well-behaved modes hand
-        # back a sane terminal as soon as their bar closes. A session screen
-        # is the session's to tear down, not the bar's.
-        if _SHARED_SCREEN is not None:
-            return
-        try:
-            import curses
-
-            if not curses.isendwin():
-                curses.endwin()
-        except Exception:
-            pass
-
-
 class _FallbackProgress:
     """Simple progress bar for when tqdm is not installed."""
 
@@ -411,7 +307,7 @@ class _FallbackProgress:
 def _make_pbar(total: int, desc: str, quiet: bool):
     """Create a progress bar — tqdm if available, else a simple fallback."""
     if IN_TUI:
-        return _TUIPbar(total, desc)
+        return vir_tui.progress_box(total, desc)
     if HAVE_TQDM and not quiet:
         return tqdm(total=total, unit="file", desc=desc, dynamic_ncols=True)
     return _FallbackProgress(total, desc, quiet)

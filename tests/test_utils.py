@@ -145,32 +145,32 @@ class ColorTests(unittest.TestCase):
             utils._use_color = orig
 
 
-class TUIPbarSharedScreenTests(unittest.TestCase):
-    """T7: with a session screen published, the TUI progress bar draws into
-    it — no initscr() of its own, and close() leaves the session's screen
-    alone instead of endwin()'ing the whole terminal state."""
+class ProgressBoxSessionTests(unittest.TestCase):
+    """T7, now via vir_tui 2.2.0: with a session screen published in
+    vir_tui.menu, the progress widget draws into it — no initscr() of its
+    own, and close() leaves the session's screen alone instead of
+    endwin()'ing the whole terminal state."""
 
-    def test_draws_into_shared_screen_and_close_leaves_it(self):
+    def test_draws_into_session_screen_and_close_leaves_it(self):
+        import vir_tui.menu
         from unittest import mock
 
         scr = mock.Mock()
         scr.getmaxyx.return_value = (24, 80)
-        utils.set_shared_screen(scr)
+        saved_screen = vir_tui.menu._SCREEN
+        saved_in_tui = utils.IN_TUI
+        vir_tui.menu._SCREEN = scr
+        utils.IN_TUI = True
         try:
-            with (
-                mock.patch("curses.initscr") as initscr,
-                mock.patch("curses.endwin") as endwin,
-                mock.patch("curses.color_pair", return_value=0),
-            ):
-                bar = utils._TUIPbar(10, "Scanning")
+            with mock.patch("curses.color_pair", return_value=0):
+                bar = utils._make_pbar(10, "Scanning", False)
                 bar.update(10)
                 bar.close()
-            initscr.assert_not_called()
-            endwin.assert_not_called()
             self.assertTrue(scr.erase.called)
             self.assertTrue(scr.refresh.called)
         finally:
-            utils.set_shared_screen(None)
+            vir_tui.menu._SCREEN = saved_screen
+            utils.IN_TUI = saved_in_tui
 
 
 class ResetTerminalSessionGuardTests(unittest.TestCase):
@@ -178,21 +178,27 @@ class ResetTerminalSessionGuardTests(unittest.TestCase):
     sane: it would re-enable echo/canonical mode under the live curses screen
     and break every later getch() (found via the submenu's reset call)."""
 
+    def setUp(self):
+        import vir_tui.menu
+
+        self._menu = vir_tui.menu
+        self._saved_screen = vir_tui.menu._SCREEN
+
+    def tearDown(self):
+        self._menu._SCREEN = self._saved_screen
+
     def test_no_stty_while_session_owns_the_terminal(self):
         from unittest import mock
 
-        utils.set_shared_screen(mock.Mock())
-        try:
-            with mock.patch.object(utils.subprocess, "run") as run:
-                utils._reset_terminal()
-            run.assert_not_called()
-        finally:
-            utils.set_shared_screen(None)
+        self._menu._SCREEN = mock.Mock()
+        with mock.patch.object(utils.subprocess, "run") as run:
+            utils._reset_terminal()
+        run.assert_not_called()
 
     def test_stty_runs_again_once_session_ends(self):
         from unittest import mock
 
-        utils.set_shared_screen(None)
+        self._menu._SCREEN = None
         with (
             mock.patch.object(utils.subprocess, "run") as run,
             mock.patch.object(utils.sys.stdin, "isatty", return_value=True),
@@ -295,12 +301,13 @@ class PbarTests(unittest.TestCase):
 
     def tearDown(self):
         lattice_utils.IN_TUI = False
-        lattice_utils.set_shared_screen(None)
 
-    def test_in_tui_selects_curses_bar(self):
+    def test_in_tui_selects_vir_tui_progress_box(self):
+        import vir_tui
+
         lattice_utils.IN_TUI = True
         pbar = lattice_utils._make_pbar(10, "Testing", False)
-        self.assertIsInstance(pbar, lattice_utils._TUIPbar)
+        self.assertIsInstance(pbar, vir_tui.ProgressBox)
 
     def test_cli_quiet_selects_fallback(self):
         lattice_utils.IN_TUI = False

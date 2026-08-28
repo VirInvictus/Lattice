@@ -1,12 +1,12 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project
 
-Lattice is a CLI/TUI toolkit for music libraries that treats the filesystem as the source of truth. It reads tags through `mutagen`, walks the tree on every invocation (no index/database), and writes plain `.txt` reports. Python 3.14+, packaged with Hatch (`pyproject.toml`). Runtime deps: `mutagen`, `tqdm`, `vir-tui` (TUI primitives, tracked at `@main`). The current version is kept in `src/lattice/config.py` and mirrored in `pyproject.toml` (must stay in sync).
+Lattice is a CLI/TUI toolkit for music libraries that treats the filesystem as the source of truth. It reads tags through `mutagen`, walks the tree on every invocation (no index/database), and writes plain `.txt` reports. Python 3.14+, packaged with Hatch (`pyproject.toml`). Runtime deps: `mutagen`, `tqdm`. The current version is kept in `src/lattice/config.py` (`4.14.0` as of the 2026-08-09 bug sweep; trust the file over this sentence).
 
-The home directory `CLAUDE.md` at `~/CLAUDE.md` covers system-wide conventions (zsh aliases, package managers, dotfiles repo). This file overrides it for work scoped to Lattice.
+The home directory `AGENTS.md` at `~/AGENTS.md` covers system-wide conventions (zsh aliases, package managers, dotfiles repo). This file overrides it for work scoped to Lattice.
 
 ## Common commands
 

@@ -1,3 +1,10 @@
+# 4.17.0 (2026-08-28)
+- **Refactor**: Dropped Lattice's hand-mirrored TUI progress implementation — `_TUIPbar`, the `_TUI_BOX_W`/color-pair id mirrors, and the `_SHARED_SCREEN`/`set_shared_screen` plumbing (~110 lines) are replaced by `vir_tui.progress_box()` (vir-tui 2.2.0's first-class, session-screen-aware progress widget). Rendering can no longer drift from the TUI's style when vir-tui restyles.
+- **Refactor**: `interactive_menu()` delegates the curses session lifecycle (open, degrade-to-text, close, KeyboardInterrupt cleanup) to vir-tui 2.2.0's `interactive_session()` context manager; the `utils.IN_TUI` flag is now set from the yielded session screen.
+- **Chore**: Report footers use vir-tui's public `out_note()` instead of a local copy.
+- **Chore**: Removed the stale tracked `tests/test_tui.py.bak` (referenced the removed API).
+- **Dependency**: `vir-tui` tracks `@main`; requires 2.2.0+.
+
 # 4.16.1 (2026-08-25)
 - **Fix**: TUI library-tree scan crashed with `TypeError` when the output prompt was left blank; blank now renders the tree to the results pager like Library Statistics (`write_music_library_tree` accepts `output_file=None`).
 - **Fix**: Progress boxes are back in the TUI. The vir-tui migration dropped the `IN_TUI`/shared-screen wiring from `interactive_menu`, so scans silently fell back to tqdm bars swallowed by the output capture and the screen sat frozen until the pager opened. Uses `session_screen()` from vir-tui 2.1.0.

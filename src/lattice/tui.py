@@ -6,9 +6,9 @@ from vir_tui import (
     CancelledError,
     ask,
     ask_yn,
-    close_screen,
+    interactive_session,
     notify,
-    open_screen,
+    out_note,
     prompt_int,
     prompt_out,
     reset_terminal,
@@ -60,10 +60,6 @@ DEFAULT_DUPLICATES_OUTPUT = "lattice_duplicates.txt"
 DEFAULT_TAG_AUDIT_OUTPUT = "lattice_tag_audit.txt"
 DEFAULT_BITRATE_AUDIT_OUTPUT = "lattice_bitrate_audit.txt"
 DEFAULT_REPLAYGAIN_AUDIT_OUTPUT = "lattice_replaygain_audit.txt"
-
-
-def _out_note(path: str | None) -> str:
-    return f"Report written to {os.path.abspath(path)}" if path else ""
 
 
 _MAIN_SECTIONS = [
@@ -194,20 +190,17 @@ def _select_library() -> tuple | None:
 
 
 def interactive_menu() -> int:
-    scr = open_screen()
-    # Restored pre-vir-tui contract: IN_TUI switches modes from captured tqdm
-    # bars (invisible until the pager opens) to the curses progress box, and
-    # _TUIPbar draws into the session's own screen instead of starting one.
-    utils.IN_TUI = scr is not None
-    utils.set_shared_screen(scr)
     try:
-        return _menu_session()
+        with interactive_session() as scr:
+            # IN_TUI switches modes from captured tqdm bars (invisible until
+            # the pager opens) to vir_tui's curses progress box, which draws
+            # into the session's own screen instead of starting one.
+            utils.IN_TUI = scr is not None
+            return _menu_session()
     except KeyboardInterrupt:
         return 130
     finally:
         utils.IN_TUI = False
-        utils.set_shared_screen(None)
-        close_screen()
 
 
 def _integrity_prompts() -> tuple[int, bool, bool]:
@@ -238,7 +231,7 @@ def _library_submenu(root: str) -> None:
                     root,
                     output,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
             elif result == (0, 1):
                 output = prompt_out("Output file", "library.txt")
@@ -248,7 +241,7 @@ def _library_submenu(root: str) -> None:
                     root,
                     output,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
             elif result == (0, 2):
                 outdir = prompt_out("Output directory", "wings")
@@ -278,7 +271,7 @@ def _library_submenu(root: str) -> None:
                     root,
                     output,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
         except CancelledError:
             continue
@@ -347,7 +340,7 @@ def _menu_session() -> int:
                     output,
                     layout=layout,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (1, 0):
@@ -368,7 +361,7 @@ def _menu_session() -> int:
                     workers,
                     pref,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (1, 1):
@@ -384,7 +377,7 @@ def _menu_session() -> int:
                     only_errors=not include_ok,
                     verbose=include_ok,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (1, 2):
@@ -400,7 +393,7 @@ def _menu_session() -> int:
                     only_errors=not include_ok,
                     verbose=include_ok,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (1, 3):
@@ -416,7 +409,7 @@ def _menu_session() -> int:
                     only_errors=not include_ok,
                     verbose=include_ok,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (1, 4):
@@ -432,7 +425,7 @@ def _menu_session() -> int:
                     only_errors=not include_ok,
                     verbose=include_ok,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (2, 0):
@@ -449,7 +442,7 @@ def _menu_session() -> int:
                     root,
                     output,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (2, 2):
@@ -462,7 +455,7 @@ def _menu_session() -> int:
                     output,
                     min_res,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (3, 0):
@@ -473,7 +466,7 @@ def _menu_session() -> int:
                     root,
                     output,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (3, 1):
@@ -484,7 +477,7 @@ def _menu_session() -> int:
                     root,
                     output,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (3, 2):
@@ -497,7 +490,7 @@ def _menu_session() -> int:
                     output,
                     min_kbps,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
 
             elif result == (3, 3):
@@ -510,7 +503,7 @@ def _menu_session() -> int:
                     output,
                     verbose=include_ok,
                     quiet=False,
-                    footer=_out_note(output),
+                    footer=out_note(output),
                 )
         except CancelledError:
             continue
