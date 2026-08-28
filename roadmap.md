@@ -2,6 +2,7 @@
 
 ## Phase 15: Extraction (2026-08-23)
 - [x] Extract `vir-tui` core into a standalone repository and replace local primitives with the shared dependency.
+- [x] Adopt vir-tui 2.2.0's Phase-3 primitives — `progress_box()`, `interactive_session()`, `out_note()` — deleting the hand-mirrored `_TUIPbar`/shared-screen plumbing (v4.17.0).
 # Lattice Roadmap
 
 What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.10.1.
