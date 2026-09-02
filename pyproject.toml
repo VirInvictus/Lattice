@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lattice"
+name = "lattice-music"
 version = "4.17.0"
 description = "Music library toolkit: tree, integrity, art, duplicates, tag audit"
 readme = "README.md"
@@ -13,7 +13,7 @@ authors = [
   {name = "vrnvctss"}
 ]
 dependencies = [
-     "vir-tui @ git+https://github.com/VirInvictus/vir-tui.git@main",
+    "vir-tui>=2.2.0",
     "mutagen>=1.46.0",
     "tqdm>=4.65.0"
 ]
@@ -26,15 +26,13 @@ pyinstaller = ["pyinstaller>=6.0"]
 
 [tool.hatch.envs.default]
 dependencies = [
-     "vir-tui @ git+https://github.com/VirInvictus/vir-tui.git@main",
+    "vir-tui>=2.2.0",
     "pyinstaller>=6.0"
 ]
 
 [tool.hatch.envs.default.scripts]
 build-bin = "pyinstaller --onefile --name lattice --paths src src/lattice/__main__.py"
 
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [dependency-groups]
 dev = [

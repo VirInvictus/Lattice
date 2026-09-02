@@ -81,15 +81,13 @@ Lattice installs as a Python package, or compiles into a standalone binary (PyIn
 
 **Option 1: pipx (recommended)**
 ```bash
-pipx install .
+pipx install lattice-music
 # now you can run `lattice` globally
 ```
 
 **Option 2: pip (virtual environment)**
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install .
+pip install lattice-music
 ```
 
 ## Requirements
