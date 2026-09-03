@@ -1,4 +1,4 @@
-"""Test suite for Lattice.
+"""Test suite for lattice-music.
 
 Tests target the pure, logic-dense helpers (rating/key normalization,
 duration clustering, image-header parsing, filename cleanup) that have no

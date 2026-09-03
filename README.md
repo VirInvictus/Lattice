@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="Lattice" width="420">
+  <img src="logo.svg" alt="lattice-music" width="420">
 </p>
 
 <p align="center">
@@ -8,12 +8,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/tui.png" alt="Lattice's curses TUI: a menu grouped into Library, Integrity, Artwork, Metadata, and Settings sections">
+  <img src="docs/screenshots/tui.png" alt="lattice-music's curses TUI: a menu grouped into Library, Integrity, Artwork, Metadata, and Settings sections">
 </p>
 
-A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice handles library visualization, integrity verification, cover art extraction, and metadata auditing, built on `mutagen` and `tqdm`, with the shared `vir-tui` library powering its terminal UI and `flac` and `ffmpeg` shelled out for integrity checks.
+A CLI/TUI toolkit for music collectors who manage their own libraries. lattice-music handles library visualization, integrity verification, cover art extraction, and metadata auditing, built on `mutagen` and `tqdm`, with the shared `vir-tui` library powering its terminal UI and `flac` and `ffmpeg` shelled out for integrity checks.
 
-> **Lattice is read-only.** It reads tags and decodes audio, and it writes only reports, playlists, and extracted cover art. It never modifies the metadata inside your audio files. The optional companion scripts in `scripts/` are the deliberate exception: they **do** modify files (tags, rating bytes, folder layout) and must be used with caution. See [Companion scripts](#companion-scripts).
+> **lattice-music is read-only.** It reads tags and decodes audio, and it writes only reports, playlists, and extracted cover art. It never modifies the metadata inside your audio files. The optional companion scripts in `scripts/` are the deliberate exception: they **do** modify files (tags, rating bytes, folder layout) and must be used with caution. See [Companion scripts](#companion-scripts).
 
 > **Note:** This is considered completed software. It is effectively feature complete; bug fixes will be addressed as they come, but no new features are planned. It has been thoroughly tested and is known to be fully functional on the primary development environment: **Fedora Linux 44 (Workstation Edition)**, kernel `7.0.9-205.fc44.x86_64`, on **Python 3.14**, with `flac` and `ffmpeg` from the Fedora repositories. While it is pure Python and should be cross-platform, this specific setup is the only officially tested environment.
 
@@ -31,7 +31,7 @@ A CLI/TUI toolkit for music collectors who manage their own libraries. Lattice h
 
 ## Why this exists
 
-Modern music players often hide your library behind proprietary databases. Lattice is built for collectors who treat the filesystem as the source of truth. It reads tags directly via `mutagen`, ensuring your library is portable and player-agnostic.
+Modern music players often hide your library behind proprietary databases. lattice-music is built for collectors who treat the filesystem as the source of truth. It reads tags directly via `mutagen`, ensuring your library is portable and player-agnostic.
 
 ## Features
 
@@ -77,7 +77,7 @@ Genre tags are optional (`--genres`). If your genre metadata is inconsistent, le
 
 ## Installation
 
-Lattice installs as a Python package, or compiles into a standalone binary (PyInstaller, `hatch run build-bin`).
+lattice-music installs as a Python package, or compiles into a standalone binary (PyInstaller, `hatch run build-bin`).
 
 **Option 1: pipx (recommended)**
 ```bash
@@ -114,7 +114,7 @@ python -m unittest discover
 
 ## Usage
 
-Lattice remembers your library location. On first run (TUI or CLI) it asks for your music library path and saves it to `~/.config/lattice/config.json`; after that, `--root` is optional. Repeat `--root` to scan several libraries together in one pass (see [Multi-root scanning](#multi-root-scanning)).
+lattice-music remembers your library location. On first run (TUI or CLI) it asks for your music library path and saves it to `~/.config/lattice/config.json`; after that, `--root` is optional. Repeat `--root` to scan several libraries together in one pass (see [Multi-root scanning](#multi-root-scanning)).
 
 ```bash
 # Build a library tree with genre tags
@@ -234,13 +234,13 @@ The status summary that each integrity mode prints is colorized: green for an al
 
 ## Architecture
 
-Lattice is a modular Python package under `src/lattice/`:
+lattice-music is a modular Python package under `src/lattice/`:
 
 - `tags.py`: unified abstraction layer for format-agnostic metadata extraction (returns a `TagBundle` from a single `mutagen` open).
 - `modes/`: per-mode implementation of auditing and visualization logic (library, integrity, artwork, audit, stats, playlists).
 - `cli.py` / `tui.py`: the argparse dispatch and the full-screen curses interface; both call the same mode functions.
 
-The filesystem is the source of truth: Lattice walks the tree on every invocation and keeps no index or database.
+The filesystem is the source of truth: lattice-music walks the tree on every invocation and keeps no index or database.
 
 ## Full help output
 
@@ -309,7 +309,7 @@ options:
 
 ## Companion scripts
 
-The `scripts/` directory holds eight standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike Lattice itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
+The `scripts/` directory holds eight standalone maintenance tools. They are **not** part of the `lattice` package and deliberately sit **outside its read-only contract**: unlike lattice-music itself, they **modify your files in place**, rewriting tags, rewriting rating bytes, or moving and renaming folders. Run them directly with `python3`.
 
 **Use them with caution.** Have a backup or snapshot first, always preview with `--dry-run`, and read the log before applying. Each writes an append-only timestamped log and is idempotent, so a second run on an already-clean library is a no-op.
 
@@ -378,7 +378,7 @@ Audio metadata formats handle multiple genres entirely differently (ID3 uses nul
 
 > **Destructive on `apply`.** `build` is read-only; `apply` rewrites genre tags through `retag.py`. Preview `apply` with `--dry-run` first.
 
-A two-phase tool for libraries whose genre tags have drifted: it builds an **artist to genre authority map**, then collapses any album that disagrees with it. It pairs Lattice with `retag.py`: the `build` phase only reads (through lattice's scanner), and the `apply` phase does every write through `retag.py`. It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.
+A two-phase tool for libraries whose genre tags have drifted: it builds an **artist to genre authority map**, then collapses any album that disagrees with it. It pairs lattice-music with `retag.py`: the `build` phase only reads (through lattice's scanner), and the `apply` phase does every write through `retag.py`. It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.
 
 This is aimed at the messy general library, not a meticulously tagged one. Because `build` records every genre an artist already uses, `apply` does nothing until you edit the map; on a cleanly tagged library it reports everything compliant.
 
@@ -395,7 +395,7 @@ Artist<TAB>Genre<TAB>Second Genre<TAB>...
 - Multi-genre artists get a `#` comment above their line with the per-genre counts, so low-count strays worth trimming stand out (e.g. `# Eminem: 3 genres: Hardcore Hip Hop×13, Boom Bap×1, Horrorcore×1`).
 - **Compilations are excluded.** An album whose album-artist is `Various Artists` (or `VA`/`Various`) gets a flagged `EXCLUDED` comment, never an enforceable row, and `apply` always skips it: a compilation collects unrelated tracks with no single canonical genre, so there is nothing to enforce.
 
-Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name. Lattice's tag layer prefers the album-artist, so a compilation is keyed under its `Various Artists` album-artist and caught by the exclusion above.
+Matching is by the **artist tag** (normalized for quote, dash, and case variants), not the folder name. lattice-music's tag layer prefers the album-artist, so a compilation is keyed under its `Various Artists` album-artist and caught by the exclusion above.
 
 On a genre-first library (the `Genre/Artist/Album` shape `genre_foldermap.py` builds), pass `--layout '{genre}/{artist}/{album}'` to both subcommands so an *untagged* file's artist is recovered from the right path level instead of the genre folder; tagged files are unaffected.
 
@@ -518,7 +518,7 @@ The artist *level* (for the authority restamp) is read from `--layout` (default 
 
 > **Tidy your genre tags first.** Placement uses each album's *dominant* genre, so an album whose tracks disagree on genre lands under whichever value wins the count, and the rest are not reflected in the tree. For predictable results, run strict tag hygiene before this script: a single, consistent genre per album is ideal. [`genre_tidy.py`](#genre_tidypy) is built for exactly that (enforce one canonical genre per artist/album), so a sensible order is `genre_tidy.py` first, then `genre_foldermap.py`.
 
-Restructures a flat `Artist/Album/Song` library into `Genre/Artist/Album/Song`, moving each album folder under a top-level genre directory. The genre is the album's dominant embedded genre tag, read through Lattice's scanner (the same aggregation every library/wing mode uses), so placement matches what Lattice reports. Folder names are preserved verbatim; nothing is retagged. It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.
+Restructures a flat `Artist/Album/Song` library into `Genre/Artist/Album/Song`, moving each album folder under a top-level genre directory. The genre is the album's dominant embedded genre tag, read through lattice-music's scanner (the same aggregation every library/wing mode uses), so placement matches what lattice-music reports. Folder names are preserved verbatim; nothing is retagged. It imports `lattice`, so it needs the package importable: installed via `pip`/`pipx`, or run from a checkout with `PYTHONPATH=src`.
 
 Two directory shapes are handled:
 - `Artist/Album` → `Genre/Artist/Album` (the whole album directory is moved).
@@ -557,7 +557,7 @@ A tag value that joins several genres into one string with `;` or `/` never beco
    ```bash
    ./scripts/genre_foldermap.py --revert ~/foldermap.manifest.tsv --apply
    ```
-4. Point Lattice at the new shape by setting `"layout": "{genre}/{artist}/{album}"` in `~/.config/lattice/config.json` (or pass `--layout`), then regenerate your wings.
+4. Point lattice-music at the new shape by setting `"layout": "{genre}/{artist}/{album}"` in `~/.config/lattice/config.json` (or pass `--layout`), then regenerate your wings.
 
 ### `replaygain.py`
 
@@ -691,7 +691,7 @@ The script uses `ffmpeg` to encode the Opus file. It is designed to be highly re
 
 ## Credits & Acknowledgements
 
-Lattice is built upon several excellent open-source libraries and tools:
+lattice-music is built upon several excellent open-source libraries and tools:
 
 - **[Mutagen](https://github.com/quodlibet/mutagen)**: Handles all audio metadata extraction and tagging logic.
 - **[tqdm](https://github.com/tqdm/tqdm)**: Powers the extensible progress bars for library scanning and integrity checks.
@@ -700,7 +700,7 @@ Lattice is built upon several excellent open-source libraries and tools:
 
 ## Support
 
-If Lattice's useful to you and you'd like to chip in:
+If lattice-music's useful to you and you'd like to chip in:
 
 - liberapay · [liberapay.com/bdkl](https://liberapay.com/bdkl/)
 - bitcoin

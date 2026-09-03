@@ -1,5 +1,5 @@
 # 4.17.0 (2026-08-28)
-- **Refactor**: Dropped Lattice's hand-mirrored TUI progress implementation — `_TUIPbar`, the `_TUI_BOX_W`/color-pair id mirrors, and the `_SHARED_SCREEN`/`set_shared_screen` plumbing (~110 lines) are replaced by `vir_tui.progress_box()` (vir-tui 2.2.0's first-class, session-screen-aware progress widget). Rendering can no longer drift from the TUI's style when vir-tui restyles.
+- **Refactor**: Dropped lattice-music's hand-mirrored TUI progress implementation — `_TUIPbar`, the `_TUI_BOX_W`/color-pair id mirrors, and the `_SHARED_SCREEN`/`set_shared_screen` plumbing (~110 lines) are replaced by `vir_tui.progress_box()` (vir-tui 2.2.0's first-class, session-screen-aware progress widget). Rendering can no longer drift from the TUI's style when vir-tui restyles.
 - **Refactor**: `interactive_menu()` delegates the curses session lifecycle (open, degrade-to-text, close, KeyboardInterrupt cleanup) to vir-tui 2.2.0's `interactive_session()` context manager; the `utils.IN_TUI` flag is now set from the yielded session screen.
 - **Chore**: Report footers use vir-tui's public `out_note()` instead of a local copy.
 - **Chore**: Removed the stale tracked `tests/test_tui.py.bak` (referenced the removed API).
@@ -10,13 +10,13 @@
 - **Fix**: Progress boxes are back in the TUI. The vir-tui migration dropped the `IN_TUI`/shared-screen wiring from `interactive_menu`, so scans silently fell back to tqdm bars swallowed by the output capture and the screen sat frozen until the pager opened. Uses `session_screen()` from vir-tui 2.1.0.
 
 # 4.16.0 (2026-08-24)
-- **Refactor**: Eradicated 1,267 lines of duplicated TUI framework code. Lattice now delegates completely to `vir-tui` v2.0.0.
+- **Refactor**: Eradicated 1,267 lines of duplicated TUI framework code. lattice-music now delegates completely to `vir-tui` v2.0.0.
 - **Dependency**: Pointed `vir-tui` reference to local path for editable testing, then restored remote URL on 2.0.0 bump.
 
-# Lattice Patch Notes
+# lattice-music Patch Notes
 
 ## v4.15.0 (2026-08-23)
-- **TUI Extraction (`vir-tui`):** The generic CLI/curses interface has been extracted into a shared library, `vir-tui`. Lattice now delegates to `vir-tui` for all interactive menus and text prompts, sharing this layer with `CalibreQuarry`.
+- **TUI Extraction (`vir-tui`):** The generic CLI/curses interface has been extracted into a shared library, `vir-tui`. lattice-music now delegates to `vir-tui` for all interactive menus and text prompts, sharing this layer with `CalibreQuarry`.
 
 
 ## v4.14.0 (2026-08-21)
@@ -439,9 +439,9 @@ Hardening pass from a full code audit.
 
 ## v4.7.0 (2026-05-30)
 
-- **Feature: configurable path-extraction layout.** The layout Lattice uses to recover artist/album/genre from a file's path (when a tag is missing) is now settable. A new `layout` key in `~/.config/lattice/config.json` becomes the default for every scanning mode, and `--layout` overrides it per-run. A genre-first library can pin `"{genre}/{artist}/{album}"` once instead of passing the flag each time. The default remains `{artist}/{album}`, so existing setups are unaffected. New `config.DEFAULT_LAYOUT` constant and `config.get_layout()` helper back this.
+- **Feature: configurable path-extraction layout.** The layout lattice-music uses to recover artist/album/genre from a file's path (when a tag is missing) is now settable. A new `layout` key in `~/.config/lattice/config.json` becomes the default for every scanning mode, and `--layout` overrides it per-run. A genre-first library can pin `"{genre}/{artist}/{album}"` once instead of passing the flag each time. The default remains `{artist}/{album}`, so existing setups are unaffected. New `config.DEFAULT_LAYOUT` constant and `config.get_layout()` helper back this.
 - **Feature: genre falls back to the path.** The library scanner already recovered a missing artist/album from the directory layout; it now does the same for a missing genre (`t.genre or parsed.get("genre")`). With a `{genre}/...` layout, an untagged file is still placed in the right wing.
-- **Companion script: `genre_foldermap.py` v1.0.0.** A new destructive tool in `scripts/` that restructures a flat `Artist/Album` library into `Genre/Artist/Album`, moving each album folder under its dominant genre (read through Lattice's scanner). Dry-run by default, `--apply` to perform, an append-only manifest with `--revert`, and `--only-genre` for a staged rollout. Loose single tracks are wrapped in a `Singles/` folder, and artist-level cover art follows the artist to its genre rather than being orphaned. `mv`-only on one filesystem, so audio bytes and embedded ratings are never rewritten.
+- **Companion script: `genre_foldermap.py` v1.0.0.** A new destructive tool in `scripts/` that restructures a flat `Artist/Album` library into `Genre/Artist/Album`, moving each album folder under its dominant genre (read through lattice-music's scanner). Dry-run by default, `--apply` to perform, an append-only manifest with `--revert`, and `--only-genre` for a staged rollout. Loose single tracks are wrapped in a `Singles/` folder, and artist-level cover art follows the artist to its genre rather than being orphaned. `mv`-only on one filesystem, so audio bytes and embedded ratings are never rewritten.
 
 ## v4.6.1 (2026-05-29)
 
@@ -454,7 +454,7 @@ Hardening pass from a full code audit.
 
 ---
 
-- **Compilations are excluded from the genre authority.** An album whose album-artist is `Various Artists` (or `VA`/`Various`) has no single canonical genre, so enforcing one would wrongly flatten the disc. `build` now writes such artists as a flagged `# ... EXCLUDED (compilation)` comment instead of an enforceable row, and `apply` hard-skips them even if a stale row exists. The shipped `artist_genre_defaults.tsv` had its `Various Artists` row converted to the exclusion comment. (Lattice's tag layer already prefers the album-artist, so this keys off album-artist.)
+- **Compilations are excluded from the genre authority.** An album whose album-artist is `Various Artists` (or `VA`/`Various`) has no single canonical genre, so enforcing one would wrongly flatten the disc. `build` now writes such artists as a flagged `# ... EXCLUDED (compilation)` comment instead of an enforceable row, and `apply` hard-skips them even if a stale row exists. The shipped `artist_genre_defaults.tsv` had its `Various Artists` row converted to the exclusion comment. (lattice-music's tag layer already prefers the album-artist, so this keys off album-artist.)
 
 ## Companion script: `rerate.py` (2026-05-27)
 
@@ -570,7 +570,7 @@ release reworks them.
 - **Formatting and lint.** The package was run through `ruff format`, unused imports were removed, and the misplaced mid-file imports in `tui.py` were moved to the top.
 
 ### Documentation
-- `spec.md` now lists all shipped modes; `--testWAV`, `--testWMA`, `--auditArtQuality`, `--auditBitrate`, and `--playlist` were missing from its table. A stale `python Lattice.py` example in the README was corrected, and the test suite is now documented.
+- `spec.md` now lists all shipped modes; `--testWAV`, `--testWMA`, `--auditArtQuality`, `--auditBitrate`, and `--playlist` were missing from its table. A stale `python lattice-music.py` example in the README was corrected, and the test suite is now documented.
 
 ## v4.4.0 (2026-05-14)
 
@@ -581,7 +581,7 @@ release reworks them.
 - **Quote / dash normalization in matching:** Album and artist keys now apply NFKC normalization plus the same curly-quote and dash-variant fold table that `cleaner.py` uses (`'` → `'`, `‐` / `–` / `—` → `-`, etc.). `JAY‐Z` and `Jay-Z` collapse to the same key, so the two are reported together instead of slipping past as separate albums.
 
 ### Requirements
-- **Minimum Python is now 3.14.** Lattice was previously declared `>=3.9`. The bump is for runtime quality, not language sugar: end users get faster CLI cold starts (cumulative ~25% startup improvement since 3.11, with continued specializing-interpreter gains through 3.14), fine-grained tracebacks (PEP 657) so tag-read or subprocess failures point at the exact column rather than just the line, and faster general bytecode performance from the 3.11+ specializing interpreter. No 3.14-specific language features (template strings, free-threading, tail-call interpreter, etc.) were adopted because they either require a non-default build or have no use case in Lattice's read-walk-report workload.
+- **Minimum Python is now 3.14.** lattice-music was previously declared `>=3.9`. The bump is for runtime quality, not language sugar: end users get faster CLI cold starts (cumulative ~25% startup improvement since 3.11, with continued specializing-interpreter gains through 3.14), fine-grained tracebacks (PEP 657) so tag-read or subprocess failures point at the exact column rather than just the line, and faster general bytecode performance from the 3.11+ specializing interpreter. No 3.14-specific language features (template strings, free-threading, tail-call interpreter, etc.) were adopted because they either require a non-default build or have no use case in lattice-music's read-walk-report workload.
 
 ### Bug Fixes
 - **`run_duplicates` first-file bias:** Reading album/artist tags from only the first audio file in a directory would mis-key entire folders when track 1 had bad tags, was a hidden track, or the album was a compilation with per-track artists. The new aggregation reads tags from every file and takes the mode across the directory.
@@ -618,7 +618,7 @@ release reworks them.
 ---
 
 ### New Features
-- **Dual-Genre Wing Splitting:** The `--ai-wings` and `--all-wings` modes now intelligently split dual-tagged items (e.g., `Coke Rap/Midwest Rap`). Instead of creating a single, combined `.txt` file for the multi-genre string, Lattice now separates the genres and correctly filters the album into *both* respective genre text files, ensuring accurate categorization across the library.
+- **Dual-Genre Wing Splitting:** The `--ai-wings` and `--all-wings` modes now intelligently split dual-tagged items (e.g., `Coke Rap/Midwest Rap`). Instead of creating a single, combined `.txt` file for the multi-genre string, lattice-music now separates the genres and correctly filters the album into *both* respective genre text files, ensuring accurate categorization across the library.
 
 ---
 
@@ -680,7 +680,7 @@ release reworks them.
 
 ### Major Overhaul: Configurable Layout & Smart Playlists
 
-Lattice now supports dynamic directory structures via the `--layout` flag, completely decoupling library generation from the strict `ARTIST/ALBUM` assumption. You can now generate `.m3u` playlists using rule-based filters.
+lattice-music now supports dynamic directory structures via the `--layout` flag, completely decoupling library generation from the strict `ARTIST/ALBUM` assumption. You can now generate `.m3u` playlists using rule-based filters.
 
 ### New Features & Improvements
 - **Configurable Layout:** A new `--layout` argument specifies your directory structure (e.g. `{genre}/{artist}/{album}`). `write_music_library_tree`, `write_ai_library`, and `write_all_wings` now intelligently parse paths according to this structure if tags are missing. They no longer fail or produce garbage output on flat folders.
@@ -757,13 +757,13 @@ Lattice now supports dynamic directory structures via the `--layout` flag, compl
 
 ### Major Overhaul: Package Restructure & Standalone Binary
 
-Lattice has been completely refactored from a single ~2500-line monolithic script (`Lattice.py`) into a proper, modern Python package architecture.
+lattice-music has been completely refactored from a single ~2500-line monolithic script (`lattice-music.py`) into a proper, modern Python package architecture.
 
 **Layer-Based Package Design.** The codebase is now housed in `src/lattice/` and split by logical functionality (`cli.py`, `tui.py`, `tags.py`, `utils.py`, `config.py`, and a `modes/` directory for individual feature operations). This dramatically improves maintainability while preserving the exact same functionality and CLI interface.
 
-**Modern Build System (Hatch).** Lattice now uses `pyproject.toml` managed by Hatch, replacing the need for manual `pip install mutagen tqdm` commands. You can now cleanly install Lattice via `pipx install .` and have the `lattice` command available globally in your terminal.
+**Modern Build System (Hatch).** lattice-music now uses `pyproject.toml` managed by Hatch, replacing the need for manual `pip install mutagen tqdm` commands. You can now cleanly install lattice-music via `pipx install .` and have the `lattice` command available globally in your terminal.
 
-**Standalone Native Executable.** We have integrated **PyInstaller** support to compile Lattice into a self-contained standalone binary. This means end-users no longer need to install Python or external packages (like `mutagen`) on their machines. The compiled binary (`lattice`) can be dropped into any directory in your PATH.
+**Standalone Native Executable.** We have integrated **PyInstaller** support to compile lattice-music into a self-contained standalone binary. This means end-users no longer need to install Python or external packages (like `mutagen`) on their machines. The compiled binary (`lattice`) can be dropped into any directory in your PATH.
 
 ---
 
@@ -1091,7 +1091,7 @@ straightforward `open()` calls.
 
 ---
 
-Lattice.py is now a single unified toolkit. The standalone
+lattice-music.py is now a single unified toolkit. The standalone
 `extract_opus_art.py` and `extract_mp3_art.py` scripts are retired; their
 functionality lives in the main script as `--extractArt`, with improvements.
 

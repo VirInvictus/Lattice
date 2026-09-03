@@ -1,4 +1,4 @@
-# Lattice Application Specification
+# lattice-music Application Specification
 
 **Version:** 4.16.1  
 **Language:** Python 3.14+  
@@ -9,14 +9,14 @@
 
 ## 1. Mission Statement
 
-Lattice is a CLI toolkit for music collectors who manage their own libraries
+lattice-music is a CLI toolkit for music collectors who manage their own libraries
 outside of any player's database. It reads tags directly via mutagen, and is
 player-agnostic by design. Every operation works from the filesystem and
 embedded metadata, not from a proprietary database or cloud service.
 
 Design philosophy: **one toolkit, every library maintenance task.** The standard collector
 layout (`~/Music/ARTIST/ALBUM/01 - Track.flac`) is the default assumption. It is
-configurable: the `layout` config key (or `--layout`) sets the pattern Lattice
+configurable: the `layout` config key (or `--layout`) sets the pattern lattice-music
 uses to recover artist/album/genre from a path, so a genre-first tree
 (`{genre}/{artist}/{album}`) is fully supported.
 
@@ -69,7 +69,7 @@ modes and is unaffected.
 
 ### 2.4 Standalone Binary
 
-Lattice can be compiled into a standalone native executable using **PyInstaller**.
+lattice-music can be compiled into a standalone native executable using **PyInstaller**.
 This encapsulates the Python interpreter, dependencies (`mutagen`, `tqdm`), and the package code into a single self-contained binary, eliminating the need for end-users to install Python or configure `pip`.
 
 ### 2.5 Interactive TUI
@@ -142,7 +142,7 @@ is CORRUPT.
 
 ---
 
-## 5. What Lattice Is Not
+## 5. What lattice-music Is Not
 
 - **Not a player.** It reads tags; it does not play audio.
 - **Not a tagger.** It reads metadata; it does not write it.

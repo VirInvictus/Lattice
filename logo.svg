@@ -86,7 +86,7 @@
 </g>
 </g>
 
-<text x="340" y="155" text-anchor="middle" class="mono" font-size="48" fill="var(--p)" font-weight="500" letter-spacing="-2">Lattice</text>
+<text x="340" y="155" text-anchor="middle" class="mono" font-size="48" fill="var(--p)" font-weight="500" letter-spacing="-2">lattice-music</text>
 <text x="340" y="180" text-anchor="middle" class="mono" font-size="16" fill="var(--s)" font-weight="400" letter-spacing="8">.py</text>
 
 <line x1="140" y1="210" x2="540" y2="210" stroke="var(--b)" stroke-width="0.5"/>

@@ -1,9 +1,9 @@
-# Lattice Roadmap
+# lattice-music Roadmap
 
 ## Phase 15: Extraction (2026-08-23)
 - [x] Extract `vir-tui` core into a standalone repository and replace local primitives with the shared dependency.
 - [x] Adopt vir-tui 2.2.0's Phase-3 primitives — `progress_box()`, `interactive_session()`, `out_note()` — deleting the hand-mirrored `_TUIPbar`/shared-screen plumbing (v4.17.0).
-# Lattice Roadmap
+# lattice-music Roadmap
 
 What's done, what's next, what's deferred. Sequenced for maximum utility as a standalone library management suite. Updated as of v4.10.1.
 
@@ -53,7 +53,7 @@ What's done, what's next, what's deferred. Sequenced for maximum utility as a st
 - [ ] **Progress Persistence**: Resume interrupted large-scale integrity scans (FLAC/MP3) from where they left off without restarting.
 - [x] **Color Output in CLI**: Status summaries are colorized (green all-clear, yellow suspect, red corrupt). Gated on an interactive TTY: off in the TUI, off when piped or redirected, off under `NO_COLOR`, so reports and pipes stay clean. (v4.6.0)
 - [x] **Multi-Root Scanning**: `--root` is repeatable; several libraries scan together in one pass and de-dupe a repeated path. Cross-library duplicate detection groups an album that lives in two libraries, with each entry prefixed by its root's basename. An optional `library_roots` array in the JSON config supplies default roots; the first-run prompt still saves only the single `library_root`. (v4.6.0)
-- [x] **Configurable Path Layout**: A `layout` config key (and `--layout`) sets the pattern Lattice uses to recover artist/album/genre from a path, so a genre-first tree (`{genre}/{artist}/{album}`) is fully supported; genre now falls back to the path like artist/album already did. Default stays `{artist}/{album}`. Pairs with the `genre_foldermap.py` companion script that builds such a tree. (v4.7.0)
+- [x] **Configurable Path Layout**: A `layout` config key (and `--layout`) sets the pattern lattice-music uses to recover artist/album/genre from a path, so a genre-first tree (`{genre}/{artist}/{album}`) is fully supported; genre now falls back to the path like artist/album already did. Default stays `{artist}/{album}`. Pairs with the `genre_foldermap.py` companion script that builds such a tree. (v4.7.0)
 
 ## Bug sweep 2026-08-09 (v4.11.0 + companion bumps)
 
@@ -195,7 +195,7 @@ Housekeeping rules for working this list: companion-script fixes get a dated `pa
   **Fix:** in retag.py, route failure messages to stderr and make `main` return 1 when any file failed (0 only on full success; document "no valid audio files" as also nonzero or as its own code, see M17). In genre_tidy's `cmd_apply`, on nonzero exit log an `ERR` line with the captured stderr and increment `errors` instead of `retagged`. Check for other retag callers before changing the exit contract (none known besides genre_tidy and manual use; note it in patchnotes).
   **Tests:** retag main returns nonzero when a file fails (read-only fixture); `cmd_apply` counts it as an error, not a retag.
 
-- [x] **M17 (genre_tidy.py): albums in formats lattice scans but retag can't write are perpetual no-op "retags".** Lattice's `AUDIO_EXTENSIONS` includes `.wav`/`.aac`; retag's writable set (retag.py:32) excludes them by design. A `.wav`-only album with a stray/missing genre is never compliant (`is_compliant`, genre_tidy.py:130: empty is never compliant), so every `apply` invokes retag, which skips every file, exits 0, and is counted retagged; nothing converges and nothing says "unwritable format". In mixed albums the unwritable files skip with no message at all.
+- [x] **M17 (genre_tidy.py): albums in formats lattice scans but retag can't write are perpetual no-op "retags".** lattice-music's `AUDIO_EXTENSIONS` includes `.wav`/`.aac`; retag's writable set (retag.py:32) excludes them by design. A `.wav`-only album with a stray/missing genre is never compliant (`is_compliant`, genre_tidy.py:130: empty is never compliant), so every `apply` invokes retag, which skips every file, exits 0, and is counted retagged; nothing converges and nothing says "unwritable format". In mixed albums the unwritable files skip with no message at all.
   **Fix:** in `cmd_apply`, before invoking retag, check the album's extensions against retag's writable set (import or mirror `retag.SUPPORTED`/equivalent constant; prefer importing to avoid drift): if no file is writable, log `UNSUPPORTED FORMAT (skipped): <album> (.wav)` once, count under a new `stats["unsupported"]`, and don't invoke retag. In retag.py, print a per-file `skip (unsupported): name` line even when other files updated, so mixed albums are honest. Update `is_compliant`'s docstring (its "apply fills it with canonical" promise is unkeepable for these).
   **Tests:** `.wav`-only album is skipped-with-reason and stats converge on re-run; mixed album logs the per-file skip.
 
@@ -243,7 +243,7 @@ Housekeeping rules for working this list: companion-script fixes get a dated `pa
 
 ## Carry-backs from the cquarry review (2026-07-02)
 
-The usual porting direction inverted: cquarry finished porting this audit (its v3.3.2 through v3.5.0), then its adversarially verified code review confirmed four defects in the shared curses skeleton that Lattice v4.10.0 still carries. The fixes shipped in cquarry (`CalibreQuarry` commit `0304cfa`, `src/cquarry/tui.py`) are the reference implementation this time. Line numbers are as of v4.10.0. All are small; the Ctrl-C item changes an exit code, so note it in the patchnotes when it lands.
+The usual porting direction inverted: cquarry finished porting this audit (its v3.3.2 through v3.5.0), then its adversarially verified code review confirmed four defects in the shared curses skeleton that lattice-music v4.10.0 still carries. The fixes shipped in cquarry (`CalibreQuarry` commit `0304cfa`, `src/cquarry/tui.py`) are the reference implementation this time. Line numbers are as of v4.10.0. All are small; the Ctrl-C item changes an exit code, so note it in the patchnotes when it lands.
 
 - [x] **(shipped 2026-07-03, v4.10.1) `_run_with_capture` appends the "Report written to ..." footer even when the mode raised or was cancelled.** `if footer:` (tui.py:888) runs regardless of `note`, so the pager shows `[Error]` plus a traceback (or `[Cancelled]`) followed by a success footer claiming a file that was never finished. **Fix (cquarry's):** `if footer and not note:`. **Tests:** a raising func with a footer pages without the footer; a successful func still pages it.
 - [x] **(shipped 2026-07-03, v4.10.1; SIGINT-at-text-menu → 130 verified end-to-end) Ctrl-C at the text-fallback menu exits 0 while the curses menu exits 130.** `_fallback_input` (tui.py:563) catches `KeyboardInterrupt` and returns None, which the menu loop reads as Quit; the same keystroke at the curses menu propagates and `interactive_menu` returns 130. A wrapper script checking for the documented 130 sees a clean 0. **Fix (cquarry's):** let `KeyboardInterrupt` propagate (the session handler already maps it to 130); keep `EOFError` as a quiet Quit (None) with a tidy `print()`. **Tests:** monkeypatched `input` raising `KeyboardInterrupt` propagates out of `_fallback_input`; raising `EOFError` returns None; end-to-end, SIGINT at the degraded text menu exits 130 (cquarry verified this under a pty).

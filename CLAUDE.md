@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Lattice is a CLI/TUI toolkit for music libraries that treats the filesystem as the source of truth. It reads tags through `mutagen`, walks the tree on every invocation (no index/database), and writes plain `.txt` reports. Python 3.14+, packaged with Hatch (`pyproject.toml`). Runtime deps: `mutagen`, `tqdm`, `vir-tui` (TUI primitives, tracked at `@main`). The current version is kept in `src/lattice/config.py` and mirrored in `pyproject.toml` (must stay in sync).
+lattice-music is a CLI/TUI toolkit for music libraries that treats the filesystem as the source of truth. It reads tags through `mutagen`, walks the tree on every invocation (no index/database), and writes plain `.txt` reports. Python 3.14+, packaged with Hatch (`pyproject.toml`). Runtime deps: `mutagen`, `tqdm`, `vir-tui` (TUI primitives, tracked at `@main`). The current version is kept in `src/lattice/config.py` and mirrored in `pyproject.toml` (must stay in sync).
 
-The home directory `CLAUDE.md` at `~/CLAUDE.md` covers system-wide conventions (zsh aliases, package managers, dotfiles repo). This file overrides it for work scoped to Lattice.
+The home directory `CLAUDE.md` at `~/CLAUDE.md` covers system-wide conventions (zsh aliases, package managers, dotfiles repo). This file overrides it for work scoped to lattice-music.
 
 ## Common commands
 
@@ -81,11 +81,11 @@ Eight standalone helpers live in `scripts/`, **not** part of the `lattice` packa
 
 **Pattern for future destructive helpers.** If you add another mutating helper in `scripts/`, follow the same shape: positional `directory` arg matching `retag.py`, `--dry-run` short-circuiting all destructive ops through a single guard layer, append-only timestamped log to a sensible default path with `--log` override, idempotent on re-run, narrow scope. Document it in README.md under its own "Companion Script: `<name>.py`" section, add a dated entry in `patchnotes.md` (no version bump, since the package didn't change), and add a bullet here.
 
-> **Important:** The generic UI formatting and Curses menu primitives have been extracted to the `vir-tui` shared repository. Lattice relies on this external dependency for its interactive mode.
+> **Important:** The generic UI formatting and Curses menu primitives have been extracted to the `vir-tui` shared repository. lattice-music relies on this external dependency for its interactive mode.
 
 ## Conventions for this repo
 
-- Lattice is read-only by design: it reads tags, decodes audio, and writes reports/playlists/extracted art. It does not write metadata back to audio files. New modes should respect that boundary.
+- lattice-music is read-only by design: it reads tags, decodes audio, and writes reports/playlists/extracted art. It does not write metadata back to audio files. New modes should respect that boundary.
 - **Don't thread tag reads.** `get_all_tags` is GIL-bound (mutagen decodes in Python), so a pool is 1.4–1.5× *slower* than serial on local storage; measured with hyperfine on the 9.6k-file library, 2026-08-09. `_scan_album_dirs` and `generate_playlist` are deliberately serial, and `read_tags_concurrent`/`map_concurrent` default to one worker via `config.DEFAULT_TAG_WORKERS` (opt back in with `tag_workers`/`LATTICE_TAG_WORKERS` for network or spinning-disk volumes). If you benchmark this again, measure user CPU with a warmup: wall clock on a warm page cache once made the slower version look 2× faster. The integrity modes' `--workers` pool is unrelated and genuinely helps (flac/ffmpeg subprocesses release the GIL).
 - One file per mode group under `modes/`. Adding a brand-new operation usually means a new function in an existing mode file, not a new file.
 - Keep `pyproject.toml`, `spec.md` §1 header, and `config.VERSION` in lockstep on a release. `patchnotes.md` and `roadmap.md` are hand-curated; update them when the user asks.

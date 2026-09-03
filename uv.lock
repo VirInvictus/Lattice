@@ -30,8 +30,8 @@ wheels = [
 ]
 
 [[package]]
-name = "lattice"
-version = "4.16.0"
+name = "lattice-music"
+version = "4.17.0"
 source = { editable = "." }
 dependencies = [
     { name = "mutagen" },
@@ -55,7 +55,7 @@ requires-dist = [
     { name = "mutagen", specifier = ">=1.46.0" },
     { name = "pyinstaller", marker = "extra == 'pyinstaller'", specifier = ">=6.0" },
     { name = "tqdm", specifier = ">=4.65.0" },
-    { name = "vir-tui", git = "https://github.com/VirInvictus/vir-tui.git?rev=main" },
+    { name = "vir-tui", specifier = ">=2.2.0" },
 ]
 provides-extras = ["pyinstaller"]
 
@@ -222,5 +222,9 @@ wheels = [
 
 [[package]]
 name = "vir-tui"
-version = "2.0.0"
-source = { git = "https://github.com/VirInvictus/vir-tui.git?rev=main#d13ad0ed2c4afc05d0c052d14e644747f1e9e73f" }
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/8b/e1ba661262a38912ec6ff9acc356ce48a42ce14dd604cab5e5fb2e1641f6/vir_tui-2.2.0.tar.gz", hash = "sha256:9dd8bbfc47d43a3e4bfa532439bae296328b2110b065d5d7ae3713ba3a3b97bc", size = 19848, upload-time = "2026-09-02T22:07:08.615Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/45/14dc45fb910572ef7a006cfacf76f699fb0693e3317324d117817717627d/vir_tui-2.2.0-py3-none-any.whl", hash = "sha256:66f49372d3103cca64f1d2d80a8733235e2b3ac8386de2e78ca6e08077d5251f", size = 13556, upload-time = "2026-09-02T22:07:07.569Z" },
+]
