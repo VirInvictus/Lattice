@@ -5,8 +5,7 @@ captured tqdm output, and the session screen lifecycle is vir-tui's."""
 import unittest
 from unittest import mock
 
-import lattice.tui as tui
-from lattice import utils
+from lattice import tui, utils
 
 
 class _FakeSession:

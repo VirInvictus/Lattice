@@ -840,7 +840,7 @@ def _open_for_tags(path: Path, ext: str):
         tags = mutagen.File(path)
         if tags is None:
             raise ValueError(f"mutagen could not recognize file: {path}")
-        keymap = {k.lower(): k for k in tags.keys()}
+        keymap = {k.lower(): k for k in tags}
 
         def get(name):
             key = keymap.get(name)
@@ -876,7 +876,7 @@ def _open_for_tags(path: Path, ext: str):
 
     if ext == ".wma":
         tags = ASF(path)
-        keymap = {k.lower(): k for k in tags.keys()}
+        keymap = {k.lower(): k for k in tags}
         asf = {
             "title": "Title",
             "album": "WM/AlbumTitle",

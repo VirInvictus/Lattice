@@ -152,8 +152,9 @@ class ProgressBoxSessionTests(unittest.TestCase):
     endwin()'ing the whole terminal state."""
 
     def test_draws_into_session_screen_and_close_leaves_it(self):
-        import vir_tui.menu
         from unittest import mock
+
+        import vir_tui.menu
 
         scr = mock.Mock()
         scr.getmaxyx.return_value = (24, 80)

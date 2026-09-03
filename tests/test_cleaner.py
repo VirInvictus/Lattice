@@ -620,7 +620,7 @@ class TagWriterTests(_RunCase):
         cleaner.normalize_file_tags(p, None, run)
         run.close()
         f = FLAC(p)
-        self.assertEqual([k for k in f.keys() if k.lower() == "title"], ["title"])
+        self.assertEqual([k for k in f if k.lower() == "title"], ["title"])
         self.assertEqual(f["title"][0], "Cur'ly")  # no duplicate key left
 
     def test_flac_authority_restamp_preserves_feat(self):
@@ -647,7 +647,7 @@ class TagWriterTests(_RunCase):
         run = self._run()
         cleaner.normalize_file_tags(p, None, run)
         run.close()
-        self.assertNotIn("album", [k.lower() for k in FLAC(p).keys()])
+        self.assertNotIn("album", [k.lower() for k in FLAC(p)])
 
 
 class MultiValueTagTests(_RunCase):

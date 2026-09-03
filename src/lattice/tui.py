@@ -1,7 +1,5 @@
 import os
 
-from lattice import utils
-
 from vir_tui import (
     CancelledError,
     ask,
@@ -16,6 +14,7 @@ from vir_tui import (
     tui_select,
 )
 
+from lattice import utils
 from lattice.config import (
     get_layout,
     get_library_root,
