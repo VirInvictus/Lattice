@@ -7,7 +7,7 @@ album" does: compute one album gain + album peak per album folder plus a
 per-track gain + peak, and write them into the files. rsgain leaves the audio
 stream untouched; only metadata tags change.
 
-Album = one folder, the standard "each album in its own folder" layout Lattice
+Album = one folder, the standard "each album in its own folder" layout the lattice package
 assumes. For each album the whole folder is rescanned together so the album gain
 is correct; an album that is already fully tagged is rescanned too unless
 --skip-tagged is passed, in which case it is skipped as a whole. A partial album
@@ -55,7 +55,7 @@ __version__ = "1.2.2"
 RSGAIN = "rsgain"
 
 # File types rsgain can write tags to, per `rsgain --help` (verified against
-# rsgain 3.6). Lattice's AUDIO_EXTENSIONS is wider (raw ADTS .aac has no tag
+# rsgain 3.6). The lattice package's AUDIO_EXTENSIONS is wider (raw ADTS .aac has no tag
 # container rsgain handles); easy mode silently skips unsupported files on its
 # own, but custom mode takes an explicit file list and rejects the WHOLE list
 # ("File list is not valid") over one unsupported file, so it must be filtered.
@@ -89,7 +89,7 @@ def split_rsgain_supported(audio_files: list[str]) -> tuple[list[str], list[str]
 
 
 def _import_lattice():
-    """Lattice supplies the format-aware ReplayGain reader and the canonical
+    """The lattice package supplies the format-aware ReplayGain reader and the canonical
     audio-extension set. Imported lazily so the script gives a useful hint
     instead of a bare traceback when run outside an install / PYTHONPATH=src."""
     try:

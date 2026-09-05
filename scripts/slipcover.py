@@ -115,7 +115,9 @@ def fetch_art_for_dir(
 
     query = urllib.parse.quote(f"{tags.artist} {tags.album}")
     url = f"https://itunes.apple.com/search?term={query}&entity=album&limit=1"
-    req = urllib.request.Request(url, headers={"User-Agent": f"Lattice/{__version__}"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": f"lattice-music/{__version__}"}
+    )
 
     try:
         with urllib.request.urlopen(req) as response:
@@ -146,7 +148,7 @@ def fetch_art_for_dir(
 
             # Download the image
             img_req = urllib.request.Request(
-                high_res_url, headers={"User-Agent": f"Lattice/{__version__}"}
+                high_res_url, headers={"User-Agent": f"lattice-music/{__version__}"}
             )
             with urllib.request.urlopen(img_req) as img_resp:
                 img_data = img_resp.read()

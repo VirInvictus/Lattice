@@ -289,7 +289,7 @@ def _menu_session() -> int:
             notify(f"Configured library root not found: {root}")
             return 1
 
-        title = f"Lattice (root: {single})" if single else "Lattice"
+        title = f"lattice-music (root: {single})" if single else "lattice-music"
 
         reset_terminal()
         result = _select_main(title)

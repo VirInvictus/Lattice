@@ -1,6 +1,6 @@
 # lattice-music Application Specification
 
-**Version:** 4.16.1  
+**Version:** 4.17.0  
 **Language:** Python 3.14+  
 **Dependencies:** `mutagen`, `tqdm`, `vir-tui`  
 **License:** MIT

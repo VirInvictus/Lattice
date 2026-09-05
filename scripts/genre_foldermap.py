@@ -3,8 +3,8 @@
 
 Reorganizes a flat Artist/Album/Song tree into a Genre/Artist/Album/Song tree by
 moving each album folder under a top-level genre directory. The genre is the
-album's dominant embedded genre tag, read through Lattice's scanner (the same
-aggregation every library/wing mode uses), so placement matches what Lattice
+album's dominant embedded genre tag, read through the lattice package's scanner (the same
+aggregation every library/wing mode uses), so placement matches what the lattice package
 reports. Folder names are preserved verbatim; nothing is retagged.
 
     genre_foldermap.py <library>                    # dry-run: print the plan only

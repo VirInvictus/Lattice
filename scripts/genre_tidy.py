@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """genre_tidy.py — build an artist→genre authority and reconcile a library to it.
 
-A two-phase companion that pairs Lattice (the read-only scanner) with retag.py
+A two-phase companion that pairs the lattice package (the read-only scanner) with retag.py
 (the per-album genre rewriter):
 
     genre_tidy.py build <library>   # read-only: scan, write an editable TSV map
@@ -64,7 +64,7 @@ _QUOTE_DASH_FOLD = {
 }
 
 TSV_HEADER = [
-    "# Lattice genre authority map (genre_tidy.py)",
+    "# lattice-music genre authority map (genre_tidy.py)",
     "# Format:  Artist<TAB>Genre<TAB>Second Genre<TAB>...   (tab-separated)",
     "#   - Every genre on the line is ALLOWED for that artist; albums tagged",
     "#     with any of them are left untouched.",

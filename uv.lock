@@ -222,9 +222,9 @@ wheels = [
 
 [[package]]
 name = "vir-tui"
-version = "2.2.0"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e2/8b/e1ba661262a38912ec6ff9acc356ce48a42ce14dd604cab5e5fb2e1641f6/vir_tui-2.2.0.tar.gz", hash = "sha256:9dd8bbfc47d43a3e4bfa532439bae296328b2110b065d5d7ae3713ba3a3b97bc", size = 19848, upload-time = "2026-09-02T22:07:08.615Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/34/3d95d0a1fc0546a3f3aabdd46591de4d882c0df30b97516976e5dc9551b8/vir_tui-2.3.0.tar.gz", hash = "sha256:4799794fbc9d56fa4de298cb0b7d308f05080fe901b2ee0438a0a2d769c4b7d4", size = 23625, upload-time = "2026-09-04T16:31:25.73Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/45/14dc45fb910572ef7a006cfacf76f699fb0693e3317324d117817717627d/vir_tui-2.2.0-py3-none-any.whl", hash = "sha256:66f49372d3103cca64f1d2d80a8733235e2b3ac8386de2e78ca6e08077d5251f", size = 13556, upload-time = "2026-09-02T22:07:07.569Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/d7/0227818303144bcd69c032a7554f473740c4396e8dc343ef8a1bb8319de5/vir_tui-2.3.0-py3-none-any.whl", hash = "sha256:4c2b78c38c00942f555a8384dd98cf64174ebee497ae5e14441b93cf0b77ff3e", size = 15766, upload-time = "2026-09-04T16:31:24.632Z" },
 ]
